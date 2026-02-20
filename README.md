@@ -28,11 +28,13 @@ go build ./...
 ### Задачи
 - `n` - create issue
 - `e` - edit selected issue
+- `Ctrl+X` (в форме) - открыть все поля в `$EDITOR` как YAML frontmatter + body description
 - `d` - delete (preview + confirm)
 - `x` - close/reopen
 - `p` - cycle priority
 - `s` - cycle status
 - `a` - quick assignee
+- `y` - copy selected issue id to clipboard
 - `Shift+L` - quick labels
 
 ### Поиск/фильтры
@@ -57,3 +59,6 @@ go build ./...
 - Данные читаются и изменяются только через `bd` бинарь.
 - Колонка `blocked` рассчитывается автоматически для `open` задач с незакрытыми блокерами.
 - Watcher реализован polling-циклом (`bd list --json` + hash compare).
+- В editor-режиме (`Ctrl+X`) используется формат:
+  - frontmatter `--- ... ---` для полей (`title/status/priority/type/assignee/labels/parent`)
+  - тело после frontmatter трактуется как `description` (можно многострочно)

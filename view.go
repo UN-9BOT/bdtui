@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -37,12 +38,13 @@ func (m model) View() string {
 	}
 
 	wrappedBase := m.styles.App.Render(base)
+	modalStyle := m.styles.HelpBox.MaxWidth(max(30, m.width-4))
 	overlay := lipgloss.Place(
 		m.width,
 		m.height,
 		lipgloss.Center,
 		lipgloss.Center,
-		m.styles.HelpBox.Render(modal),
+		modalStyle.Render(modal),
 	)
 	return wrappedBase + "\n" + overlay
 }
@@ -157,7 +159,7 @@ func (m model) renderDetails() string {
 }
 
 func (m model) renderFooter() string {
-	left := "j/k move | h/l col | n new | e edit | d delete | g + key deps | ? help | q quit"
+	left := "j/k move | h/l col | y copy id | n new | e edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
 		left = "mode: " + string(m.mode) + " | Esc cancel"
 	}
@@ -326,12 +328,37 @@ func (m model) renderFormModal() string {
 	}
 
 	lines := []string{title, ""}
+	maxLineWidth := max(24, min(120, m.width-14))
 	for _, f := range m.form.fields() {
-		lines = append(lines, fmt.Sprintf("%s %s: %s", mark(f), f, defaultString(valueFor(f), "-")))
+		prefix := fmt.Sprintf("%s %s: ", mark(f), f)
+		rawValue := defaultString(valueFor(f), "-")
+		segments := wrapPlainText(rawValue, max(8, maxLineWidth-lipgloss.Width(prefix)))
+		if len(segments) == 0 {
+			segments = []string{"-"}
+		}
+		lines = append(lines, prefix+segments[0])
+		indent := strings.Repeat(" ", lipgloss.Width(prefix))
+		for _, seg := range segments[1:] {
+			lines = append(lines, indent+seg)
+		}
 	}
 
 	if m.form.isTextField(field) {
-		lines = append(lines, "", "edit: "+m.form.Input.View())
+		lines = append(lines, "")
+		prefix := "edit: > "
+		raw := m.form.Input.Value()
+		cursorPos := m.form.Input.Position()
+		display := injectCursorMarker(raw, cursorPos)
+		if strings.TrimSpace(raw) == "" {
+			display = "|"
+		}
+		segments := wrapPlainText(display, max(8, maxLineWidth-lipgloss.Width(prefix)))
+		lines = append(lines, prefix+segments[0])
+		indent := strings.Repeat(" ", lipgloss.Width(prefix))
+		for _, seg := range segments[1:] {
+			lines = append(lines, indent+seg)
+		}
+		lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
 	} else {
 		enumValues := "values: -"
 		switch field {
@@ -443,6 +470,106 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func wrapPlainText(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+
+	var out []string
+	for _, rawLine := range strings.Split(s, "\n") {
+		rawLine = strings.TrimSpace(rawLine)
+		if rawLine == "" {
+			out = append(out, "")
+			continue
+		}
+
+		words := strings.Fields(rawLine)
+		if len(words) == 0 {
+			out = append(out, "")
+			continue
+		}
+
+		cur := ""
+		for _, w := range words {
+			if lipgloss.Width(w) > width {
+				if cur != "" {
+					out = append(out, cur)
+					cur = ""
+				}
+				out = append(out, splitLongToken(w, width)...)
+				continue
+			}
+
+			if cur == "" {
+				cur = w
+				continue
+			}
+
+			candidate := cur + " " + w
+			if lipgloss.Width(candidate) <= width {
+				cur = candidate
+			} else {
+				out = append(out, cur)
+				cur = w
+			}
+		}
+
+		if cur != "" {
+			out = append(out, cur)
+		}
+	}
+
+	if len(out) == 0 {
+		return []string{""}
+	}
+	return out
+}
+
+func splitLongToken(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+
+	runes := []rune(s)
+	var out []string
+	cur := make([]rune, 0, width)
+
+	for _, r := range runes {
+		test := append(cur, r)
+		if lipgloss.Width(string(test)) > width {
+			if len(cur) > 0 {
+				out = append(out, string(cur))
+				cur = cur[:0]
+			}
+		}
+		cur = append(cur, r)
+	}
+
+	if len(cur) > 0 {
+		out = append(out, string(cur))
+	}
+	if len(out) == 0 {
+		return []string{s}
+	}
+	return out
+}
+
+func injectCursorMarker(value string, pos int) string {
+	runes := []rune(value)
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(runes) {
+		pos = len(runes)
+	}
+
+	out := make([]rune, 0, len(runes)+1)
+	out = append(out, runes[:pos]...)
+	out = append(out, '|')
+	out = append(out, runes[pos:]...)
+	return string(out)
 }
 
 func renderEnumValues(values []string, current string, style lipgloss.Style) string {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -86,4 +87,19 @@ func cycleStatus(current Status) Status {
 
 func cyclePriority(current int) int {
 	return (current + 1) % 5
+}
+
+func defaultAssigneeFromEnv() string {
+	candidates := []string{
+		os.Getenv("BD_ACTOR"),
+		os.Getenv("USER"),
+		os.Getenv("USERNAME"),
+	}
+	for _, c := range candidates {
+		c = strings.TrimSpace(c)
+		if c != "" {
+			return c
+		}
+	}
+	return ""
 }

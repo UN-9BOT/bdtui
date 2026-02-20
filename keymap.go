@@ -23,6 +23,7 @@ func defaultKeymap() Keymap {
 			"p: cycle priority",
 			"s: cycle status",
 			"a: quick assignee",
+			"y: copy selected issue id",
 			"Shift+L: quick labels",
 			"r: refresh",
 			"g: leader combos",

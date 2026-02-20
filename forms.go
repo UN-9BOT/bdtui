@@ -21,6 +21,7 @@ func newIssueFormCreate() *IssueForm {
 		Priority:  2,
 		IssueType: "task",
 		Status:    StatusOpen,
+		Assignee:  defaultAssigneeFromEnv(),
 		Input:     in,
 	}
 	f.loadInputFromField()

@@ -344,6 +344,18 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prompt = newPrompt(ModePrompt, "Quick Assignee", "Введите assignee (пусто = unassign)", issue.ID, PromptAssignee, issue.Assignee)
 		m.mode = ModePrompt
 		return m, nil
+	case "y":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "нет выбранной задачи")
+			return m, nil
+		}
+		if err := copyToClipboard(issue.ID); err != nil {
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		m.setToast("success", "copied id: "+issue.ID)
+		return m, nil
 	case "L":
 		issue := m.currentIssue()
 		if issue == nil {

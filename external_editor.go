@@ -1,24 +1,34 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"gopkg.in/yaml.v3"
 )
 
 type formEditorPayload struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Priority    int    `json:"priority"`
-	IssueType   string `json:"type"`
-	Assignee    string `json:"assignee"`
-	Labels      string `json:"labels"`
-	Parent      string `json:"parent"`
+	Title       string
+	Description string
+	Status      string
+	Priority    int
+	IssueType   string
+	Assignee    string
+	Labels      string
+	Parent      string
+}
+
+type formEditorFrontmatter struct {
+	Title     string `yaml:"title"`
+	Status    string `yaml:"status"`
+	Priority  int    `yaml:"priority"`
+	IssueType string `yaml:"type"`
+	Assignee  string `yaml:"assignee"`
+	Labels    string `yaml:"labels"`
+	Parent    string `yaml:"parent"`
 }
 
 type formEditorMsg struct {
@@ -42,12 +52,22 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 		Parent:      m.form.Parent,
 	}
 
-	bytes, err := json.MarshalIndent(payload, "", "  ")
+	frontmatter := formEditorFrontmatter{
+		Title:     payload.Title,
+		Status:    payload.Status,
+		Priority:  payload.Priority,
+		IssueType: payload.IssueType,
+		Assignee:  payload.Assignee,
+		Labels:    payload.Labels,
+		Parent:    payload.Parent,
+	}
+
+	bytes, err := marshalEditorContent(frontmatter, payload.Description)
 	if err != nil {
 		return nil, fmt.Errorf("marshal form for editor: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp("", "bdtui-form-*.json")
+	tmpFile, err := os.CreateTemp("", "bdtui-form-*.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("create temp editor file: %w", err)
 	}
@@ -85,9 +105,9 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 			return formEditorMsg{err: fmt.Errorf("read editor file: %w", err)}
 		}
 
-		var parsed formEditorPayload
-		if err := json.Unmarshal(updated, &parsed); err != nil {
-			return formEditorMsg{err: fmt.Errorf("invalid JSON in editor file: %w", err)}
+		parsed, err := parseEditorContent(updated)
+		if err != nil {
+			return formEditorMsg{err: err}
 		}
 
 		if parsed.Priority < 0 || parsed.Priority > 4 {
@@ -114,4 +134,64 @@ func buildEditorCommand(editor string, path string) *exec.Cmd {
 		return exec.Command("sh", "-c", editor+" "+quoted)
 	}
 	return exec.Command(editor, path)
+}
+
+func marshalEditorContent(frontmatter formEditorFrontmatter, description string) ([]byte, error) {
+	body, err := yaml.Marshal(frontmatter)
+	if err != nil {
+		return nil, err
+	}
+
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.Write(body)
+	b.WriteString("---\n")
+	if description != "" {
+		b.WriteString(description)
+		if !strings.HasSuffix(description, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return []byte(b.String()), nil
+}
+
+func parseEditorContent(raw []byte) (formEditorPayload, error) {
+	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	text = strings.TrimPrefix(text, "\ufeff")
+
+	if !strings.HasPrefix(text, "---\n") {
+		return formEditorPayload{}, fmt.Errorf("invalid editor format: expected YAML frontmatter starting with ---")
+	}
+
+	rest := strings.TrimPrefix(text, "---\n")
+	sep := "\n---\n"
+	idx := strings.Index(rest, sep)
+	if idx == -1 {
+		sep = "\n---"
+		idx = strings.Index(rest, sep)
+		if idx == -1 {
+			return formEditorPayload{}, fmt.Errorf("invalid editor format: closing frontmatter separator --- not found")
+		}
+	}
+
+	yamlPart := rest[:idx]
+	description := rest[idx+len(sep):]
+	description = strings.TrimPrefix(description, "\n")
+	description = strings.TrimRight(description, "\n")
+
+	var frontmatter formEditorFrontmatter
+	if err := yaml.Unmarshal([]byte(yamlPart), &frontmatter); err != nil {
+		return formEditorPayload{}, fmt.Errorf("invalid YAML frontmatter: %w", err)
+	}
+
+	return formEditorPayload{
+		Title:       frontmatter.Title,
+		Description: description,
+		Status:      frontmatter.Status,
+		Priority:    frontmatter.Priority,
+		IssueType:   frontmatter.IssueType,
+		Assignee:    frontmatter.Assignee,
+		Labels:      frontmatter.Labels,
+		Parent:      frontmatter.Parent,
+	}, nil
 }

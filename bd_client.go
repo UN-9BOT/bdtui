@@ -85,7 +85,7 @@ func (c *BdClient) run(args ...string) (string, error) {
 }
 
 func (c *BdClient) ListIssues() ([]Issue, string, error) {
-	out, err := c.run("list", "--json")
+	out, err := c.run("list", "--json", "--all", "-n", "0")
 	if err != nil {
 		return nil, "", err
 	}
