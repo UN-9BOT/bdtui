@@ -29,7 +29,7 @@ func defaultKeymap() Keymap {
 			"r: refresh",
 			"g: leader combos",
 			"?: помощь",
-			"q/Ctrl+C: выход",
+			"q: выход",
 		},
 		Leader: []string{
 			"g b: добавить blocker",

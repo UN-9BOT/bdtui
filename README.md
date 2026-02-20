@@ -62,7 +62,7 @@ go build ./...
 ### Прочее
 - `r` - refresh
 - `?` - help
-- `q` / `Ctrl+C` - quit
+- `q` - quit
 
 ## Примечания
 

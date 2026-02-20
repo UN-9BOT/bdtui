@@ -9,7 +9,8 @@ import (
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
-		return m, tea.Quit
+		m.setToast("warning", "Ctrl+C отключен, используйте q")
+		return m, nil
 	}
 
 	switch m.mode {
