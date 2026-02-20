@@ -209,22 +209,26 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form = nil
 		m.mode = ModeBoard
 		return m, nil
-	case "tab":
-		m.form.nextField()
-		return m, nil
-	case "shift+tab":
+	case "up":
 		m.form.prevField()
 		return m, nil
-	case "up":
-		if !m.form.isTextField(m.form.currentField()) {
-			m.form.cycleEnum(-1)
-			return m, nil
-		}
 	case "down":
+		m.form.nextField()
+		return m, nil
+	case "tab":
 		if !m.form.isTextField(m.form.currentField()) {
 			m.form.cycleEnum(1)
-			return m, nil
+		} else {
+			m.form.nextField()
 		}
+		return m, nil
+	case "shift+tab":
+		if !m.form.isTextField(m.form.currentField()) {
+			m.form.cycleEnum(-1)
+		} else {
+			m.form.prevField()
+		}
+		return m, nil
 	case "enter", "ctrl+s":
 		m.formCancelArmed = false
 		if err := m.form.Validate(); err != nil {
