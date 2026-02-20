@@ -68,22 +68,25 @@ func TestParseEditorContentMissingClosingFrontmatter(t *testing.T) {
 	t.Parallel()
 
 	raw := []byte(strings.Join([]string{
-		"---",
-		"title: test",
-		"status: open",
-		"priority: 2",
-		"type: task",
-		"assignee: unbot",
-		"labels: \"\"",
-		"parent: \"\"",
-		"no closing separator",
+		"# bdtui issue form",
+		"",
+		"## Fields",
+		"- title: test",
+		"- status: open",
+		"- priority: 2",
+		"- type: task",
+		"- assignee: unbot",
+		"- labels:",
+		"- parent:",
+		"",
+		"missing description section",
 	}, "\n"))
 
 	_, err := parseEditorContent(raw)
 	if err == nil {
-		t.Fatal("expected error for missing closing separator, got nil")
+		t.Fatal("expected error for missing description section, got nil")
 	}
-	if !strings.Contains(err.Error(), "closing frontmatter separator") {
+	if !strings.Contains(err.Error(), "## Description") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -91,18 +94,18 @@ func TestParseEditorContentMissingClosingFrontmatter(t *testing.T) {
 func TestMarshalEditorContentDoesNotAppendExtraNewline(t *testing.T) {
 	t.Parallel()
 
-	frontmatter := formEditorFrontmatter{
-		Title:     "test",
-		Status:    "open",
-		Priority:  2,
-		IssueType: "task",
-		Assignee:  "unbot",
-		Labels:    "",
-		Parent:    "",
+	payload := formEditorPayload{
+		Title:       "test",
+		Status:      "open",
+		Priority:    2,
+		IssueType:   "task",
+		Assignee:    "unbot",
+		Labels:      "",
+		Parent:      "",
+		Description: "tail-without-newline",
 	}
 
-	description := "tail-without-newline"
-	raw, err := marshalEditorContent(frontmatter, description)
+	raw, err := marshalEditorContent(payload)
 	if err != nil {
 		t.Fatalf("marshalEditorContent returned error: %v", err)
 	}
@@ -112,22 +115,25 @@ func TestMarshalEditorContentDoesNotAppendExtraNewline(t *testing.T) {
 		t.Fatalf("parseEditorContent returned error: %v", err)
 	}
 
-	if parsed.Description != description {
-		t.Fatalf("unexpected description\nexpected: %q\nactual:   %q", description, parsed.Description)
+	if parsed.Description != payload.Description {
+		t.Fatalf("unexpected description\nexpected: %q\nactual:   %q", payload.Description, parsed.Description)
 	}
 }
 
 func editorDocument(description string) string {
 	return strings.Join([]string{
-		"---",
-		"title: test",
-		"status: open",
-		"priority: 2",
-		"type: task",
-		"assignee: unbot",
-		"labels: \"\"",
-		"parent: \"\"",
-		"---",
+		"# bdtui issue form",
+		"",
+		"## Fields",
+		"- title: test",
+		"- status: open",
+		"- priority: 2",
+		"- type: task",
+		"- assignee: unbot",
+		"- labels:",
+		"- parent:",
+		"",
+		"## Description",
 		description,
 	}, "\n")
 }

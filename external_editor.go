@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"gopkg.in/yaml.v3"
 )
 
 type formEditorPayload struct {
@@ -19,16 +19,6 @@ type formEditorPayload struct {
 	Assignee    string
 	Labels      string
 	Parent      string
-}
-
-type formEditorFrontmatter struct {
-	Title     string `yaml:"title"`
-	Status    string `yaml:"status"`
-	Priority  int    `yaml:"priority"`
-	IssueType string `yaml:"type"`
-	Assignee  string `yaml:"assignee"`
-	Labels    string `yaml:"labels"`
-	Parent    string `yaml:"parent"`
 }
 
 type formEditorMsg struct {
@@ -52,22 +42,12 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 		Parent:      m.form.Parent,
 	}
 
-	frontmatter := formEditorFrontmatter{
-		Title:     payload.Title,
-		Status:    payload.Status,
-		Priority:  payload.Priority,
-		IssueType: payload.IssueType,
-		Assignee:  payload.Assignee,
-		Labels:    payload.Labels,
-		Parent:    payload.Parent,
-	}
-
-	bytes, err := marshalEditorContent(frontmatter, payload.Description)
+	bytes, err := marshalEditorContent(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal form for editor: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp("", "bdtui-form-*.yaml")
+	tmpFile, err := os.CreateTemp("", "bdtui-form-*.md")
 	if err != nil {
 		return nil, fmt.Errorf("create temp editor file: %w", err)
 	}
@@ -136,18 +116,20 @@ func buildEditorCommand(editor string, path string) *exec.Cmd {
 	return exec.Command(editor, path)
 }
 
-func marshalEditorContent(frontmatter formEditorFrontmatter, description string) ([]byte, error) {
-	body, err := yaml.Marshal(frontmatter)
-	if err != nil {
-		return nil, err
-	}
-
+func marshalEditorContent(payload formEditorPayload) ([]byte, error) {
 	var b strings.Builder
-	b.WriteString("---\n")
-	b.Write(body)
-	b.WriteString("---\n")
-	if description != "" {
-		b.WriteString(description)
+	b.WriteString("# bdtui issue form\n\n")
+	b.WriteString("## Fields\n")
+	b.WriteString("- title: " + normalizeEditorScalar(payload.Title) + "\n")
+	b.WriteString("- status: " + normalizeEditorScalar(payload.Status) + "\n")
+	b.WriteString("- priority: " + strconv.Itoa(payload.Priority) + "\n")
+	b.WriteString("- type: " + normalizeEditorScalar(payload.IssueType) + "\n")
+	b.WriteString("- assignee: " + normalizeEditorScalar(payload.Assignee) + "\n")
+	b.WriteString("- labels: " + normalizeEditorScalar(payload.Labels) + "\n")
+	b.WriteString("- parent: " + normalizeEditorScalar(payload.Parent) + "\n\n")
+	b.WriteString("## Description\n")
+	if payload.Description != "" {
+		b.WriteString(payload.Description)
 	}
 	return []byte(b.String()), nil
 }
@@ -156,37 +138,63 @@ func parseEditorContent(raw []byte) (formEditorPayload, error) {
 	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	text = strings.TrimPrefix(text, "\ufeff")
 
-	if !strings.HasPrefix(text, "---\n") {
-		return formEditorPayload{}, fmt.Errorf("invalid editor format: expected YAML frontmatter starting with ---")
+	marker := "\n## Description\n"
+	idx := strings.Index(text, marker)
+	if idx == -1 {
+		return formEditorPayload{}, fmt.Errorf("invalid editor format: expected markdown section '## Description'")
 	}
 
-	rest := strings.TrimPrefix(text, "---\n")
-	sep := "\n---\n"
-	idx := strings.Index(rest, sep)
-	if idx == -1 {
-		sep = "\n---"
-		idx = strings.Index(rest, sep)
-		if idx == -1 {
-			return formEditorPayload{}, fmt.Errorf("invalid editor format: closing frontmatter separator --- not found")
+	metaPart := text[:idx]
+	description := text[idx+len(marker):]
+
+	payload := formEditorPayload{Description: description}
+	for _, line := range strings.Split(metaPart, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+		kv := strings.TrimSpace(strings.TrimPrefix(line, "- "))
+		sep := strings.Index(kv, ":")
+		if sep <= 0 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(kv[:sep]))
+		value := strings.TrimSpace(kv[sep+1:])
+		switch key {
+		case "title":
+			payload.Title = value
+		case "status":
+			payload.Status = value
+		case "priority":
+			if value == "" {
+				payload.Priority = 0
+				continue
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return formEditorPayload{}, fmt.Errorf("invalid priority: %q", value)
+			}
+			payload.Priority = parsed
+		case "type":
+			payload.IssueType = value
+		case "assignee":
+			payload.Assignee = value
+		case "labels":
+			payload.Labels = value
+		case "parent":
+			payload.Parent = value
 		}
 	}
 
-	yamlPart := rest[:idx]
-	description := rest[idx+len(sep):]
+	return payload, nil
+}
 
-	var frontmatter formEditorFrontmatter
-	if err := yaml.Unmarshal([]byte(yamlPart), &frontmatter); err != nil {
-		return formEditorPayload{}, fmt.Errorf("invalid YAML frontmatter: %w", err)
+func normalizeEditorScalar(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	parts := strings.Split(value, "\n")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
 	}
-
-	return formEditorPayload{
-		Title:       frontmatter.Title,
-		Description: description,
-		Status:      frontmatter.Status,
-		Priority:    frontmatter.Priority,
-		IssueType:   frontmatter.IssueType,
-		Assignee:    frontmatter.Assignee,
-		Labels:      frontmatter.Labels,
-		Parent:      frontmatter.Parent,
-	}, nil
+	return strings.TrimSpace(strings.Join(parts, " "))
 }
