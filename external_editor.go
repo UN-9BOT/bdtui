@@ -73,7 +73,7 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 	}
 
 	path := tmpFile.Name()
-	if _, err := tmpFile.Write(append(bytes, '\n')); err != nil {
+	if _, err := tmpFile.Write(bytes); err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(path)
 		return nil, fmt.Errorf("write temp editor file: %w", err)
@@ -148,9 +148,6 @@ func marshalEditorContent(frontmatter formEditorFrontmatter, description string)
 	b.WriteString("---\n")
 	if description != "" {
 		b.WriteString(description)
-		if !strings.HasSuffix(description, "\n") {
-			b.WriteString("\n")
-		}
 	}
 	return []byte(b.String()), nil
 }
@@ -176,8 +173,6 @@ func parseEditorContent(raw []byte) (formEditorPayload, error) {
 
 	yamlPart := rest[:idx]
 	description := rest[idx+len(sep):]
-	description = strings.TrimPrefix(description, "\n")
-	description = strings.TrimRight(description, "\n")
 
 	var frontmatter formEditorFrontmatter
 	if err := yaml.Unmarshal([]byte(yamlPart), &frontmatter); err != nil {
