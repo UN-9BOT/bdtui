@@ -46,6 +46,7 @@ go build ./...
 Поведение в `Create Issue`:
 - `↑/↓` переключают поля формы
 - `Tab/Shift+Tab` делают cycle enum-полей (`status`, `priority`, `type`, `parent`)
+- `Enter` и `Esc` одинаково сохраняют форму (защита от случайного `Esc`)
 
 ### Поиск/фильтры
 - `/` - поиск

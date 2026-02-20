@@ -42,8 +42,7 @@ func defaultKeymap() Keymap {
 			"Tab/Shift+Tab: следующее/предыдущее поле",
 			"↑/↓: смена enum-полей",
 			"Ctrl+X: открыть поля в $EDITOR",
-			"Enter: сохранить",
-			"Esc: отмена",
+			"Enter/Esc: сохранить",
 		},
 	}
 }

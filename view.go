@@ -214,7 +214,11 @@ func (m model) renderInspector() string {
 func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space expand info | y copy id | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
-		left = "mode: " + string(m.mode) + " | Esc cancel"
+		if m.mode == ModeCreate || m.mode == ModeEdit {
+			left = "mode: " + string(m.mode) + " | Enter/Esc save"
+		} else {
+			left = "mode: " + string(m.mode) + " | Esc cancel"
+		}
 	}
 
 	right := ""
@@ -446,7 +450,7 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter save | Esc x2 cancel"
+	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter/Esc save"
 	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))
 	if !showParentSide {

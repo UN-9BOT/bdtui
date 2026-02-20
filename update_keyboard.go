@@ -131,85 +131,14 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	key := msg.String()
 
-	if m.form.Create {
-		if key != "esc" && m.formCancelArmed {
-			m.formCancelArmed = false
-		}
-
-		switch key {
-		case "esc":
-			if !m.formCancelArmed {
-				m.formCancelArmed = true
-				m.setToast("warning", "нажмите Esc еще раз, чтобы отменить создание")
-				return m, nil
-			}
-			m.formCancelArmed = false
-			m.form = nil
-			m.mode = ModeBoard
-			return m, nil
-		case "up":
-			m.form.prevField()
-			return m, nil
-		case "down":
-			m.form.nextField()
-			return m, nil
-		case "tab":
-			if !m.form.isTextField(m.form.currentField()) {
-				m.form.cycleEnum(1)
-			} else {
-				m.form.nextField()
-			}
-			return m, nil
-		case "shift+tab":
-			if !m.form.isTextField(m.form.currentField()) {
-				m.form.cycleEnum(-1)
-			} else {
-				m.form.prevField()
-			}
-			return m, nil
-		case "enter", "ctrl+s":
-			m.formCancelArmed = false
-			if err := m.form.Validate(); err != nil {
-				m.setToast("error", err.Error())
-				return m, nil
-			}
-			return m.submitForm()
-		case "ctrl+x":
-			m.formCancelArmed = false
-			m.form.saveInputToField()
-			cmd, err := m.openFormInEditorCmd()
-			if err != nil {
-				m.setToast("error", err.Error())
-				return m, nil
-			}
-			return m, cmd
-		}
-
-		if m.form.isTextField(m.form.currentField()) {
-			var cmd tea.Cmd
-			m.form.Input, cmd = m.form.Input.Update(msg)
-			m.form.saveInputToField()
-			return m, cmd
-		}
-
-		return m, nil
-	}
-
-	if key != "esc" && m.formCancelArmed {
-		m.formCancelArmed = false
-	}
-
 	switch key {
-	case "esc":
-		if !m.formCancelArmed {
-			m.formCancelArmed = true
-			m.setToast("warning", "нажмите Esc еще раз, чтобы отменить редактирование")
+	case "esc", "enter", "ctrl+s":
+		// Esc intentionally saves as a safe default to avoid accidental data loss.
+		if err := m.form.Validate(); err != nil {
+			m.setToast("error", err.Error())
 			return m, nil
 		}
-		m.formCancelArmed = false
-		m.form = nil
-		m.mode = ModeBoard
-		return m, nil
+		return m.submitForm()
 	case "up":
 		m.form.prevField()
 		return m, nil
@@ -230,15 +159,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.form.prevField()
 		}
 		return m, nil
-	case "enter", "ctrl+s":
-		m.formCancelArmed = false
-		if err := m.form.Validate(); err != nil {
-			m.setToast("error", err.Error())
-			return m, nil
-		}
-		return m.submitForm()
 	case "ctrl+x":
-		m.formCancelArmed = false
 		m.form.saveInputToField()
 		cmd, err := m.openFormInEditorCmd()
 		if err != nil {
@@ -451,7 +372,6 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadCmd("manual")
 	case "n":
 		m.form = newIssueFormCreate(m.issues)
-		m.formCancelArmed = false
 		m.mode = ModeCreate
 		return m, nil
 	case "e":
@@ -462,7 +382,6 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		clone := *issue
 		m.form = newIssueFormEdit(&clone, m.issues)
-		m.formCancelArmed = false
 		m.mode = ModeEdit
 		return m, nil
 	case "ctrl+x":
@@ -473,7 +392,6 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		clone := *issue
 		m.form = newIssueFormEdit(&clone, m.issues)
-		m.formCancelArmed = false
 		m.mode = ModeEdit
 		cmd, err := m.openFormInEditorCmd()
 		if err != nil {
@@ -608,7 +526,6 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	form.saveInputToField()
 	m.mode = ModeBoard
 	m.form = nil
-	m.formCancelArmed = false
 
 	if form.Create {
 		params := CreateParams{
