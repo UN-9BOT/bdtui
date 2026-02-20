@@ -129,6 +129,59 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	key := msg.String()
+
+	if m.form.Create {
+		switch key {
+		case "esc":
+			m.form = nil
+			m.mode = ModeBoard
+			return m, nil
+		case "up":
+			m.form.prevField()
+			return m, nil
+		case "down":
+			m.form.nextField()
+			return m, nil
+		case "tab":
+			if !m.form.isTextField(m.form.currentField()) {
+				m.form.cycleEnum(1)
+			} else {
+				m.form.nextField()
+			}
+			return m, nil
+		case "shift+tab":
+			if !m.form.isTextField(m.form.currentField()) {
+				m.form.cycleEnum(-1)
+			} else {
+				m.form.prevField()
+			}
+			return m, nil
+		case "enter", "ctrl+s":
+			if err := m.form.Validate(); err != nil {
+				m.setToast("error", err.Error())
+				return m, nil
+			}
+			return m.submitForm()
+		case "ctrl+x":
+			m.form.saveInputToField()
+			cmd, err := m.openFormInEditorCmd()
+			if err != nil {
+				m.setToast("error", err.Error())
+				return m, nil
+			}
+			return m, cmd
+		}
+
+		if m.form.isTextField(m.form.currentField()) {
+			var cmd tea.Cmd
+			m.form.Input, cmd = m.form.Input.Update(msg)
+			m.form.saveInputToField()
+			return m, cmd
+		}
+
+		return m, nil
+	}
+
 	switch key {
 	case "esc":
 		m.form = nil

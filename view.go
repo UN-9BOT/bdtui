@@ -393,6 +393,7 @@ func (m model) renderFormModal() string {
 		lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
 	} else {
 		enumValues := "values: -"
+		cycleHint := "use ↑/↓ to cycle enum"
 		switch field {
 		case "status":
 			enumValues = "values: " + renderEnumValues(
@@ -415,10 +416,17 @@ func (m model) renderFormModal() string {
 		case "parent":
 			enumValues = "values: " + strings.Join(m.form.parentHints(7), " | ")
 		}
-		lines = append(lines, "", "use ↑/↓ to cycle enum", enumValues)
+		if m.form.Create {
+			cycleHint = "use Tab/Shift+Tab to cycle enum"
+		}
+		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	lines = append(lines, "", "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc cancel")
+	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc cancel"
+	if m.form.Create {
+		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Esc cancel"
+	}
+	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))
 	if !showParentSide {
 		return left
@@ -678,7 +686,7 @@ func (m model) renderParentOptionsSidebar(width int) string {
 
 	lines := []string{
 		"Parent candidates",
-		"use ↑/↓ to select",
+		"use Tab/Shift+Tab to cycle",
 		"",
 	}
 
