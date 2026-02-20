@@ -82,8 +82,9 @@ func (m model) renderBoard() string {
 
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
+	border := columnBorderStyle(active)
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(border).
 		BorderForeground(borderColor).
 		Width(width)
 
@@ -874,6 +875,13 @@ func (m model) renderParentOptionsSidebar(width int) string {
 
 	lines = append(lines, "", fmt.Sprintf("%d/%d", center+1, total))
 	return strings.Join(lines, "\n")
+}
+
+func columnBorderStyle(active bool) lipgloss.Border {
+	if active {
+		return lipgloss.ThickBorder()
+	}
+	return lipgloss.RoundedBorder()
 }
 
 func columnBorderColor(status Status, active bool) lipgloss.Color {
