@@ -39,6 +39,7 @@ func defaultKeymap() Keymap {
 		Form: []string{
 			"Tab/Shift+Tab: следующее/предыдущее поле",
 			"↑/↓: смена enum-полей",
+			"Ctrl+X: открыть поля в $EDITOR",
 			"Enter: сохранить",
 			"Esc: отмена",
 		},

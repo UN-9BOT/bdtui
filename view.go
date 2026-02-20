@@ -357,7 +357,7 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", "use ↑/↓ to cycle enum", enumValues)
 	}
 
-	lines = append(lines, "", "Tab/Shift+Tab | Enter save | Esc cancel")
+	lines = append(lines, "", "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc cancel")
 	return strings.Join(lines, "\n")
 }
 

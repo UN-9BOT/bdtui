@@ -154,6 +154,14 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.submitForm()
+	case "ctrl+x":
+		m.form.saveInputToField()
+		cmd, err := m.openFormInEditorCmd()
+		if err != nil {
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		return m, cmd
 	}
 
 	if m.form.isTextField(m.form.currentField()) {

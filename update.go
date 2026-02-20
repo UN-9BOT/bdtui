@@ -86,6 +86,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeConfirmDelete
 		return m, nil
 
+	case formEditorMsg:
+		if msg.err != nil {
+			m.setToast("error", msg.err.Error())
+			return m, nil
+		}
+		if m.form == nil {
+			return m, nil
+		}
+
+		m.form.Title = msg.payload.Title
+		m.form.Description = msg.payload.Description
+		if parsed, ok := statusFromString(msg.payload.Status); ok {
+			m.form.Status = parsed
+		}
+		m.form.Priority = clampPriority(msg.payload.Priority)
+		m.form.IssueType = strings.TrimSpace(msg.payload.IssueType)
+		m.form.Assignee = strings.TrimSpace(msg.payload.Assignee)
+		m.form.Labels = strings.TrimSpace(msg.payload.Labels)
+		m.form.Parent = strings.TrimSpace(msg.payload.Parent)
+		m.form.loadInputFromField()
+		m.setToast("success", "поля обновлены из editor")
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
