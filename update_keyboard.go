@@ -129,7 +129,6 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	key := msg.String()
-	isDescriptionField := m.form.currentField() == "description"
 
 	if m.form.Create {
 		if key != "esc" && m.formCancelArmed {
@@ -174,11 +173,6 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m.submitForm()
-		case "ctrl+enter", "ctrl+j":
-			if isDescriptionField {
-				m.form.insertDescriptionNewline()
-				return m, nil
-			}
 		case "ctrl+x":
 			m.formCancelArmed = false
 			m.form.saveInputToField()
@@ -192,11 +186,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		if m.form.isTextField(m.form.currentField()) {
 			var cmd tea.Cmd
-			if isDescriptionField {
-				m.form.DescInput, cmd = m.form.DescInput.Update(msg)
-			} else {
-				m.form.Input, cmd = m.form.Input.Update(msg)
-			}
+			m.form.Input, cmd = m.form.Input.Update(msg)
 			m.form.saveInputToField()
 			return m, cmd
 		}
@@ -242,11 +232,6 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.submitForm()
-	case "ctrl+enter", "ctrl+j":
-		if isDescriptionField {
-			m.form.insertDescriptionNewline()
-			return m, nil
-		}
 	case "ctrl+x":
 		m.formCancelArmed = false
 		m.form.saveInputToField()
@@ -260,11 +245,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.form.isTextField(m.form.currentField()) {
 		var cmd tea.Cmd
-		if isDescriptionField {
-			m.form.DescInput, cmd = m.form.DescInput.Update(msg)
-		} else {
-			m.form.Input, cmd = m.form.Input.Update(msg)
-		}
+		m.form.Input, cmd = m.form.Input.Update(msg)
 		m.form.saveInputToField()
 		return m, cmd
 	}

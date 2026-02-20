@@ -2,36 +2,23 @@ package main
 
 import "testing"
 
-func TestIssueFormDescriptionPreservesMultilineValue(t *testing.T) {
+func TestIssueFormDescriptionExcludedFromEditableFields(t *testing.T) {
 	t.Parallel()
 
 	form := newIssueFormCreate(nil)
-	form.Cursor = 1 // description
-	form.loadInputFromField()
-
-	want := "line 1\n\nline 3\n"
-	form.DescInput.SetValue(want)
-	form.saveInputToField()
-
-	if form.Description != want {
-		t.Fatalf("unexpected description\nwant: %q\ngot:  %q", want, form.Description)
+	for _, field := range form.fields() {
+		if field == "description" {
+			t.Fatalf("description must not be editable field")
+		}
 	}
 }
 
-func TestIssueFormInsertDescriptionNewline(t *testing.T) {
+func TestIssueFormDescriptionIsNotTextField(t *testing.T) {
 	t.Parallel()
 
 	form := newIssueFormCreate(nil)
-	form.Cursor = 1 // description
-	form.loadInputFromField()
-
-	form.DescInput.SetValue("abc")
-	form.DescInput.CursorEnd()
-	form.insertDescriptionNewline()
-
-	want := "abc\n"
-	if form.Description != want {
-		t.Fatalf("unexpected description\nwant: %q\ngot:  %q", want, form.Description)
+	if form.isTextField("description") {
+		t.Fatalf("description must not be text field")
 	}
 }
 
@@ -46,5 +33,20 @@ func TestIssueFormTitleStillTrimmed(t *testing.T) {
 
 	if form.Title != "hello" {
 		t.Fatalf("unexpected title: %q", form.Title)
+	}
+}
+
+func TestFirstNDescriptionLines(t *testing.T) {
+	t.Parallel()
+
+	lines, clipped := firstNDescriptionLines("1\n2\n3\n4\n5\n6", 5, 20)
+	if !clipped {
+		t.Fatalf("expected clipped=true")
+	}
+	if len(lines) != 5 {
+		t.Fatalf("expected 5 lines, got %d", len(lines))
+	}
+	if lines[0] != "1" || lines[4] != "5" {
+		t.Fatalf("unexpected lines: %#v", lines)
 	}
 }

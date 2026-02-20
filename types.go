@@ -3,7 +3,6 @@ package main
 import (
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 )
 
@@ -114,8 +113,7 @@ type IssueForm struct {
 	ParentIndex int
 	ParentOpts  []ParentOption
 
-	Input     textinput.Model
-	DescInput textarea.Model
+	Input textinput.Model
 }
 
 type ParentOption struct {

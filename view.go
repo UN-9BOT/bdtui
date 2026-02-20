@@ -352,11 +352,6 @@ func (m model) renderFormModal() string {
 				return m.form.Input.Value()
 			}
 			return m.form.Title
-		case "description":
-			if field == "description" {
-				return m.form.DescInput.Value()
-			}
-			return m.form.Description
 		case "status":
 			return string(m.form.Status)
 		case "priority":
@@ -404,33 +399,35 @@ func (m model) renderFormModal() string {
 		}
 	}
 
+	lines = append(lines, "")
+	prefix := "description: "
+	previewWidth := max(8, maxLineWidth-lipgloss.Width(prefix))
+	previewLines, wasClipped := firstNDescriptionLines(m.form.Description, 5, previewWidth)
+	lines = append(lines, prefix+previewLines[0])
+	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	for _, line := range previewLines[1:] {
+		lines = append(lines, indent+line)
+	}
+	if wasClipped {
+		lines = append(lines, indent+m.styles.Dim.Render("..."))
+	}
+
 	if m.form.isTextField(field) {
 		lines = append(lines, "")
-		if field == "description" {
-			m.form.DescInput.SetWidth(max(8, maxLineWidth-2))
-			editorHeight := max(4, min(8, m.height/4))
-			m.form.DescInput.SetHeight(editorHeight)
-			lines = append(lines, "edit:")
-			for _, editorLine := range strings.Split(m.form.DescInput.View(), "\n") {
-				lines = append(lines, "  "+editorLine)
-			}
-			lines = append(lines, "hint: Ctrl+Enter/Ctrl+J newline")
-		} else {
-			prefix := "edit: > "
-			raw := m.form.Input.Value()
-			cursorPos := m.form.Input.Position()
-			display := injectCursorMarker(raw, cursorPos)
-			if strings.TrimSpace(raw) == "" {
-				display = "|"
-			}
-			segments := wrapPlainText(display, max(8, maxLineWidth-lipgloss.Width(prefix)))
-			lines = append(lines, prefix+segments[0])
-			indent := strings.Repeat(" ", lipgloss.Width(prefix))
-			for _, seg := range segments[1:] {
-				lines = append(lines, indent+seg)
-			}
-			lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
+		prefix := "edit: > "
+		raw := m.form.Input.Value()
+		cursorPos := m.form.Input.Position()
+		display := injectCursorMarker(raw, cursorPos)
+		if strings.TrimSpace(raw) == "" {
+			display = "|"
 		}
+		segments := wrapPlainText(display, max(8, maxLineWidth-lipgloss.Width(prefix)))
+		lines = append(lines, prefix+segments[0])
+		indent := strings.Repeat(" ", lipgloss.Width(prefix))
+		for _, seg := range segments[1:] {
+			lines = append(lines, indent+seg)
+		}
+		lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
 	} else {
 		enumValues := "values: -"
 		cycleHint := "use ↑/↓ to cycle enum"
@@ -465,9 +462,9 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Ctrl+Enter/Ctrl+J newline(desc) | Esc x2 cancel"
+	helpLine := "Tab/Shift+Tab | Ctrl+X edit description in $EDITOR | Enter save | Esc x2 cancel"
 	if m.form.Create {
-		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Ctrl+Enter/Ctrl+J newline(desc) | Esc x2 cancel"
+		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X edit description in $EDITOR | Enter save | Esc x2 cancel"
 	}
 	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))
@@ -680,6 +677,39 @@ func wrapPlainText(s string, width int) []string {
 		return []string{""}
 	}
 	return out
+}
+
+func firstNDescriptionLines(description string, maxSourceLines int, width int) ([]string, bool) {
+	if maxSourceLines <= 0 {
+		maxSourceLines = 5
+	}
+	text := strings.ReplaceAll(description, "\r\n", "\n")
+	srcLines := strings.Split(text, "\n")
+	if len(srcLines) == 0 {
+		return []string{"-"}, false
+	}
+	if len(srcLines) == 1 && strings.TrimSpace(srcLines[0]) == "" {
+		return []string{"-"}, false
+	}
+
+	clipped := len(srcLines) > maxSourceLines
+	if clipped {
+		srcLines = srcLines[:maxSourceLines]
+	}
+
+	out := make([]string, 0, len(srcLines))
+	for _, line := range srcLines {
+		segments := wrapPlainText(line, width)
+		if len(segments) == 0 {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, segments...)
+	}
+	if len(out) == 0 {
+		return []string{"-"}, clipped
+	}
+	return out, clipped
 }
 
 func splitLongToken(s string, width int) []string {
