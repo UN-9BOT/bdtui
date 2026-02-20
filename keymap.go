@@ -33,7 +33,7 @@ func defaultKeymap() Keymap {
 		Leader: []string{
 			"g b: добавить blocker",
 			"g B: удалить blocker",
-			"g p: назначить parent",
+			"g p: назначить parent (интерактивный выбор)",
 			"g P: снять parent",
 			"g d: показать зависимости",
 		},

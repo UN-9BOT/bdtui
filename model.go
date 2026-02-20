@@ -37,8 +37,9 @@ type model struct {
 	filter     Filter
 	filterForm *FilterForm
 
-	form   *IssueForm
-	prompt *PromptState
+	form         *IssueForm
+	prompt       *PromptState
+	parentPicker *ParentPickerState
 
 	depList *DepListState
 
@@ -132,6 +133,7 @@ func (m *model) setToast(kind, msg string) {
 func (m *model) clearTransientUI() {
 	m.leader = false
 	m.prompt = nil
+	m.parentPicker = nil
 	m.depList = nil
 	m.confirmDelete = nil
 	m.form = nil

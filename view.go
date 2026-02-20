@@ -212,6 +212,8 @@ func (m model) renderModal() string {
 		return m.renderFormModal()
 	case ModePrompt:
 		return m.renderPromptModal()
+	case ModeParentPicker:
+		return m.renderParentPickerModal()
 	case ModeDepList:
 		return m.renderDepListModal()
 	case ModeConfirmDelete:
@@ -418,6 +420,53 @@ func (m model) renderPromptModal() string {
 		"",
 		"Enter submit | Esc cancel",
 	}, "\n")
+}
+
+func (m model) renderParentPickerModal() string {
+	if m.parentPicker == nil {
+		return "Parent Picker\n\nloading..."
+	}
+
+	total := len(m.parentPicker.Options)
+	if total == 0 {
+		return "Parent Picker\n\nНет доступных parent-кандидатов\n\nEsc close"
+	}
+
+	lines := []string{
+		"Parent Picker (g p)",
+		"",
+		"Выбор parent: ↑/↓ (или j/k), Enter применить, Esc отмена",
+		"",
+	}
+
+	center := m.parentPicker.Index
+	start := max(0, center-4)
+	end := min(total, start+9)
+	if end-start < 9 {
+		start = max(0, end-9)
+	}
+
+	for i := start; i < end; i++ {
+		opt := m.parentPicker.Options[i]
+		prefix := "  "
+		if i == center {
+			prefix = "▶ "
+		}
+
+		line := "(none)"
+		if opt.ID != "" {
+			title := truncate(opt.Title, 40)
+			line = fmt.Sprintf("%s (%s, P%d) %s", opt.ID, opt.IssueType, opt.Priority, title)
+		}
+
+		if i == center {
+			line = m.styles.Selected.Render(line)
+		}
+		lines = append(lines, prefix+line)
+	}
+
+	lines = append(lines, "", fmt.Sprintf("option %d/%d", center+1, total))
+	return strings.Join(lines, "\n")
 }
 
 func (m model) renderDepListModal() string {

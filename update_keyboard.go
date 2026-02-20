@@ -23,6 +23,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	case ModePrompt:
 		return m.handlePromptKey(msg)
+	case ModeParentPicker:
+		return m.handleParentPickerKey(msg)
 	case ModeDepList:
 		return m.handleDepListKey(msg)
 	case ModeConfirmDelete:
@@ -198,6 +200,50 @@ func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.prompt.Input, cmd = m.prompt.Input.Update(msg)
 	return m, cmd
+}
+
+func (m model) handleParentPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.parentPicker == nil {
+		m.mode = ModeBoard
+		return m, nil
+	}
+
+	key := msg.String()
+	switch key {
+	case "esc", "q":
+		m.parentPicker = nil
+		m.mode = ModeBoard
+		return m, nil
+	case "j", "down":
+		if len(m.parentPicker.Options) > 0 {
+			m.parentPicker.Index = (m.parentPicker.Index + 1) % len(m.parentPicker.Options)
+		}
+		return m, nil
+	case "k", "up":
+		if len(m.parentPicker.Options) > 0 {
+			m.parentPicker.Index--
+			if m.parentPicker.Index < 0 {
+				m.parentPicker.Index = len(m.parentPicker.Options) - 1
+			}
+		}
+		return m, nil
+	case "enter":
+		if len(m.parentPicker.Options) == 0 {
+			m.setToast("warning", "нет доступных parent-кандидатов")
+			m.parentPicker = nil
+			m.mode = ModeBoard
+			return m, nil
+		}
+		targetID := m.parentPicker.TargetIssueID
+		selected := m.parentPicker.Options[m.parentPicker.Index]
+		parent := strings.TrimSpace(selected.ID)
+		m.parentPicker = nil
+		m.mode = ModeBoard
+		return m, opCmd("parent updated", func() error {
+			return m.client.UpdateIssue(UpdateParams{ID: targetID, Parent: &parent})
+		})
+	}
+	return m, nil
 }
 
 func (m model) handleDepListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -434,8 +480,8 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 		m.mode = ModePrompt
 		return m, nil
 	case "p":
-		m.prompt = newPrompt(ModePrompt, "Set Parent", "Введите parent issue ID", issue.ID, PromptParentSet, issue.Parent)
-		m.mode = ModePrompt
+		m.parentPicker = newParentPickerState(m.issues, issue.ID, issue.Parent)
+		m.mode = ModeParentPicker
 		return m, nil
 	case "P":
 		id := issue.ID

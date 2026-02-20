@@ -73,6 +73,7 @@ const (
 	ModeCreate        Mode = "create"
 	ModeEdit          Mode = "edit"
 	ModePrompt        Mode = "prompt"
+	ModeParentPicker  Mode = "parent_picker"
 	ModeDepList       Mode = "dep_list"
 	ModeConfirmDelete Mode = "confirm_delete"
 )
@@ -120,6 +121,12 @@ type ParentOption struct {
 	Title     string
 	IssueType string
 	Priority  int
+}
+
+type ParentPickerState struct {
+	TargetIssueID string
+	Options       []ParentOption
+	Index         int
 }
 
 type FilterForm struct {

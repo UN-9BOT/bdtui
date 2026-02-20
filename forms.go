@@ -362,6 +362,15 @@ func (f *IssueForm) parentHints(limit int) []string {
 	return out
 }
 
+func newParentPickerState(issues []Issue, targetIssueID string, selectedParent string) *ParentPickerState {
+	opts, idx := buildParentOptions(issues, targetIssueID, selectedParent)
+	return &ParentPickerState{
+		TargetIssueID: targetIssueID,
+		Options:       opts,
+		Index:         idx,
+	}
+}
+
 func newFilterForm(base Filter) *FilterForm {
 	in := textinput.New()
 	in.Prompt = "> "

@@ -49,7 +49,7 @@ go build ./...
 ### Dependencies (`g` leader)
 - `g b` - add blocker
 - `g B` - remove blocker
-- `g p` - set parent
+- `g p` - интерактивный parent picker (↑/↓, Enter)
 - `g P` - clear parent
 - `g d` - dependencies list
 
