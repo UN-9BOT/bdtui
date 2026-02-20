@@ -342,10 +342,7 @@ func (m model) boardInnerHeight() int {
 
 	h -= 1 // title
 	h -= 1 // footer
-
-	if m.showDetails {
-		h -= 7
-	}
+	h -= m.inspectorOuterHeight()
 
 	// Golden Rule: account for borders
 	h -= 2
@@ -354,6 +351,17 @@ func (m model) boardInnerHeight() int {
 		h = 6
 	}
 	return h
+}
+
+func (m model) inspectorInnerHeight() int {
+	if m.showDetails {
+		return 5
+	}
+	return 3
+}
+
+func (m model) inspectorOuterHeight() int {
+	return m.inspectorInnerHeight() + 2
 }
 
 func (m *model) ensureSelectionVisible(status Status) {

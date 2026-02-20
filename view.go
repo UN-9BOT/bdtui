@@ -19,17 +19,10 @@ func (m model) View() string {
 
 	title := m.renderTitle()
 	board := m.renderBoard()
-	details := ""
-	if m.showDetails {
-		details = m.renderDetails()
-	}
+	inspector := m.renderInspector()
 	footer := m.renderFooter()
 
-	parts := []string{title, board}
-	if details != "" {
-		parts = append(parts, details)
-	}
-	parts = append(parts, footer)
+	parts := []string{title, board, inspector, footer}
 
 	base := strings.Join(parts, "\n")
 	modal := m.renderModal()
@@ -137,7 +130,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 	return style.Render(strings.Join(lines, "\n"))
 }
 
-func (m model) renderDetails() string {
+func (m model) renderInspector() string {
 	issue := m.currentIssue()
 	if issue == nil {
 		return m.styles.Border.Width(max(20, m.width-4)).Render("No selected issue")
@@ -145,21 +138,45 @@ func (m model) renderDetails() string {
 
 	w := max(20, m.width-4)
 	inner := max(4, w-4)
+	innerHeight := m.inspectorInnerHeight()
 
 	lines := []string{
-		truncate(fmt.Sprintf("%s | %s | P%d | %s", issue.ID, issue.IssueType, issue.Priority, issue.Status), inner),
+		truncate(
+			fmt.Sprintf(
+				"Selected: %s | %s | P%d | %s",
+				issue.ID, issue.IssueType, issue.Priority, issue.Status,
+			),
+			inner,
+		),
 		truncate("Title: "+issue.Title, inner),
-		truncate("Assignee: "+defaultString(issue.Assignee, "-"), inner),
-		truncate("Labels: "+defaultString(strings.Join(issue.Labels, ", "), "-"), inner),
-		truncate("Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"), inner),
-		truncate("Description: "+defaultString(issue.Description, "-"), inner),
+		truncate(
+			"Assignee: "+defaultString(issue.Assignee, "-")+" | Labels: "+defaultString(strings.Join(issue.Labels, ", "), "-"),
+			inner,
+		),
+	}
+
+	if m.showDetails {
+		lines = append(lines,
+			truncate(
+				"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
+				inner,
+			),
+		)
+		lines = append(lines, truncate("Description: "+defaultString(issue.Description, "-"), inner))
+	}
+
+	for len(lines) < innerHeight {
+		lines = append(lines, "")
+	}
+	if len(lines) > innerHeight {
+		lines = lines[:innerHeight]
 	}
 
 	return m.styles.Border.Width(w).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) renderFooter() string {
-	left := "j/k move | h/l col | y copy id | n new | e edit | d delete | g + key deps | ? help | q quit"
+	left := "j/k move | h/l col | Enter/Space expand info | y copy id | n new | e edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
 		left = "mode: " + string(m.mode) + " | Esc cancel"
 	}
