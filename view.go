@@ -112,8 +112,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 			item := col[i]
 			row := renderIssueRow(item, maxTextWidth)
 			if i == idx && active {
-				selectedPlain := truncate(fmt.Sprintf("P%d %s %s", item.Priority, item.ID, item.Title), maxTextWidth)
-				row = m.styles.Selected.Render(selectedPlain)
+				row = m.styles.Selected.Render(renderIssueRowSelectedPlain(item, maxTextWidth))
 			}
 			lines = append(lines, row)
 		}
@@ -717,4 +716,27 @@ func renderIssueRow(item Issue, maxTextWidth int) string {
 		" " + issueTypeStyle(item.IssueType).Render(issueType) +
 		" " + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(id) +
 		" " + title
+}
+
+func renderIssueRowPlain(item Issue, maxTextWidth int) string {
+	priority := renderPriorityLabel(item.Priority)
+	issueType := shortType(item.IssueType)
+	id := truncate(item.ID, 14)
+
+	fixedWidth := lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(id) + 1
+	titleWidth := max(1, maxTextWidth-fixedWidth)
+	title := truncate(item.Title, titleWidth)
+
+	return priority + " " + issueType + " " + id + " " + title
+}
+
+func renderIssueRowSelectedPlain(item Issue, maxTextWidth int) string {
+	priority := renderPriorityLabel(item.Priority)
+	issueType := shortType(item.IssueType)
+
+	fixedWidth := lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1
+	titleWidth := max(1, maxTextWidth-fixedWidth)
+	title := truncate(item.Title, titleWidth)
+
+	return priority + " " + issueType + " " + title
 }
