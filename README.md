@@ -29,7 +29,7 @@ go build ./...
 - `n` - create issue
 - `e` - edit selected issue
 - `Ctrl+X` (на board) - открыть выбранную задачу в `$EDITOR`, затем вернуться в `Edit Issue`
-- `Ctrl+X` (в форме) - открыть поля в `$EDITOR` как Markdown (`## Fields` + `## Description`)
+- `Ctrl+X` (в форме) - открыть поля в `$EDITOR` как Markdown с YAML frontmatter (`--- ... ---`)
 - `d` - delete (preview + confirm)
 - `x` - close/reopen
 - `p` - cycle priority
@@ -69,6 +69,6 @@ go build ./...
 - Данные читаются и изменяются только через `bd` бинарь.
 - Колонка `blocked` рассчитывается автоматически для `open` задач с незакрытыми блокерами.
 - Watcher реализован polling-циклом (`bd list --json` + hash compare).
-- В editor-режиме (`Ctrl+X`) используется формат Markdown:
-  - секция `## Fields` для полей (`title/status/priority/type/assignee/labels/parent`)
-  - секция `## Description` трактуется как `description` (можно многострочно)
+- В editor-режиме (`Ctrl+X`) используется YAML frontmatter:
+  - блок `--- ... ---` для полей (`title/status/priority/type/assignee/labels/parent`)
+  - текст после закрывающего `---` трактуется как `description` (можно многострочно)

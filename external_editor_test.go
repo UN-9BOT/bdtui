@@ -68,25 +68,22 @@ func TestParseEditorContentMissingClosingFrontmatter(t *testing.T) {
 	t.Parallel()
 
 	raw := []byte(strings.Join([]string{
-		"# bdtui issue form",
-		"",
-		"## Fields",
-		"- title: test",
-		"- status: open",
-		"- priority: 2",
-		"- type: task",
-		"- assignee: unbot",
-		"- labels:",
-		"- parent:",
-		"",
-		"missing description section",
+		"---",
+		"title: test",
+		"status: open",
+		"priority: 2",
+		"type: task",
+		"assignee: unbot",
+		"labels: \"\"",
+		"parent: \"\"",
+		"no closing separator",
 	}, "\n"))
 
 	_, err := parseEditorContent(raw)
 	if err == nil {
-		t.Fatal("expected error for missing description section, got nil")
+		t.Fatal("expected error for missing closing separator, got nil")
 	}
-	if !strings.Contains(err.Error(), "## Description") {
+	if !strings.Contains(err.Error(), "closing frontmatter separator") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -122,18 +119,15 @@ func TestMarshalEditorContentDoesNotAppendExtraNewline(t *testing.T) {
 
 func editorDocument(description string) string {
 	return strings.Join([]string{
-		"# bdtui issue form",
-		"",
-		"## Fields",
-		"- title: test",
-		"- status: open",
-		"- priority: 2",
-		"- type: task",
-		"- assignee: unbot",
-		"- labels:",
-		"- parent:",
-		"",
-		"## Description",
+		"---",
+		"title: test",
+		"status: open",
+		"priority: 2",
+		"type: task",
+		"assignee: unbot",
+		"labels: \"\"",
+		"parent: \"\"",
+		"---",
 		description,
 	}, "\n")
 }
