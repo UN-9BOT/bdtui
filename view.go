@@ -354,7 +354,7 @@ func (m model) renderFormModal() string {
 			return m.form.Title
 		case "description":
 			if field == "description" {
-				return m.form.Input.Value()
+				return m.form.DescInput.Value()
 			}
 			return m.form.Description
 		case "status":
@@ -406,20 +406,31 @@ func (m model) renderFormModal() string {
 
 	if m.form.isTextField(field) {
 		lines = append(lines, "")
-		prefix := "edit: > "
-		raw := m.form.Input.Value()
-		cursorPos := m.form.Input.Position()
-		display := injectCursorMarker(raw, cursorPos)
-		if strings.TrimSpace(raw) == "" {
-			display = "|"
+		if field == "description" {
+			m.form.DescInput.SetWidth(max(8, maxLineWidth-2))
+			editorHeight := max(4, min(8, m.height/4))
+			m.form.DescInput.SetHeight(editorHeight)
+			lines = append(lines, "edit:")
+			for _, editorLine := range strings.Split(m.form.DescInput.View(), "\n") {
+				lines = append(lines, "  "+editorLine)
+			}
+			lines = append(lines, "hint: Ctrl+Enter/Ctrl+J newline")
+		} else {
+			prefix := "edit: > "
+			raw := m.form.Input.Value()
+			cursorPos := m.form.Input.Position()
+			display := injectCursorMarker(raw, cursorPos)
+			if strings.TrimSpace(raw) == "" {
+				display = "|"
+			}
+			segments := wrapPlainText(display, max(8, maxLineWidth-lipgloss.Width(prefix)))
+			lines = append(lines, prefix+segments[0])
+			indent := strings.Repeat(" ", lipgloss.Width(prefix))
+			for _, seg := range segments[1:] {
+				lines = append(lines, indent+seg)
+			}
+			lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
 		}
-		segments := wrapPlainText(display, max(8, maxLineWidth-lipgloss.Width(prefix)))
-		lines = append(lines, prefix+segments[0])
-		indent := strings.Repeat(" ", lipgloss.Width(prefix))
-		for _, seg := range segments[1:] {
-			lines = append(lines, indent+seg)
-		}
-		lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
 	} else {
 		enumValues := "values: -"
 		cycleHint := "use ↑/↓ to cycle enum"
@@ -454,9 +465,9 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc x2 cancel"
+	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Ctrl+Enter/Ctrl+J newline(desc) | Esc x2 cancel"
 	if m.form.Create {
-		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Esc x2 cancel"
+		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Ctrl+Enter/Ctrl+J newline(desc) | Esc x2 cancel"
 	}
 	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))

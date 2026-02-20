@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 )
 
@@ -15,6 +16,7 @@ func newIssueFormCreate(issues []Issue) *IssueForm {
 	in.Prompt = "> "
 	in.CharLimit = 500
 	in.Focus()
+	desc := newDescriptionInput()
 
 	parentOpts, parentIdx := buildParentOptions(issues, "", "")
 
@@ -29,6 +31,7 @@ func newIssueFormCreate(issues []Issue) *IssueForm {
 		ParentIndex: parentIdx,
 		ParentOpts:  parentOpts,
 		Input:       in,
+		DescInput:   desc,
 	}
 	f.loadInputFromField()
 	return f
@@ -39,6 +42,8 @@ func newIssueFormEdit(issue *Issue, issues []Issue) *IssueForm {
 	in.Prompt = "> "
 	in.CharLimit = 500
 	in.Focus()
+	desc := newDescriptionInput()
+	desc.SetValue(issue.Description)
 
 	labels := ""
 	if len(issue.Labels) > 0 {
@@ -63,9 +68,21 @@ func newIssueFormEdit(issue *Issue, issues []Issue) *IssueForm {
 		ParentIndex: parentIdx,
 		ParentOpts:  parentOpts,
 		Input:       in,
+		DescInput:   desc,
 	}
 	f.loadInputFromField()
 	return f
+}
+
+func newDescriptionInput() textarea.Model {
+	in := textarea.New()
+	in.Prompt = ""
+	in.ShowLineNumbers = false
+	in.CharLimit = 0
+	in.SetHeight(5)
+	in.SetWidth(80)
+	in.Blur()
+	return in
 }
 
 func (f *IssueForm) fields() []string {
@@ -121,15 +138,24 @@ func (f *IssueForm) loadInputFromField() {
 	field := f.currentField()
 	if !f.isTextField(field) {
 		f.Input.Blur()
+		f.DescInput.Blur()
 		f.Input.SetValue("")
 		return
 	}
+
+	if field == "description" {
+		f.Input.Blur()
+		f.DescInput.Focus()
+		f.DescInput.SetValue(f.Description)
+		f.DescInput.CursorEnd()
+		return
+	}
+
+	f.DescInput.Blur()
 	f.Input.Focus()
 	switch field {
 	case "title":
 		f.Input.SetValue(f.Title)
-	case "description":
-		f.Input.SetValue(f.Description)
 	case "assignee":
 		f.Input.SetValue(f.Assignee)
 	case "labels":
@@ -148,12 +174,20 @@ func (f *IssueForm) saveInputToField() {
 	case "title":
 		f.Title = v
 	case "description":
-		f.Description = v
+		f.Description = f.DescInput.Value()
 	case "assignee":
 		f.Assignee = v
 	case "labels":
 		f.Labels = v
 	}
+}
+
+func (f *IssueForm) insertDescriptionNewline() {
+	if f.currentField() != "description" {
+		return
+	}
+	f.DescInput.InsertRune('\n')
+	f.saveInputToField()
 }
 
 func (f *IssueForm) cycleEnum(delta int) {
