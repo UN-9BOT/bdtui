@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type model struct {
 	byID   map[string]*Issue
 
 	columns      map[Status][]Issue
+	columnDepths map[Status]map[string]int
 	selectedCol  int
 	selectedIdx  map[Status]int
 	scrollOffset map[Status]int
@@ -76,6 +78,12 @@ func newModel(cfg Config) (model, error) {
 		client:   NewBdClient(repoDir),
 
 		columns: map[Status][]Issue{
+			StatusOpen:       {},
+			StatusInProgress: {},
+			StatusBlocked:    {},
+			StatusClosed:     {},
+		},
+		columnDepths: map[Status]map[string]int{
 			StatusOpen:       {},
 			StatusInProgress: {},
 			StatusBlocked:    {},
@@ -167,6 +175,12 @@ func (m *model) computeColumns() {
 		StatusBlocked:    {},
 		StatusClosed:     {},
 	}
+	depths := map[Status]map[string]int{
+		StatusOpen:       {},
+		StatusInProgress: {},
+		StatusBlocked:    {},
+		StatusClosed:     {},
+	}
 
 	for _, issue := range m.issues {
 		if !m.matchesSearch(issue) {
@@ -178,7 +192,88 @@ func (m *model) computeColumns() {
 		next[issue.Display] = append(next[issue.Display], issue)
 	}
 
+	for _, status := range statusOrder {
+		ordered, depthMap := orderColumnAsTree(next[status])
+		next[status] = ordered
+		depths[status] = depthMap
+	}
+
 	m.columns = next
+	m.columnDepths = depths
+}
+
+func orderColumnAsTree(input []Issue) ([]Issue, map[string]int) {
+	depth := make(map[string]int, len(input))
+	if len(input) == 0 {
+		return input, depth
+	}
+
+	indexByID := make(map[string]int, len(input))
+	issueByID := make(map[string]Issue, len(input))
+	childrenByParent := make(map[string][]string, len(input))
+
+	for i, issue := range input {
+		indexByID[issue.ID] = i
+		issueByID[issue.ID] = issue
+	}
+
+	roots := make([]string, 0, len(input))
+	for _, issue := range input {
+		parentID := strings.TrimSpace(issue.Parent)
+		if parentID == "" || parentID == issue.ID {
+			roots = append(roots, issue.ID)
+			continue
+		}
+		if _, ok := indexByID[parentID]; !ok {
+			roots = append(roots, issue.ID)
+			continue
+		}
+		childrenByParent[parentID] = append(childrenByParent[parentID], issue.ID)
+	}
+
+	sortIDs := func(ids []string) {
+		sort.SliceStable(ids, func(i, j int) bool {
+			return indexByID[ids[i]] < indexByID[ids[j]]
+		})
+	}
+
+	sortIDs(roots)
+	for parent := range childrenByParent {
+		sortIDs(childrenByParent[parent])
+	}
+
+	ordered := make([]Issue, 0, len(input))
+	visited := make(map[string]bool, len(input))
+
+	var dfs func(id string, d int)
+	dfs = func(id string, d int) {
+		if visited[id] {
+			return
+		}
+		issue, ok := issueByID[id]
+		if !ok {
+			return
+		}
+		visited[id] = true
+		depth[id] = d
+		ordered = append(ordered, issue)
+		for _, childID := range childrenByParent[id] {
+			dfs(childID, d+1)
+		}
+	}
+
+	for _, rootID := range roots {
+		dfs(rootID, 0)
+	}
+
+	// Fallback for cycles or disconnected nodes.
+	for _, issue := range input {
+		if !visited[issue.ID] {
+			dfs(issue.ID, 0)
+		}
+	}
+
+	return ordered, depth
 }
 
 func (m *model) normalizeSelectionBounds() {
