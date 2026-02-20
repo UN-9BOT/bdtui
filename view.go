@@ -462,13 +462,16 @@ func (m model) renderParentPickerModal() string {
 	}
 
 	lines := []string{
-		"Parent Picker (g p)",
+		statusHeaderStyle(StatusInProgress).Render("Parent Picker (g p)"),
 		"",
-		"Выбор parent: ↑/↓ (или j/k), Enter применить, Esc отмена",
+		m.styles.Warning.Render("Выбор parent: ↑/↓ (или j/k), Enter применить, Esc отмена"),
 		"",
 	}
 
 	center := m.parentPicker.Index
+	if center < 0 || center >= total {
+		center = 0
+	}
 	start := max(0, center-4)
 	end := min(total, start+9)
 	if end-start < 9 {
@@ -479,22 +482,36 @@ func (m model) renderParentPickerModal() string {
 		opt := m.parentPicker.Options[i]
 		prefix := "  "
 		if i == center {
-			prefix = "▶ "
+			prefix = m.styles.Warning.Render("▶ ")
 		}
 
-		line := "(none)"
+		line := m.styles.Dim.Render("(none)")
+		linePlain := "(none)"
 		if opt.ID != "" {
-			title := truncate(opt.Title, 40)
-			line = fmt.Sprintf("%s (%s, P%d) %s", opt.ID, opt.IssueType, opt.Priority, title)
+			statusText := string(opt.Display)
+			prioText := renderPriorityLabel(opt.Priority)
+			typeText := shortType(opt.IssueType)
+			idText := opt.ID
+			titleText := truncate(opt.Title, 40)
+
+			linePlain = fmt.Sprintf("%s %s %s %s %s", statusText, prioText, typeText, idText, titleText)
+			line = fmt.Sprintf(
+				"%s %s %s %s %s",
+				statusHeaderStyle(opt.Display).Render(statusText),
+				priorityStyle(opt.Priority).Render(prioText),
+				issueTypeStyle(opt.IssueType).Render(typeText),
+				lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(idText),
+				titleText,
+			)
 		}
 
 		if i == center {
-			line = m.styles.Selected.Render(line)
+			line = m.styles.Selected.Render(linePlain)
 		}
 		lines = append(lines, prefix+line)
 	}
 
-	lines = append(lines, "", fmt.Sprintf("option %d/%d", center+1, total))
+	lines = append(lines, "", m.styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
 	return strings.Join(lines, "\n")
 }
 
