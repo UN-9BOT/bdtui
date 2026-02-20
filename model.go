@@ -39,9 +39,10 @@ type model struct {
 	filter     Filter
 	filterForm *FilterForm
 
-	form         *IssueForm
-	prompt       *PromptState
-	parentPicker *ParentPickerState
+	form              *IssueForm
+	prompt            *PromptState
+	parentPicker      *ParentPickerState
+	createCancelArmed bool
 
 	depList *DepListState
 
@@ -146,6 +147,7 @@ func (m *model) clearTransientUI() {
 	m.confirmDelete = nil
 	m.form = nil
 	m.filterForm = nil
+	m.createCancelArmed = false
 }
 
 func (m *model) applyLoadedIssues(issues []Issue, hash string) {

@@ -456,7 +456,7 @@ func (m model) renderFormModal() string {
 
 	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc cancel"
 	if m.form.Create {
-		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Esc cancel"
+		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Esc x2 cancel"
 	}
 	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))

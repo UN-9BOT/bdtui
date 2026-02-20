@@ -131,8 +131,18 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	if m.form.Create {
+		if key != "esc" && m.createCancelArmed {
+			m.createCancelArmed = false
+		}
+
 		switch key {
 		case "esc":
+			if !m.createCancelArmed {
+				m.createCancelArmed = true
+				m.setToast("warning", "нажмите Esc еще раз, чтобы отменить создание")
+				return m, nil
+			}
+			m.createCancelArmed = false
 			m.form = nil
 			m.mode = ModeBoard
 			return m, nil
@@ -157,12 +167,14 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter", "ctrl+s":
+			m.createCancelArmed = false
 			if err := m.form.Validate(); err != nil {
 				m.setToast("error", err.Error())
 				return m, nil
 			}
 			return m.submitForm()
 		case "ctrl+x":
+			m.createCancelArmed = false
 			m.form.saveInputToField()
 			cmd, err := m.openFormInEditorCmd()
 			if err != nil {
@@ -184,6 +196,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "esc":
+		m.createCancelArmed = false
 		m.form = nil
 		m.mode = ModeBoard
 		return m, nil
@@ -204,12 +217,14 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "enter", "ctrl+s":
+		m.createCancelArmed = false
 		if err := m.form.Validate(); err != nil {
 			m.setToast("error", err.Error())
 			return m, nil
 		}
 		return m.submitForm()
 	case "ctrl+x":
+		m.createCancelArmed = false
 		m.form.saveInputToField()
 		cmd, err := m.openFormInEditorCmd()
 		if err != nil {
@@ -422,6 +437,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadCmd("manual")
 	case "n":
 		m.form = newIssueFormCreate(m.issues)
+		m.createCancelArmed = false
 		m.mode = ModeCreate
 		return m, nil
 	case "e":
@@ -561,6 +577,7 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	form.saveInputToField()
 	m.mode = ModeBoard
 	m.form = nil
+	m.createCancelArmed = false
 
 	if form.Create {
 		params := CreateParams{
