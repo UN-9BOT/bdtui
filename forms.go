@@ -251,6 +251,11 @@ func buildParentOptions(issues []Issue, selfID string, selectedParent string) ([
 	sort.SliceStable(opts[1:], func(i, j int) bool {
 		left := opts[i+1]
 		right := opts[j+1]
+		ls := statusRank(left.Display)
+		rs := statusRank(right.Display)
+		if ls != rs {
+			return ls < rs
+		}
 		lr := issueTypeRank(left.IssueType)
 		rr := issueTypeRank(right.IssueType)
 		if lr != rr {
@@ -273,6 +278,21 @@ func buildParentOptions(issues []Issue, selfID string, selectedParent string) ([
 		}
 	}
 	return opts, idx
+}
+
+func statusRank(s Status) int {
+	switch s {
+	case StatusOpen:
+		return 0
+	case StatusInProgress:
+		return 1
+	case StatusBlocked:
+		return 2
+	case StatusClosed:
+		return 3
+	default:
+		return 99
+	}
 }
 
 func issueTypeRank(t string) int {
