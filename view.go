@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -347,12 +346,21 @@ func (m model) renderFormModal() string {
 	}
 
 	valueFor := func(name string) string {
+		inlineTextValue := func(activeField string, saved string) string {
+			if field != activeField {
+				return saved
+			}
+			raw := m.form.Input.Value()
+			display := injectCursorMarker(raw, m.form.Input.Position())
+			if strings.TrimSpace(raw) == "" {
+				return "|"
+			}
+			return display
+		}
+
 		switch name {
 		case "title":
-			if field == "title" {
-				return m.form.Input.Value()
-			}
-			return m.form.Title
+			return inlineTextValue("title", m.form.Title)
 		case "status":
 			return string(m.form.Status)
 		case "priority":
@@ -360,15 +368,9 @@ func (m model) renderFormModal() string {
 		case "type":
 			return m.form.IssueType
 		case "assignee":
-			if field == "assignee" {
-				return m.form.Input.Value()
-			}
-			return m.form.Assignee
+			return inlineTextValue("assignee", m.form.Assignee)
 		case "labels":
-			if field == "labels" {
-				return m.form.Input.Value()
-			}
-			return m.form.Labels
+			return inlineTextValue("labels", m.form.Labels)
 		case "parent":
 			return m.form.parentDisplay()
 		}
@@ -413,23 +415,7 @@ func (m model) renderFormModal() string {
 		lines = append(lines, indent+m.styles.Dim.Render("..."))
 	}
 
-	if m.form.isTextField(field) {
-		lines = append(lines, "")
-		prefix := "edit: > "
-		raw := m.form.Input.Value()
-		cursorPos := m.form.Input.Position()
-		display := injectCursorMarker(raw, cursorPos)
-		if strings.TrimSpace(raw) == "" {
-			display = "|"
-		}
-		segments := wrapPlainText(display, max(8, maxLineWidth-lipgloss.Width(prefix)))
-		lines = append(lines, prefix+segments[0])
-		indent := strings.Repeat(" ", lipgloss.Width(prefix))
-		for _, seg := range segments[1:] {
-			lines = append(lines, indent+seg)
-		}
-		lines = append(lines, fmt.Sprintf("cursor: %d/%d", cursorPos, utf8.RuneCountInString(raw)))
-	} else {
+	if !m.form.isTextField(field) {
 		enumValues := "values: -"
 		cycleHint := "use Tab/Shift+Tab to cycle enum"
 		switch field {
@@ -460,7 +446,7 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X edit description in $EDITOR | Enter save | Esc x2 cancel"
+	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter save | Esc x2 cancel"
 	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))
 	if !showParentSide {
