@@ -80,10 +80,11 @@ func (m model) renderBoard() string {
 }
 
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
-	style := m.styles.Border.Width(width)
-	if active {
-		style = m.styles.Active.Width(width)
-	}
+	borderColor := columnBorderColor(status, active)
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Width(width)
 
 	col := m.columns[status]
 	idx := m.selectedIdx[status]
@@ -98,9 +99,8 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 
 	maxTextWidth := max(1, width-4)
 
-	lines := []string{
-		truncate(fmt.Sprintf("%s (%d)", status.Label(), len(col)), maxTextWidth),
-	}
+	header := truncate(fmt.Sprintf("%s (%d)", status.Label(), len(col)), maxTextWidth)
+	lines := []string{statusHeaderStyle(status).Render(header)}
 
 	itemsPerPage := max(1, innerHeight-2)
 
@@ -110,10 +110,10 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 		end := min(len(col), offset+itemsPerPage)
 		for i := offset; i < end; i++ {
 			item := col[i]
-			row := fmt.Sprintf("P%d %s %s", item.Priority, item.ID, item.Title)
-			row = truncate(row, maxTextWidth)
+			row := renderIssueRow(item, maxTextWidth)
 			if i == idx && active {
-				row = m.styles.Selected.Render(row)
+				selectedPlain := truncate(fmt.Sprintf("P%d %s %s", item.Priority, item.ID, item.Title), maxTextWidth)
+				row = m.styles.Selected.Render(selectedPlain)
 			}
 			lines = append(lines, row)
 		}
@@ -141,12 +141,14 @@ func (m model) renderInspector() string {
 	innerHeight := m.inspectorInnerHeight()
 
 	lines := []string{
-		truncate(
-			fmt.Sprintf(
-				"Selected: %s | %s | P%d | %s",
-				issue.ID, issue.IssueType, issue.Priority, issue.Status,
+		statusHeaderStyle(issue.Display).Render(
+			truncate(
+				fmt.Sprintf(
+					"Selected: %s | %s | %s | %s",
+					issue.ID, issue.IssueType, renderPriorityLabel(issue.Priority), issue.Status,
+				),
+				inner,
 			),
-			inner,
 		),
 		truncate("Title: "+issue.Title, inner),
 		truncate(
@@ -598,4 +600,121 @@ func renderEnumValues(values []string, current string, style lipgloss.Style) str
 		out = append(out, v)
 	}
 	return strings.Join(out, " | ")
+}
+
+func columnBorderColor(status Status, active bool) lipgloss.Color {
+	if !active {
+		switch status {
+		case StatusOpen:
+			return lipgloss.Color("31")
+		case StatusInProgress:
+			return lipgloss.Color("136")
+		case StatusBlocked:
+			return lipgloss.Color("88")
+		case StatusClosed:
+			return lipgloss.Color("238")
+		default:
+			return lipgloss.Color("241")
+		}
+	}
+
+	switch status {
+	case StatusOpen:
+		return lipgloss.Color("45")
+	case StatusInProgress:
+		return lipgloss.Color("220")
+	case StatusBlocked:
+		return lipgloss.Color("203")
+	case StatusClosed:
+		return lipgloss.Color("246")
+	default:
+		return lipgloss.Color("39")
+	}
+}
+
+func statusHeaderStyle(status Status) lipgloss.Style {
+	switch status {
+	case StatusOpen:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
+	case StatusInProgress:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	case StatusBlocked:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	case StatusClosed:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Bold(true)
+	default:
+		return lipgloss.NewStyle().Bold(true)
+	}
+}
+
+func priorityStyle(priority int) lipgloss.Style {
+	switch priority {
+	case 0:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	case 1:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	case 2:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	case 3:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	}
+}
+
+func issueTypeStyle(issueType string) lipgloss.Style {
+	switch strings.ToLower(strings.TrimSpace(issueType)) {
+	case "epic":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("207")).Bold(true)
+	case "feature":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	case "task":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
+	case "bug":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	case "chore":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)
+	case "decision":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true)
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	}
+}
+
+func shortType(issueType string) string {
+	switch strings.ToLower(strings.TrimSpace(issueType)) {
+	case "epic":
+		return "EP"
+	case "feature":
+		return "FE"
+	case "task":
+		return "TS"
+	case "bug":
+		return "BG"
+	case "chore":
+		return "CH"
+	case "decision":
+		return "DC"
+	default:
+		return "??"
+	}
+}
+
+func renderPriorityLabel(priority int) string {
+	return fmt.Sprintf("P%d", priority)
+}
+
+func renderIssueRow(item Issue, maxTextWidth int) string {
+	priority := renderPriorityLabel(item.Priority)
+	issueType := shortType(item.IssueType)
+	id := truncate(item.ID, 14)
+
+	fixedWidth := lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(id) + 1
+	titleWidth := max(1, maxTextWidth-fixedWidth)
+	title := truncate(item.Title, titleWidth)
+
+	return priorityStyle(item.Priority).Render(priority) +
+		" " + issueTypeStyle(item.IssueType).Render(issueType) +
+		" " + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(id) +
+		" " + title
 }
