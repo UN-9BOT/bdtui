@@ -146,21 +146,49 @@ func (m model) renderInspector() string {
 	inner := max(4, w-4)
 	innerHeight := m.inspectorInnerHeight()
 
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
+	assigneeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	labelsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
+
+	selectedPrefix := "Selected: "
+	typeText := defaultString(issue.IssueType, "-")
+	prioText := renderPriorityLabel(issue.Priority)
+	statusText := defaultString(string(issue.Status), "-")
+	idFixed := lipgloss.Width(selectedPrefix) + lipgloss.Width(" | ")*3 + lipgloss.Width(typeText) + lipgloss.Width(prioText) + lipgloss.Width(statusText)
+	idWidth := max(1, inner-idFixed)
+	idText := truncate(defaultString(issue.ID, "-"), idWidth)
+
+	titlePrefix := "Title: "
+	titleText := truncate(defaultString(issue.Title, "-"), max(1, inner-lipgloss.Width(titlePrefix)))
+
+	assigneePrefix := "Assignee: "
+	labelsPrefix := " | Labels: "
+	assigneeRaw := defaultString(issue.Assignee, "-")
+	labelsRaw := defaultString(strings.Join(issue.Labels, ", "), "-")
+	valueBudget := max(2, inner-lipgloss.Width(assigneePrefix)-lipgloss.Width(labelsPrefix))
+	assigneeWidth := max(1, min(valueBudget/3, valueBudget-1))
+	labelsWidth := max(1, valueBudget-assigneeWidth)
+	assigneeText := truncate(assigneeRaw, assigneeWidth)
+	labelsText := truncate(labelsRaw, labelsWidth)
+
+	sep := sepStyle.Render(" | ")
 	lines := []string{
-		statusHeaderStyle(issue.Display).Render(
-			truncate(
-				fmt.Sprintf(
-					"Selected: %s | %s | %s | %s",
-					issue.ID, issue.IssueType, renderPriorityLabel(issue.Priority), issue.Status,
-				),
-				inner,
-			),
-		),
-		truncate("Title: "+issue.Title, inner),
-		truncate(
-			"Assignee: "+defaultString(issue.Assignee, "-")+" | Labels: "+defaultString(strings.Join(issue.Labels, ", "), "-"),
-			inner,
-		),
+		labelStyle.Render(selectedPrefix) +
+			idStyle.Render(idText) +
+			sep +
+			issueTypeStyle(typeText).Render(typeText) +
+			sep +
+			priorityStyle(issue.Priority).Render(prioText) +
+			sep +
+			statusHeaderStyle(issue.Display).Render(statusText),
+		labelStyle.Render(titlePrefix) + titleStyle.Render(titleText),
+		labelStyle.Render(assigneePrefix) +
+			assigneeStyle.Render(assigneeText) +
+			labelStyle.Render(labelsPrefix) +
+			labelsStyle.Render(labelsText),
 	}
 
 	if m.showDetails {
