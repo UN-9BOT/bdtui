@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -368,10 +369,10 @@ func (m model) renderFormModal() string {
 		if len(segments) == 0 {
 			segments = []string{"-"}
 		}
-		lines = append(lines, prefix+segments[0])
+		lines = append(lines, prefix+styleFormFieldSegment(f, segments[0]))
 		indent := strings.Repeat(" ", lipgloss.Width(prefix))
 		for _, seg := range segments[1:] {
-			lines = append(lines, indent+seg)
+			lines = append(lines, indent+styleFormFieldSegment(f, seg))
 		}
 	}
 
@@ -396,22 +397,25 @@ func (m model) renderFormModal() string {
 		cycleHint := "use ↑/↓ to cycle enum"
 		switch field {
 		case "status":
-			enumValues = "values: " + renderEnumValues(
+			enumValues = "values: " + renderEnumValuesStyled(
 				[]string{"open", "in_progress", "blocked", "closed"},
 				string(m.form.Status),
 				m.styles.Selected,
+				enumStyleStatus,
 			)
 		case "type":
-			enumValues = "values: " + renderEnumValues(
+			enumValues = "values: " + renderEnumValuesStyled(
 				[]string{"task", "epic", "bug", "feature", "chore", "decision"},
 				m.form.IssueType,
 				m.styles.Selected,
+				enumStyleIssueType,
 			)
 		case "priority":
-			enumValues = "values: " + renderEnumValues(
+			enumValues = "values: " + renderEnumValuesStyled(
 				[]string{"0", "1", "2", "3", "4"},
 				fmt.Sprintf("%d", m.form.Priority),
 				m.styles.Selected,
+				enumStylePriority,
 			)
 		case "parent":
 			enumValues = "values: " + strings.Join(m.form.parentHints(7), " | ")
@@ -685,15 +689,63 @@ func injectCursorMarker(value string, pos int) string {
 }
 
 func renderEnumValues(values []string, current string, style lipgloss.Style) string {
+	return renderEnumValuesStyled(values, current, style, nil)
+}
+
+func renderEnumValuesStyled(values []string, current string, selected lipgloss.Style, enumStyle func(string) lipgloss.Style) string {
 	out := make([]string, 0, len(values))
 	for _, v := range values {
 		if v == current {
-			out = append(out, style.Render(v))
+			out = append(out, selected.Render(v))
+			continue
+		}
+		if enumStyle != nil {
+			out = append(out, enumStyle(v).Render(v))
 			continue
 		}
 		out = append(out, v)
 	}
 	return strings.Join(out, " | ")
+}
+
+func styleFormFieldSegment(field string, segment string) string {
+	switch field {
+	case "status":
+		return enumStyleStatus(segment).Render(segment)
+	case "priority":
+		return enumStylePriority(segment).Render(segment)
+	case "type":
+		return enumStyleIssueType(segment).Render(segment)
+	default:
+		return segment
+	}
+}
+
+func enumStyleStatus(raw string) lipgloss.Style {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(StatusOpen):
+		return statusHeaderStyle(StatusOpen)
+	case string(StatusInProgress):
+		return statusHeaderStyle(StatusInProgress)
+	case string(StatusBlocked):
+		return statusHeaderStyle(StatusBlocked)
+	case string(StatusClosed):
+		return statusHeaderStyle(StatusClosed)
+	default:
+		return lipgloss.NewStyle()
+	}
+}
+
+func enumStylePriority(raw string) lipgloss.Style {
+	p, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return lipgloss.NewStyle()
+	}
+	return priorityStyle(p)
+}
+
+func enumStyleIssueType(raw string) lipgloss.Style {
+	return issueTypeStyle(raw)
 }
 
 func (m model) renderParentOptionsSidebar(width int) string {
