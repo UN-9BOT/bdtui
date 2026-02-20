@@ -464,6 +464,22 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formCancelArmed = false
 		m.mode = ModeEdit
 		return m, nil
+	case "ctrl+x":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "нет выбранной задачи")
+			return m, nil
+		}
+		clone := *issue
+		m.form = newIssueFormEdit(&clone, m.issues)
+		m.formCancelArmed = false
+		m.mode = ModeEdit
+		cmd, err := m.openFormInEditorCmd()
+		if err != nil {
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		return m, cmd
 	case "a":
 		issue := m.currentIssue()
 		if issue == nil {

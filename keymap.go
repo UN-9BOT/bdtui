@@ -18,6 +18,7 @@ func defaultKeymap() Keymap {
 			"c: сбросить поиск/фильтры",
 			"n: создать задачу",
 			"e: редактировать задачу",
+			"Ctrl+X: открыть выбранную задачу в $EDITOR и вернуться в Edit",
 			"d: удалить задачу",
 			"x: close/reopen",
 			"p: cycle priority",

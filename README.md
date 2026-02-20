@@ -28,6 +28,7 @@ go build ./...
 ### Задачи
 - `n` - create issue
 - `e` - edit selected issue
+- `Ctrl+X` (на board) - открыть выбранную задачу в `$EDITOR`, затем вернуться в `Edit Issue`
 - `Ctrl+X` (в форме) - открыть все поля в `$EDITOR` как YAML frontmatter + body description
 - `d` - delete (preview + confirm)
 - `x` - close/reopen

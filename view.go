@@ -212,7 +212,7 @@ func (m model) renderInspector() string {
 }
 
 func (m model) renderFooter() string {
-	left := "j/k move | h/l col | Enter/Space expand info | y copy id | n new | e edit | d delete | g + key deps | ? help | q quit"
+	left := "j/k move | h/l col | Enter/Space expand info | y copy id | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
 		left = "mode: " + string(m.mode) + " | Esc cancel"
 	}
