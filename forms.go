@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -9,26 +10,31 @@ import (
 
 var issueTypes = []string{"task", "epic", "bug", "feature", "chore", "decision"}
 
-func newIssueFormCreate() *IssueForm {
+func newIssueFormCreate(issues []Issue) *IssueForm {
 	in := textinput.New()
 	in.Prompt = "> "
 	in.CharLimit = 500
 	in.Focus()
 
+	parentOpts, parentIdx := buildParentOptions(issues, "", "")
+
 	f := &IssueForm{
-		Create:    true,
-		Cursor:    0,
-		Priority:  2,
-		IssueType: "task",
-		Status:    StatusOpen,
-		Assignee:  defaultAssigneeFromEnv(),
-		Input:     in,
+		Create:      true,
+		Cursor:      0,
+		Priority:    2,
+		IssueType:   "task",
+		Status:      StatusOpen,
+		Assignee:    defaultAssigneeFromEnv(),
+		Parent:      parentOpts[parentIdx].ID,
+		ParentIndex: parentIdx,
+		ParentOpts:  parentOpts,
+		Input:       in,
 	}
 	f.loadInputFromField()
 	return f
 }
 
-func newIssueFormEdit(issue *Issue) *IssueForm {
+func newIssueFormEdit(issue *Issue, issues []Issue) *IssueForm {
 	in := textinput.New()
 	in.Prompt = "> "
 	in.CharLimit = 500
@@ -38,6 +44,8 @@ func newIssueFormEdit(issue *Issue) *IssueForm {
 	if len(issue.Labels) > 0 {
 		labels = strings.Join(issue.Labels, ", ")
 	}
+
+	parentOpts, parentIdx := buildParentOptions(issues, issue.ID, issue.Parent)
 
 	f := &IssueForm{
 		Create:      false,
@@ -52,6 +60,8 @@ func newIssueFormEdit(issue *Issue) *IssueForm {
 		Assignee:    issue.Assignee,
 		Labels:      labels,
 		Parent:      issue.Parent,
+		ParentIndex: parentIdx,
+		ParentOpts:  parentOpts,
 		Input:       in,
 	}
 	f.loadInputFromField()
@@ -60,7 +70,7 @@ func newIssueFormEdit(issue *Issue) *IssueForm {
 
 func (f *IssueForm) fields() []string {
 	if f.Create {
-		return []string{"title", "description", "priority", "type", "assignee", "labels", "parent"}
+		return []string{"title", "description", "status", "priority", "type", "assignee", "labels", "parent"}
 	}
 	return []string{"title", "description", "status", "priority", "type", "assignee", "labels", "parent"}
 }
@@ -100,7 +110,7 @@ func (f *IssueForm) prevField() {
 
 func (f *IssueForm) isTextField(field string) bool {
 	switch field {
-	case "title", "description", "assignee", "labels", "parent":
+	case "title", "description", "assignee", "labels":
 		return true
 	default:
 		return false
@@ -124,8 +134,6 @@ func (f *IssueForm) loadInputFromField() {
 		f.Input.SetValue(f.Assignee)
 	case "labels":
 		f.Input.SetValue(f.Labels)
-	case "parent":
-		f.Input.SetValue(f.Parent)
 	}
 	f.Input.CursorEnd()
 }
@@ -145,8 +153,6 @@ func (f *IssueForm) saveInputToField() {
 		f.Assignee = v
 	case "labels":
 		f.Labels = v
-	case "parent":
-		f.Parent = v
 	}
 }
 
@@ -194,6 +200,18 @@ func (f *IssueForm) cycleEnum(delta int) {
 			idx = 0
 		}
 		f.IssueType = issueTypes[idx]
+	case "parent":
+		if len(f.ParentOpts) == 0 {
+			return
+		}
+		f.ParentIndex += delta
+		if f.ParentIndex < 0 {
+			f.ParentIndex = len(f.ParentOpts) - 1
+		}
+		if f.ParentIndex >= len(f.ParentOpts) {
+			f.ParentIndex = 0
+		}
+		f.Parent = f.ParentOpts[f.ParentIndex].ID
 	}
 }
 
@@ -209,6 +227,139 @@ func (f *IssueForm) Validate() error {
 		return fmt.Errorf("issue type is required")
 	}
 	return nil
+}
+
+func buildParentOptions(issues []Issue, selfID string, selectedParent string) ([]ParentOption, int) {
+	opts := []ParentOption{{ID: "", Title: "(none)", IssueType: "none", Priority: 0}}
+
+	for _, issue := range issues {
+		if issue.ID == "" || issue.ID == selfID {
+			continue
+		}
+		if issue.Status == StatusClosed {
+			continue
+		}
+		opts = append(opts, ParentOption{
+			ID:        issue.ID,
+			Title:     issue.Title,
+			IssueType: issue.IssueType,
+			Priority:  issue.Priority,
+		})
+	}
+
+	sort.SliceStable(opts[1:], func(i, j int) bool {
+		left := opts[i+1]
+		right := opts[j+1]
+		lr := issueTypeRank(left.IssueType)
+		rr := issueTypeRank(right.IssueType)
+		if lr != rr {
+			return lr < rr
+		}
+		if left.Priority != right.Priority {
+			return left.Priority < right.Priority
+		}
+		if left.ID != right.ID {
+			return left.ID < right.ID
+		}
+		return left.Title < right.Title
+	})
+
+	idx := 0
+	for i, opt := range opts {
+		if opt.ID != "" && strings.EqualFold(opt.ID, selectedParent) {
+			idx = i
+			break
+		}
+	}
+	return opts, idx
+}
+
+func issueTypeRank(t string) int {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "epic":
+		return 0
+	case "feature":
+		return 1
+	case "task":
+		return 2
+	case "bug":
+		return 3
+	case "chore":
+		return 4
+	case "decision":
+		return 5
+	default:
+		return 99
+	}
+}
+
+func (f *IssueForm) currentParentOption() ParentOption {
+	if len(f.ParentOpts) == 0 {
+		return ParentOption{ID: f.Parent}
+	}
+	if f.ParentIndex >= 0 && f.ParentIndex < len(f.ParentOpts) {
+		opt := f.ParentOpts[f.ParentIndex]
+		if strings.EqualFold(opt.ID, f.Parent) {
+			return opt
+		}
+	}
+	for i, opt := range f.ParentOpts {
+		if strings.EqualFold(opt.ID, f.Parent) {
+			f.ParentIndex = i
+			return opt
+		}
+	}
+	return ParentOption{ID: f.Parent}
+}
+
+func (f *IssueForm) parentDisplay() string {
+	opt := f.currentParentOption()
+	if strings.TrimSpace(opt.ID) == "" {
+		return "-"
+	}
+	title := strings.TrimSpace(opt.Title)
+	if title == "" {
+		return opt.ID
+	}
+	return fmt.Sprintf("%s (%s, P%d)", opt.ID, opt.IssueType, opt.Priority)
+}
+
+func (f *IssueForm) parentHints(limit int) []string {
+	if len(f.ParentOpts) == 0 {
+		return []string{"(none)"}
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+
+	center := f.ParentIndex
+	if center < 0 || center >= len(f.ParentOpts) {
+		center = 0
+	}
+
+	start := center - (limit / 2)
+	if start < 0 {
+		start = 0
+	}
+	end := start + limit
+	if end > len(f.ParentOpts) {
+		end = len(f.ParentOpts)
+		start = max(0, end-limit)
+	}
+
+	out := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		opt := f.ParentOpts[i]
+		label := "(none)"
+		if opt.ID != "" {
+			label = opt.ID
+		}
+		if i == center {
+			label = "[" + label + "]"
+		}
+		out = append(out, label)
+	}
+	return out
 }
 
 func newFilterForm(base Filter) *FilterForm {

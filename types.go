@@ -109,8 +109,17 @@ type IssueForm struct {
 	Assignee    string
 	Labels      string
 	Parent      string
+	ParentIndex int
+	ParentOpts  []ParentOption
 
 	Input textinput.Model
+}
+
+type ParentOption struct {
+	ID        string
+	Title     string
+	IssueType string
+	Priority  int
 }
 
 type FilterForm struct {

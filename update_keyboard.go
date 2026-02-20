@@ -322,7 +322,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.loadCmd("manual")
 	case "n":
-		m.form = newIssueFormCreate()
+		m.form = newIssueFormCreate(m.issues)
 		m.mode = ModeCreate
 		return m, nil
 	case "e":
@@ -332,7 +332,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		clone := *issue
-		m.form = newIssueFormEdit(&clone)
+		m.form = newIssueFormEdit(&clone, m.issues)
 		m.mode = ModeEdit
 		return m, nil
 	case "a":
@@ -479,6 +479,23 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 			if err != nil {
 				return opMsg{err: err}
 			}
+
+			status := form.Status
+			if status == "" {
+				status = StatusOpen
+			}
+			if status != StatusOpen {
+				if strings.TrimSpace(id) == "" {
+					return opMsg{err: fmt.Errorf("created issue id is empty, cannot set status to %s", status)}
+				}
+				if err := m.client.UpdateIssue(UpdateParams{
+					ID:     id,
+					Status: &status,
+				}); err != nil {
+					return opMsg{err: err}
+				}
+			}
+
 			if id == "" {
 				return opMsg{info: "задача создана"}
 			}

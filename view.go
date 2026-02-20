@@ -336,10 +336,7 @@ func (m model) renderFormModal() string {
 			}
 			return m.form.Labels
 		case "parent":
-			if field == "parent" {
-				return m.form.Input.Value()
-			}
-			return m.form.Parent
+			return m.form.parentDisplay()
 		}
 		return ""
 	}
@@ -397,6 +394,8 @@ func (m model) renderFormModal() string {
 				fmt.Sprintf("%d", m.form.Priority),
 				m.styles.Selected,
 			)
+		case "parent":
+			enumValues = "values: " + strings.Join(m.form.parentHints(7), " | ")
 		}
 		lines = append(lines, "", "use ↑/↓ to cycle enum", enumValues)
 	}
