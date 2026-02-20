@@ -244,6 +244,7 @@ func buildParentOptions(issues []Issue, selfID string, selectedParent string) ([
 			Title:     issue.Title,
 			IssueType: issue.IssueType,
 			Priority:  issue.Priority,
+			Display:   issue.Display,
 		})
 	}
 
@@ -317,11 +318,12 @@ func (f *IssueForm) parentDisplay() string {
 	if strings.TrimSpace(opt.ID) == "" {
 		return "-"
 	}
+	meta := fmt.Sprintf("[%s P%d]", opt.IssueType, opt.Priority)
 	title := strings.TrimSpace(opt.Title)
 	if title == "" {
-		return opt.ID
+		return fmt.Sprintf("%s %s", opt.ID, meta)
 	}
-	return fmt.Sprintf("%s (%s, P%d)", opt.ID, opt.IssueType, opt.Priority)
+	return fmt.Sprintf("%s %s %s", opt.ID, title, meta)
 }
 
 func (f *IssueForm) parentHints(limit int) []string {

@@ -121,6 +121,7 @@ type ParentOption struct {
 	Title     string
 	IssueType string
 	Priority  int
+	Display   Status
 }
 
 type ParentPickerState struct {

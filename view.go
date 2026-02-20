@@ -350,8 +350,17 @@ func (m model) renderFormModal() string {
 		return ""
 	}
 
+	showParentSide := field == "parent" && len(m.form.ParentOpts) > 0
+	modalContentWidth := max(40, min(170, m.width-14))
+	leftPaneWidth := modalContentWidth
+	rightPaneWidth := 0
+	if showParentSide {
+		rightPaneWidth = max(36, min(56, (modalContentWidth*40)/100))
+		leftPaneWidth = max(36, modalContentWidth-rightPaneWidth-2)
+	}
+
 	lines := []string{title, ""}
-	maxLineWidth := max(24, min(120, m.width-14))
+	maxLineWidth := leftPaneWidth
 	for _, f := range m.form.fields() {
 		prefix := fmt.Sprintf("%s %s: ", mark(f), f)
 		rawValue := defaultString(valueFor(f), "-")
@@ -410,7 +419,13 @@ func (m model) renderFormModal() string {
 	}
 
 	lines = append(lines, "", "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc cancel")
-	return strings.Join(lines, "\n")
+	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))
+	if !showParentSide {
+		return left
+	}
+
+	right := lipgloss.NewStyle().Width(rightPaneWidth).Render(m.renderParentOptionsSidebar(rightPaneWidth))
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
 func (m model) renderPromptModal() string {
@@ -654,6 +669,71 @@ func renderEnumValues(values []string, current string, style lipgloss.Style) str
 		out = append(out, v)
 	}
 	return strings.Join(out, " | ")
+}
+
+func (m model) renderParentOptionsSidebar(width int) string {
+	if m.form == nil || len(m.form.ParentOpts) == 0 {
+		return "Parent candidates\n\n(no options)"
+	}
+
+	lines := []string{
+		"Parent candidates",
+		"use ↑/↓ to select",
+		"",
+	}
+
+	total := len(m.form.ParentOpts)
+	center := m.form.ParentIndex
+	if center < 0 || center >= total {
+		center = 0
+	}
+
+	visible := min(9, total)
+	start := max(0, center-(visible/2))
+	end := min(total, start+visible)
+	if end-start < visible {
+		start = max(0, end-visible)
+	}
+
+	maxText := max(12, width-3)
+	for i := start; i < end; i++ {
+		opt := m.form.ParentOpts[i]
+		prefix := "  "
+		if i == center {
+			prefix = "▶ "
+		}
+
+		linePlain := ""
+		var line string
+		if opt.ID == "" {
+			linePlain = "(none)"
+			line = linePlain
+		} else {
+			statusText := string(opt.Display)
+			prioText := renderPriorityLabel(opt.Priority)
+			typeText := shortType(opt.IssueType)
+			idText := opt.ID
+			fixed := lipgloss.Width(statusText) + 1 + lipgloss.Width(prioText) + 1 + lipgloss.Width(typeText) + 1 + lipgloss.Width(idText) + 1
+			titleWidth := max(8, maxText-fixed)
+			titleText := truncate(opt.Title, titleWidth)
+
+			linePlain = fmt.Sprintf("%s %s %s %s %s", statusText, prioText, typeText, idText, titleText)
+
+			statusPart := statusHeaderStyle(opt.Display).Render(statusText)
+			typePart := issueTypeStyle(opt.IssueType).Render(typeText)
+			prioPart := priorityStyle(opt.Priority).Render(prioText)
+			idPart := lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(idText)
+			line = fmt.Sprintf("%s %s %s %s %s", statusPart, prioPart, typePart, idPart, titleText)
+		}
+
+		if i == center {
+			line = m.styles.Selected.Render(truncate(linePlain, maxText))
+		}
+		lines = append(lines, prefix+line)
+	}
+
+	lines = append(lines, "", fmt.Sprintf("%d/%d", center+1, total))
+	return strings.Join(lines, "\n")
 }
 
 func columnBorderColor(status Status, active bool) lipgloss.Color {
