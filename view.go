@@ -454,7 +454,7 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc cancel"
+	helpLine := "Tab/Shift+Tab | Ctrl+X open in $EDITOR | Enter save | Esc x2 cancel"
 	if m.form.Create {
 		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum | Ctrl+X open in $EDITOR | Enter save | Esc x2 cancel"
 	}
