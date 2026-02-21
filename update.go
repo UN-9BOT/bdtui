@@ -47,7 +47,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.applyLoadedIssues(msg.issues, msg.hash)
 		if msg.source != "tick" {
-			m.setToast("success", "данные обновлены")
+			m.setToast("success", "data refreshed")
 		}
 		return m, nil
 
@@ -69,6 +69,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(msg.info) != "" {
 			m.setToast("success", msg.info)
 		}
+		return m, nil
+
+	case tmuxMarkCleanupMsg:
+		if msg.token != m.tmuxMark.token {
+			return m, nil
+		}
+		if strings.TrimSpace(msg.paneID) == "" || msg.paneID != m.tmuxMark.paneID {
+			return m, nil
+		}
+		tmuxPlugin := m.plugins.Tmux()
+		if tmuxPlugin != nil && tmuxPlugin.Enabled() {
+			if err := tmuxPlugin.ClearMarkPane(msg.paneID); err != nil {
+				m.setToast("warning", "tmux mark cleanup failed: "+err.Error())
+				return m, nil
+			}
+		}
+		m.tmuxMark.paneID = ""
 		return m, nil
 
 	case depListMsg:
@@ -116,7 +133,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.form.Labels = strings.TrimSpace(msg.payload.Labels)
 		m.form.Parent = strings.TrimSpace(msg.payload.Parent)
 		m.form.loadInputFromField()
-		m.setToast("success", "поля обновлены из editor")
+		m.setToast("success", "fields updated from editor")
 		return m, nil
 
 	case tea.KeyMsg:

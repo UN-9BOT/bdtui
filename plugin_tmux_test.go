@@ -77,27 +77,27 @@ func TestTmuxPlugin_ListTargetsSortsCodexFirst(t *testing.T) {
 	}
 }
 
-func TestTmuxPlugin_SendIssueIDToBuffer(t *testing.T) {
+func TestTmuxPlugin_SendTextToBuffer(t *testing.T) {
 	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
-		"display-message\x1f-p\x1f-t\x1f%2\x1f#{pane_id}": {out: "%2"},
-		"set-buffer\x1f--\x1fbdtui-123":                   {out: ""},
-		"paste-buffer\x1f-t\x1f%2":                        {out: ""},
+		"display-message\x1f-p\x1f-t\x1f%2\x1f#{pane_id}":       {out: "%2"},
+		"set-buffer\x1f--\x1fskill $beads start task bdtui-123": {out: ""},
+		"paste-buffer\x1f-t\x1f%2":                              {out: ""},
 	}}
 
 	plugin := newTmuxPlugin(true, runner)
 	plugin.SetTarget(TmuxTarget{SessionName: "work", SessionID: "$2", PaneID: "%2"})
 
-	if err := plugin.SendIssueIDToBuffer("bdtui-123"); err != nil {
-		t.Fatalf("SendIssueIDToBuffer() error = %v", err)
+	if err := plugin.SendTextToBuffer("skill $beads start task bdtui-123"); err != nil {
+		t.Fatalf("SendTextToBuffer() error = %v", err)
 	}
 	if len(runner.calls) != 3 {
 		t.Fatalf("expected 3 calls, got %d", len(runner.calls))
 	}
 }
 
-func TestTmuxPlugin_SendIssueIDToBufferRequiresTarget(t *testing.T) {
+func TestTmuxPlugin_SendTextToBufferRequiresTarget(t *testing.T) {
 	plugin := newTmuxPlugin(true, &fakeTmuxRunner{})
-	err := plugin.SendIssueIDToBuffer("bdtui-123")
+	err := plugin.SendTextToBuffer("skill $beads start task bdtui-123")
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -111,5 +111,59 @@ func TestTmuxPlugin_ListTargetsDisabled(t *testing.T) {
 	_, err := plugin.ListTargets()
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled error, got %v", err)
+	}
+}
+
+func TestTmuxPlugin_MarkPane(t *testing.T) {
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"select-pane\x1f-m\x1f-t\x1f%7": {out: ""},
+	}}
+	plugin := newTmuxPlugin(true, runner)
+	if err := plugin.MarkPane("%7"); err != nil {
+		t.Fatalf("MarkPane() error = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(runner.calls))
+	}
+}
+
+func TestTmuxPlugin_IsPaneMarked(t *testing.T) {
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"display-message\x1f-p\x1f-t\x1f%7\x1f#{?pane_marked,1,0}": {out: "1"},
+	}}
+	plugin := newTmuxPlugin(true, runner)
+	marked, err := plugin.IsPaneMarked("%7")
+	if err != nil {
+		t.Fatalf("IsPaneMarked() error = %v", err)
+	}
+	if !marked {
+		t.Fatalf("expected pane to be marked")
+	}
+}
+
+func TestTmuxPlugin_ClearMarkPaneSkipsWhenNotMarked(t *testing.T) {
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"display-message\x1f-p\x1f-t\x1f%7\x1f#{?pane_marked,1,0}": {out: "0"},
+	}}
+	plugin := newTmuxPlugin(true, runner)
+	if err := plugin.ClearMarkPane("%7"); err != nil {
+		t.Fatalf("ClearMarkPane() error = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected only is-marked call, got %d", len(runner.calls))
+	}
+}
+
+func TestTmuxPlugin_ClearMarkPaneTogglesWhenMarked(t *testing.T) {
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"display-message\x1f-p\x1f-t\x1f%7\x1f#{?pane_marked,1,0}": {out: "1"},
+		"select-pane\x1f-M\x1f-t\x1f%7":                            {out: ""},
+	}}
+	plugin := newTmuxPlugin(true, runner)
+	if err := plugin.ClearMarkPane("%7"); err != nil {
+		t.Fatalf("ClearMarkPane() error = %v", err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(runner.calls))
 	}
 }

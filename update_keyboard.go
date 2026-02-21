@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
-		m.setToast("warning", "Ctrl+C отключен, используйте q")
+		m.setToast("warning", "Ctrl+C is disabled, use q")
 		return m, nil
 	}
 
@@ -56,7 +57,7 @@ func (m model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBoard
 		m.computeColumns()
 		m.normalizeSelectionBounds()
-		m.setToast("success", "поиск применен")
+		m.setToast("success", "search applied")
 		return m, nil
 	}
 
@@ -88,7 +89,7 @@ func (m model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.normalizeSelectionBounds()
 		m.mode = ModeBoard
 		m.filterForm = nil
-		m.setToast("success", "фильтры применены")
+		m.setToast("success", "filters applied")
 		return m, nil
 	case "tab":
 		m.filterForm.nextField()
@@ -134,8 +135,20 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch key {
-	case "esc", "enter", "ctrl+s":
-		// Esc intentionally saves as a safe default to avoid accidental data loss.
+	case "esc":
+		m.form.saveInputToField()
+		if m.mode == ModeCreate && strings.TrimSpace(m.form.Title) == "" {
+			m.mode = ModeBoard
+			m.form = nil
+			m.setToast("info", "creation canceled")
+			return m, nil
+		}
+		if err := m.form.Validate(); err != nil {
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		return m.submitForm()
+	case "enter", "ctrl+s":
 		if err := m.form.Validate(); err != nil {
 			m.setToast("error", err.Error())
 			return m, nil
@@ -234,7 +247,7 @@ func (m model) handleParentPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		if len(m.parentPicker.Options) == 0 {
-			m.setToast("warning", "нет доступных parent-кандидатов")
+			m.setToast("warning", "no parent candidates available")
 			m.parentPicker = nil
 			m.mode = ModeBoard
 			return m, nil
@@ -283,12 +296,16 @@ func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
 	case "esc", "q":
+		cleanupCmd := m.scheduleTmuxMarkCleanup(5 * time.Second)
 		m.tmuxPicker = nil
 		m.mode = ModeBoard
-		return m, nil
+		return m, cleanupCmd
 	case "j", "down":
 		if len(m.tmuxPicker.Targets) > 0 {
 			m.tmuxPicker.Index = (m.tmuxPicker.Index + 1) % len(m.tmuxPicker.Targets)
+		}
+		if err := m.markTmuxPickerSelection(); err != nil {
+			m.setToast("warning", err.Error())
 		}
 		return m, nil
 	case "k", "up":
@@ -298,35 +315,44 @@ func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.tmuxPicker.Index = len(m.tmuxPicker.Targets) - 1
 			}
 		}
+		if err := m.markTmuxPickerSelection(); err != nil {
+			m.setToast("warning", err.Error())
+		}
 		return m, nil
 	case "enter":
 		if len(m.tmuxPicker.Targets) == 0 {
+			cleanupCmd := m.scheduleTmuxMarkCleanup(5 * time.Second)
 			m.tmuxPicker = nil
 			m.mode = ModeBoard
-			m.setToast("warning", "нет tmux-целей")
-			return m, nil
+			m.setToast("warning", "no tmux targets")
+			return m, cleanupCmd
 		}
 
 		selected := m.tmuxPicker.Targets[m.tmuxPicker.Index]
 		issueID := strings.TrimSpace(m.tmuxPicker.IssueID)
+		cleanupCmd := m.scheduleTmuxMarkCleanup(5 * time.Second)
 		m.tmuxPicker = nil
 		m.mode = ModeBoard
 
 		tmuxPlugin := m.plugins.Tmux()
 		if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
 			m.setToast("warning", "tmux plugin disabled")
-			return m, nil
+			return m, cleanupCmd
 		}
 		tmuxPlugin.SetTarget(selected)
 
 		if issueID == "" {
-			m.setToast("success", "tmux target выбран: "+selected.Label())
-			return m, nil
+			m.setToast("success", "tmux target selected: "+selected.Label())
+			return m, cleanupCmd
 		}
+		payload := m.formatBeadsStartTaskCommand(issueID)
 
-		return m, pluginCmd("tmux buffer updated: "+issueID, func() error {
-			return tmuxPlugin.SendIssueIDToBuffer(issueID)
-		})
+		return m, tea.Batch(
+			cleanupCmd,
+			pluginCmd("tmux command pasted", func() error {
+				return tmuxPlugin.SendTextToBuffer(payload)
+			}),
+		)
 	}
 
 	return m, nil
@@ -357,7 +383,7 @@ func (m model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		mode := m.confirmDelete.Mode
 		m.confirmDelete = nil
 		m.mode = ModeBoard
-		return m, opCmd("задача удалена", func() error {
+		return m, opCmd("issue deleted", func() error {
 			return m.client.DeleteIssue(issueID, mode)
 		})
 	}
@@ -426,7 +452,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filter = Filter{Status: "any", Priority: "any"}
 		m.computeColumns()
 		m.normalizeSelectionBounds()
-		m.setToast("success", "поиск и фильтры очищены")
+		m.setToast("success", "search and filters cleared")
 		return m, nil
 	case "r":
 		return m, m.loadCmd("manual")
@@ -437,7 +463,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
 		clone := *issue
@@ -447,7 +473,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+x":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
 		clone := *issue
@@ -462,16 +488,16 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
-		m.prompt = newPrompt(ModePrompt, "Quick Assignee", "Введите assignee (пусто = unassign)", issue.ID, PromptAssignee, issue.Assignee)
+		m.prompt = newPrompt(ModePrompt, "Quick Assignee", "Enter assignee (empty = unassign)", issue.ID, PromptAssignee, issue.Assignee)
 		m.mode = ModePrompt
 		return m, nil
 	case "y":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
 		if err := copyToClipboard(issue.ID); err != nil {
@@ -485,16 +511,16 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "L":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
-		m.prompt = newPrompt(ModePrompt, "Quick Labels", "Введите labels через запятую", issue.ID, PromptLabels, strings.Join(issue.Labels, ", "))
+		m.prompt = newPrompt(ModePrompt, "Quick Labels", "Enter labels separated by commas", issue.ID, PromptLabels, strings.Join(issue.Labels, ", "))
 		m.mode = ModePrompt
 		return m, nil
 	case "p":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
 		id := issue.ID
@@ -506,7 +532,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
 		id := issue.ID
@@ -518,7 +544,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
 		id := issue.ID
@@ -529,10 +555,10 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		issue := m.currentIssue()
 		if issue == nil {
-			m.setToast("warning", "нет выбранной задачи")
+			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
-		m.setToast("warning", "получаю preview удаления...")
+		m.setToast("warning", "loading delete preview...")
 		return m, deletePreviewCmd(m.client, issue.ID)
 	case "g":
 		m.leader = true
@@ -546,17 +572,17 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 	issue := m.currentIssue()
 	if issue == nil {
-		m.setToast("warning", "нет выбранной задачи")
+		m.setToast("warning", "no issue selected")
 		return m, nil
 	}
 
 	switch key {
 	case "b":
-		m.prompt = newPrompt(ModePrompt, "Add Blocker", "Введите ID blocker issue", issue.ID, PromptDepAdd, "")
+		m.prompt = newPrompt(ModePrompt, "Add Blocker", "Enter blocker issue ID", issue.ID, PromptDepAdd, "")
 		m.mode = ModePrompt
 		return m, nil
 	case "B":
-		m.prompt = newPrompt(ModePrompt, "Remove Blocker", "Введите ID blocker issue для удаления", issue.ID, PromptDepRemove, "")
+		m.prompt = newPrompt(ModePrompt, "Remove Blocker", "Enter blocker issue ID to remove", issue.ID, PromptDepRemove, "")
 		m.mode = ModePrompt
 		return m, nil
 	case "p":
@@ -570,10 +596,10 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 			return m.client.UpdateIssue(UpdateParams{ID: id, Parent: &empty})
 		})
 	case "d":
-		m.setToast("info", "загружаю зависимости...")
+		m.setToast("info", "loading dependencies...")
 		return m, depListCmd(m.client, issue.ID)
 	default:
-		m.setToast("warning", "неизвестный leader combo")
+		m.setToast("warning", "unknown leader combo")
 		return m, nil
 	}
 }
@@ -623,9 +649,9 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 			}
 
 			if id == "" {
-				return opMsg{info: "задача создана"}
+				return opMsg{info: "issue created"}
 			}
-			return opMsg{info: "создана " + id}
+			return opMsg{info: "created " + id}
 		}
 	}
 
@@ -682,7 +708,7 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	}
 
 	if changed == 0 {
-		m.setToast("info", "изменений нет")
+		m.setToast("info", "no changes")
 		return m, nil
 	}
 
@@ -694,7 +720,7 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 	issue := m.currentIssue()
 	if issue == nil {
-		m.setToast("warning", "нет выбранной задачи")
+		m.setToast("warning", "no issue selected")
 		return m, nil
 	}
 
@@ -711,21 +737,98 @@ func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if len(targets) == 0 {
-			m.setToast("warning", "нет доступных tmux-целей")
+			m.setToast("warning", "no tmux targets available")
 			return m, nil
 		}
+		m.cancelTmuxMarkCleanup()
 		m.tmuxPicker = &TmuxPickerState{
 			IssueID: issue.ID,
 			Targets: targets,
 			Index:   0,
 		}
 		m.mode = ModeTmuxPicker
+		if err := m.markTmuxPickerSelection(); err != nil {
+			m.setToast("warning", err.Error())
+		}
 		return m, nil
 	}
 
-	return m, pluginCmd("tmux buffer updated: "+issue.ID, func() error {
-		return tmuxPlugin.SendIssueIDToBuffer(issue.ID)
+	payload := m.formatBeadsStartTaskCommand(issue.ID)
+	return m, pluginCmd("tmux command pasted", func() error {
+		return tmuxPlugin.SendTextToBuffer(payload)
 	})
+}
+
+func (m model) formatBeadsStartTaskCommand(issueID string) string {
+	id := strings.TrimSpace(issueID)
+	if id == "" {
+		return ""
+	}
+
+	base := fmt.Sprintf("skill $beads start task %s", id)
+	issue := m.byID[id]
+	if issue == nil {
+		return base
+	}
+
+	parentID := strings.TrimSpace(issue.Parent)
+	if parentID == "" {
+		return base
+	}
+	parent := m.byID[parentID]
+	if parent == nil {
+		return base
+	}
+	if strings.EqualFold(strings.TrimSpace(parent.IssueType), "epic") {
+		return fmt.Sprintf("%s (epic %s)", base, parent.ID)
+	}
+
+	return base
+}
+
+func (m *model) markTmuxPickerSelection() error {
+	if m.tmuxPicker == nil || len(m.tmuxPicker.Targets) == 0 {
+		return nil
+	}
+
+	tmuxPlugin := m.plugins.Tmux()
+	if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
+		return fmt.Errorf("tmux plugin disabled")
+	}
+
+	if m.tmuxPicker.Index < 0 {
+		m.tmuxPicker.Index = 0
+	}
+	if m.tmuxPicker.Index >= len(m.tmuxPicker.Targets) {
+		m.tmuxPicker.Index = len(m.tmuxPicker.Targets) - 1
+	}
+
+	targetPane := strings.TrimSpace(m.tmuxPicker.Targets[m.tmuxPicker.Index].PaneID)
+	if targetPane == "" {
+		return fmt.Errorf("tmux pane id is empty")
+	}
+
+	prevPane := strings.TrimSpace(m.tmuxMark.paneID)
+	if prevPane != "" && prevPane != targetPane {
+		if err := tmuxPlugin.ClearMarkPane(prevPane); err != nil {
+			return fmt.Errorf("clear previous mark failed: %w", err)
+		}
+	}
+
+	if prevPane == targetPane {
+		if marked, err := tmuxPlugin.IsPaneMarked(targetPane); err == nil && marked {
+			m.tmuxPicker.MarkedPaneID = targetPane
+			return nil
+		}
+	}
+
+	if err := tmuxPlugin.MarkPane(targetPane); err != nil {
+		return fmt.Errorf("mark pane failed: %w", err)
+	}
+
+	m.tmuxMark.paneID = targetPane
+	m.tmuxPicker.MarkedPaneID = targetPane
+	return nil
 }
 
 func (m model) submitPrompt(issueID string, action PromptAction, value string) tea.Cmd {

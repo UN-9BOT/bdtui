@@ -132,9 +132,12 @@ type ParentPickerState struct {
 }
 
 type TmuxPickerState struct {
-	IssueID string
-	Targets []TmuxTarget
-	Index   int
+	IssueID        string
+	Targets        []TmuxTarget
+	Index          int
+	MarkedPaneID   string
+	CleanupAt      time.Time
+	CleanupPending bool
 }
 
 type FilterForm struct {
@@ -193,6 +196,11 @@ type deletePreviewMsg struct {
 type pluginMsg struct {
 	info string
 	err  error
+}
+
+type tmuxMarkCleanupMsg struct {
+	paneID string
+	token  int
 }
 
 type tickMsg time.Time

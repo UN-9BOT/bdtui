@@ -214,8 +214,10 @@ func (m model) renderInspector() string {
 func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space expand info | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
-		if m.mode == ModeCreate || m.mode == ModeEdit {
-			left = "mode: " + string(m.mode) + " | Enter/Esc save"
+		if m.mode == ModeCreate {
+			left = "mode: create | Enter save | Esc close if title is empty"
+		} else if m.mode == ModeEdit {
+			left = "mode: edit | Enter/Esc save"
 		} else {
 			left = "mode: " + string(m.mode) + " | Esc cancel"
 		}
@@ -283,7 +285,7 @@ func (m model) renderSearchModal() string {
 	return strings.Join([]string{
 		"Search",
 		"",
-		"Ищет по id/title/description/assignee/labels",
+		"Searches by id/title/description/assignee/labels",
 		m.searchInput.View(),
 		"",
 		"Enter: apply | Esc: cancel",
@@ -452,7 +454,10 @@ func (m model) renderFormModal() string {
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
-	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter/Esc save"
+	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter save | Esc close if empty title"
+	if !m.form.Create {
+		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter/Esc save"
+	}
 	lines = append(lines, "", helpLine)
 	left := lipgloss.NewStyle().Width(leftPaneWidth).Render(strings.Join(lines, "\n"))
 	if !showParentSide {
@@ -485,13 +490,13 @@ func (m model) renderParentPickerModal() string {
 
 	total := len(m.parentPicker.Options)
 	if total == 0 {
-		return "Parent Picker\n\nНет доступных parent-кандидатов\n\nEsc close"
+		return "Parent Picker\n\nNo parent candidates available\n\nEsc close"
 	}
 
 	lines := []string{
 		statusHeaderStyle(StatusInProgress).Render("Parent Picker (g p)"),
 		"",
-		m.styles.Warning.Render("Выбор parent: ↑/↓ (или j/k), Enter применить, Esc отмена"),
+		m.styles.Warning.Render("Choose parent: ↑/↓ (or j/k), Enter apply, Esc cancel"),
 		"",
 	}
 
@@ -549,13 +554,14 @@ func (m model) renderTmuxPickerModal() string {
 
 	total := len(m.tmuxPicker.Targets)
 	if total == 0 {
-		return "Tmux Picker\n\nНет доступных tmux-целей\n\nEsc close"
+		return "Tmux Picker\n\nNo tmux targets available\n\nEsc close"
 	}
 
 	lines := []string{
 		statusHeaderStyle(StatusInProgress).Render("Tmux Target Picker (Y)"),
 		"",
-		m.styles.Warning.Render("Выбор target: ↑/↓ (или j/k), Enter выбрать, Esc отмена"),
+		m.styles.Warning.Render("Choose target: ↑/↓ (or j/k), Enter select, Esc cancel"),
+		m.styles.Dim.Render("current pane is marked in tmux, mark clears 5s after picker exit"),
 		"",
 	}
 
@@ -584,9 +590,28 @@ func (m model) renderTmuxPickerModal() string {
 		if target.HasClient {
 			clientMark = m.styles.Success.Render("A ")
 		}
+		markMark := "  "
+		if strings.TrimSpace(target.PaneID) != "" && target.PaneID == m.tmuxPicker.MarkedPaneID {
+			markMark = m.styles.Warning.Render("M ")
+		}
+		markFlag := "-"
+		if strings.TrimSpace(target.PaneID) != "" && target.PaneID == m.tmuxPicker.MarkedPaneID {
+			markFlag = "M"
+		}
+		codexFlag := "-"
+		if isLikelyCodexTarget(target) {
+			codexFlag = "C"
+		}
+		clientFlag := "-"
+		if target.HasClient {
+			clientFlag = "A"
+		}
 
 		linePlain := fmt.Sprintf(
-			"%s %s %s %s %s",
+			"[%s%s%s] %s %s %s %s %s",
+			markFlag,
+			codexFlag,
+			clientFlag,
 			defaultString(target.SessionName, "?"),
 			defaultString(target.PaneID, "?"),
 			defaultString(target.Command, "-"),
@@ -595,7 +620,8 @@ func (m model) renderTmuxPickerModal() string {
 		)
 
 		line := fmt.Sprintf(
-			"%s%s %s %s %s",
+			"%s%s%s %s %s %s",
+			markMark,
 			codexMark,
 			clientMark,
 			lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(defaultString(target.SessionName, "?")),
@@ -608,7 +634,7 @@ func (m model) renderTmuxPickerModal() string {
 		lines = append(lines, prefix+line)
 	}
 
-	legend := "C=codex-like, A=attached-client"
+	legend := "M=marked, C=codex-like, A=attached-client"
 	lines = append(lines, "", m.styles.Dim.Render(legend), m.styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
 	return strings.Join(lines, "\n")
 }

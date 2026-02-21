@@ -58,7 +58,11 @@ type model struct {
 	keymap Keymap
 	styles Styles
 
-	plugins PluginRegistry
+	plugins  PluginRegistry
+	tmuxMark struct {
+		paneID string
+		token  int
+	}
 
 	now time.Time
 }
@@ -505,6 +509,22 @@ func pluginCmd(info string, fn func() error) tea.Cmd {
 		err := fn()
 		return pluginMsg{info: info, err: err}
 	}
+}
+
+func (m *model) scheduleTmuxMarkCleanup(delay time.Duration) tea.Cmd {
+	paneID := strings.TrimSpace(m.tmuxMark.paneID)
+	if paneID == "" {
+		return nil
+	}
+	m.tmuxMark.token++
+	token := m.tmuxMark.token
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return tmuxMarkCleanupMsg{paneID: paneID, token: token}
+	})
+}
+
+func (m *model) cancelTmuxMarkCleanup() {
+	m.tmuxMark.token++
 }
 
 func depListCmd(c *BdClient, issueID string) tea.Cmd {

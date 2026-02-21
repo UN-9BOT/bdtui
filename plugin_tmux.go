@@ -125,7 +125,7 @@ func (p *TmuxPlugin) ListTargets() ([]TmuxTarget, error) {
 	return targets, nil
 }
 
-func (p *TmuxPlugin) SendIssueIDToBuffer(issueID string) error {
+func (p *TmuxPlugin) SendTextToBuffer(text string) error {
 	if !p.Enabled() {
 		return errors.New("tmux plugin disabled")
 	}
@@ -133,22 +133,72 @@ func (p *TmuxPlugin) SendIssueIDToBuffer(issueID string) error {
 		return errors.New("tmux target is not selected")
 	}
 
-	id := strings.TrimSpace(issueID)
-	if id == "" {
-		return errors.New("empty issue id")
+	payload := strings.TrimSpace(text)
+	if payload == "" {
+		return errors.New("empty payload")
 	}
 
 	if _, err := p.runner.Run("display-message", "-p", "-t", p.target.PaneID, "#{pane_id}"); err != nil {
 		return fmt.Errorf("tmux target is unavailable: %w", err)
 	}
 
-	if _, err := p.runner.Run("set-buffer", "--", id); err != nil {
+	if _, err := p.runner.Run("set-buffer", "--", payload); err != nil {
 		return err
 	}
 	if _, err := p.runner.Run("paste-buffer", "-t", p.target.PaneID); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (p *TmuxPlugin) SendIssueIDToBuffer(issueID string) error {
+	return p.SendTextToBuffer(issueID)
+}
+
+func (p *TmuxPlugin) MarkPane(paneID string) error {
+	if !p.Enabled() {
+		return errors.New("tmux plugin disabled")
+	}
+	target := strings.TrimSpace(paneID)
+	if target == "" {
+		return errors.New("empty pane id")
+	}
+	_, err := p.runner.Run("select-pane", "-m", "-t", target)
+	return err
+}
+
+func (p *TmuxPlugin) IsPaneMarked(paneID string) (bool, error) {
+	if !p.Enabled() {
+		return false, errors.New("tmux plugin disabled")
+	}
+	target := strings.TrimSpace(paneID)
+	if target == "" {
+		return false, errors.New("empty pane id")
+	}
+	out, err := p.runner.Run("display-message", "-p", "-t", target, "#{?pane_marked,1,0}")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "1", nil
+}
+
+func (p *TmuxPlugin) ClearMarkPane(paneID string) error {
+	if !p.Enabled() {
+		return errors.New("tmux plugin disabled")
+	}
+	target := strings.TrimSpace(paneID)
+	if target == "" {
+		return errors.New("empty pane id")
+	}
+	marked, err := p.IsPaneMarked(target)
+	if err != nil {
+		return err
+	}
+	if !marked {
+		return nil
+	}
+	_, err = p.runner.Run("select-pane", "-M", "-t", target)
+	return err
 }
 
 func parseTmuxClientSessions(raw string) map[string]bool {

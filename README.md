@@ -1,11 +1,11 @@
 # bdtui
 
-Go/Bubble Tea версия `bdui` с фокусом на:
-- только Kanban
-- управление задачами только hotkeys (без `:`/cmd bar)
-- полный task management через `bd CLI` (CRUD + deps)
+A Go/Bubble Tea TUI inspired by `bdui`, focused on:
+- Kanban-only workflow
+- keyboard-first issue management (no `:` command bar)
+- full task management via `bd` CLI (CRUD + dependencies)
 
-## Запуск
+## Run
 
 ```bash
 cd ../bdtui
@@ -13,66 +13,70 @@ go build ./...
 ./bdtui
 ```
 
-Опции:
+Options:
 - `--beads-dir /abs/path/to/.beads`
 - `--no-watch`
-- `--plugins tmux,-foo` (вкл/выкл plugins, по умолчанию `tmux` включен)
+- `--plugins tmux,-foo` (enable/disable plugins, `tmux` is enabled by default)
 
-## Горячие клавиши
+## Hotkeys
 
-### Навигация
-- `j/k` или `↑/↓` - выбор задачи в колонке
-- `h/l` или `←/→` - смена колонки
-- `0` / `G` - первая / последняя задача
-- `Enter` / `Space` - расширить нижний инфо-блок по выбранной задаче
+### Navigation
+- `j/k` or `↑/↓` - select issue in current column
+- `h/l` or `←/→` - switch column
+- `0` / `G` - first / last issue in column
+- `Enter` / `Space` - toggle details panel for selected issue
 
-### Задачи
+### Issue Actions
 - `n` - create issue
 - `e` - edit selected issue
-- `Ctrl+X` (на board) - открыть выбранную задачу в `$EDITOR`, затем вернуться в `Edit Issue`
-- `Ctrl+X` (в форме) - открыть поля в `$EDITOR` как Markdown с YAML frontmatter (`--- ... ---`)
+- `Ctrl+X` (board) - open selected issue in `$EDITOR`, then return to `Edit Issue`
+- `Ctrl+X` (form) - open form fields in `$EDITOR` as Markdown with YAML frontmatter (`--- ... ---`)
 - `d` - delete (preview + confirm)
 - `x` - close/reopen
 - `p` - cycle priority
 - `s` - cycle status
 - `a` - quick assignee
 - `y` - copy selected issue id to clipboard
-- `Y` - вставить selected issue id в выбранный `tmux` pane (tmux plugin)
+- `Y` - paste `skill $beads start task ...` command for selected issue into chosen `tmux` pane (tmux plugin)
 - `Shift+L` - quick labels
 
-`parent` в форме Create/Edit выбирается интерактивно стрелками:
-- из кандидатов исключаются задачи со статусом `closed`
-- сортировка кандидатов: сначала по типу (`epic`, `feature`, `task`, ...), затем по приоритету
-- в режиме выбора `parent` справа показывается отдельный список кандидатов с `title` и цветными метками
+`parent` in Create/Edit is selected interactively:
+- closed issues are excluded from candidates
+- candidate sort order: issue type (`epic`, `feature`, `task`, ...) then priority
+- parent picker sidebar shows candidate `title` and colored metadata
 
-Поведение в `Create Issue`:
-- `↑/↓` переключают поля формы
-- `Tab/Shift+Tab` делают cycle enum-полей (`status`, `priority`, `type`, `parent`)
-- `Enter` и `Esc` одинаково сохраняют форму (защита от случайного `Esc`)
+`Create Issue` behavior:
+- `↑/↓` switch fields
+- `Tab/Shift+Tab` cycle enum fields (`status`, `priority`, `type`, `parent`)
+- `Enter` saves
+- `Esc` closes form when `title` is empty; otherwise saves
 
-### Поиск/фильтры
-- `/` - поиск
-- `f` - фильтры
-- `c` - сброс поиска и фильтров
+### Search / Filter
+- `/` - search
+- `f` - filters
+- `c` - clear search and filters
 
 ### Dependencies (`g` leader)
 - `g b` - add blocker
 - `g B` - remove blocker
-- `g p` - интерактивный parent picker (↑/↓, Enter)
+- `g p` - interactive parent picker (`↑/↓`, `Enter`)
 - `g P` - clear parent
 - `g d` - dependencies list
 
-### Прочее
+### Misc
 - `r` - refresh
 - `?` - help
 - `q` - quit
 
-## Примечания
+## Notes
 
-- Данные читаются и изменяются только через `bd` бинарь.
-- Колонка `blocked` рассчитывается автоматически для `open` задач с незакрытыми блокерами.
-- Watcher реализован polling-циклом (`bd list --json` + hash compare).
-- `Y` при первом вызове открывает picker tmux target (сессия/pane), затем вставляет ID в pane через `tmux set-buffer` + `tmux paste-buffer`.
-- В editor-режиме (`Ctrl+X`) используется YAML frontmatter:
-  - блок `--- ... ---` для полей (`title/status/priority/type/assignee/labels/parent`)
-  - текст после закрывающего `---` трактуется как `description` (можно многострочно)
+- Data is read and mutated only via `bd` binary.
+- `blocked` column is derived automatically for `open` issues with unresolved blockers.
+- Watcher is polling-based (`bd list --json` + hash compare).
+- On first `Y`, bdtui opens a tmux target picker and then pastes one of:
+  - `skill $beads start task <issue-id>`
+  - `skill $beads start task <issue-id> (epic <parent-id>)` when parent is an epic
+- In tmux picker, current cursor target is live-marked in tmux (`M`), and mark auto-clears 5 seconds after picker exit.
+- Editor mode (`Ctrl+X`) uses YAML frontmatter:
+  - `--- ... ---` for fields (`title/status/priority/type/assignee/labels/parent`)
+  - text after closing `---` is interpreted as multiline `description`
