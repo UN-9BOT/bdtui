@@ -472,10 +472,36 @@ func (m model) inspectorInnerWidth() int {
 }
 
 func (m model) inspectorInnerHeight() int {
-	if m.showDetails {
-		return 5
+	const (
+		collapsedInner = 3
+		maxPercentNum  = 2 // 2/5 = 40%
+		maxPercentDen  = 5
+		minOuter       = 5
+		minBoardInner  = 6
+		layoutChrome   = 4 // title + footer + board border
+	)
+	if !m.showDetails {
+		return collapsedInner
 	}
-	return 3
+
+	targetOuter := (m.height * maxPercentNum) / maxPercentDen
+	if targetOuter < minOuter {
+		targetOuter = minOuter
+	}
+
+	maxOuter := m.height - (layoutChrome + minBoardInner)
+	if maxOuter < minOuter {
+		maxOuter = minOuter
+	}
+	if targetOuter > maxOuter {
+		targetOuter = maxOuter
+	}
+
+	inner := targetOuter - 2 // inspector border
+	if inner < collapsedInner {
+		return collapsedInner
+	}
+	return inner
 }
 
 func (m model) detailsViewportHeight() int {
