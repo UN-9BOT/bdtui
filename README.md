@@ -64,6 +64,7 @@ Options:
 - `g p` - interactive parent picker (`↑/↓`, `Enter`)
 - `g P` - clear parent
 - `g d` - dependencies list
+- `g o` - toggle dashboard sort mode (`status_date_only` / `priority_then_status_date`)
 
 ### Misc
 - `r` - refresh
@@ -76,6 +77,9 @@ Options:
 - `blocked` column is derived automatically for `open` issues with unresolved blockers.
 - if an issue has parent(s) in other status columns, those parents are shown above it as dimmed ghost tree rows.
 - Watcher is polling-based (`bd list --json` + hash compare).
+- Dashboard sort mode is persisted in beads kv (`bdtui.sort_mode`):
+  - `status_date_only`: `updated_at` desc, then id
+  - `priority_then_status_date`: priority asc, then `updated_at` desc, then id
 - On first `Y`, bdtui opens a tmux target picker and then pastes one of:
   - `skill $beads start implement task <issue-id>`
   - `skill $beads start implement task <issue-id> (epic <parent-id>)` when parent is an epic

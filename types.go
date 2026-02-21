@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -57,6 +58,44 @@ type Filter struct {
 	Label    string
 	Status   string
 	Priority string
+}
+
+type SortMode string
+
+const (
+	SortModeStatusDateOnly         SortMode = "status_date_only"
+	SortModePriorityThenStatusDate SortMode = "priority_then_status_date"
+)
+
+func (m SortMode) Label() string {
+	switch m {
+	case SortModeStatusDateOnly:
+		return "status date"
+	case SortModePriorityThenStatusDate:
+		return "priority + status date"
+	default:
+		return string(SortModeStatusDateOnly)
+	}
+}
+
+func (m SortMode) Toggle() SortMode {
+	switch m {
+	case SortModePriorityThenStatusDate:
+		return SortModeStatusDateOnly
+	default:
+		return SortModePriorityThenStatusDate
+	}
+}
+
+func parseSortMode(raw string) (SortMode, bool) {
+	switch SortMode(strings.TrimSpace(strings.ToLower(raw))) {
+	case SortModeStatusDateOnly:
+		return SortModeStatusDateOnly, true
+	case SortModePriorityThenStatusDate:
+		return SortModePriorityThenStatusDate, true
+	default:
+		return "", false
+	}
 }
 
 func (f Filter) IsEmpty() bool {
@@ -205,3 +244,8 @@ type tmuxMarkCleanupMsg struct {
 }
 
 type tickMsg time.Time
+
+type sortModePersistMsg struct {
+	mode SortMode
+	err  error
+}

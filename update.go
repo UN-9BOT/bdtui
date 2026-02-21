@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -77,6 +78,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(msg.info) != "" {
 			m.setToast("success", msg.info)
 		}
+		return m, nil
+
+	case sortModePersistMsg:
+		if msg.err != nil {
+			m.setToast("warning", "sort mode changed but not saved: "+msg.err.Error())
+			return m, nil
+		}
+		m.setToast("success", fmt.Sprintf("sort mode: %s", msg.mode.Label()))
 		return m, nil
 
 	case tmuxMarkCleanupMsg:

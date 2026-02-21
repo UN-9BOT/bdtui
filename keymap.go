@@ -40,6 +40,7 @@ func defaultKeymap() Keymap {
 			"g p: set parent (interactive picker)",
 			"g P: clear parent",
 			"g d: show dependencies",
+			"g o: toggle sort mode",
 		},
 		Form: []string{
 			"Tab/Shift+Tab: next/previous field",

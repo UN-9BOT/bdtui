@@ -34,6 +34,7 @@ type model struct {
 	detailsIssueID string
 	helpScroll     int
 	helpQuery      string
+	sortMode       SortMode
 	mode           Mode
 	leader         bool
 
@@ -116,6 +117,7 @@ func newModel(cfg Config) (model, error) {
 
 		detailsScroll:  0,
 		detailsIssueID: "",
+		sortMode:       SortModeStatusDateOnly,
 
 		mode:        ModeBoard,
 		searchInput: sInput,
@@ -128,6 +130,10 @@ func newModel(cfg Config) (model, error) {
 		keymap:  defaultKeymap(),
 		styles:  newStyles(),
 		plugins: newPluginRegistry(cfg),
+	}
+
+	if mode, err := m.client.GetSortMode(); err == nil {
+		m.sortMode = mode
 	}
 
 	return m, nil
@@ -210,6 +216,7 @@ func (m *model) computeColumns() {
 	}
 
 	for _, status := range statusOrder {
+		sortIssuesByMode(next[status], m.sortMode)
 		ordered, depthMap := orderColumnAsTree(next[status])
 		next[status] = ordered
 		depths[status] = depthMap
@@ -660,4 +667,31 @@ func deletePreviewCmd(c *BdClient, issueID string) tea.Cmd {
 
 func buildTitle(m model) string {
 	return fmt.Sprintf("BDTUI | %s | .beads: %s", strings.ToUpper(string(m.mode)), m.beadsDir)
+}
+
+func sortIssuesByMode(items []Issue, mode SortMode) {
+	sort.SliceStable(items, func(i, j int) bool {
+		left := items[i]
+		right := items[j]
+
+		if mode == SortModePriorityThenStatusDate && left.Priority != right.Priority {
+			return left.Priority < right.Priority
+		}
+
+		if left.UpdatedAt != right.UpdatedAt {
+			return left.UpdatedAt > right.UpdatedAt
+		}
+		return left.ID < right.ID
+	})
+}
+
+func persistSortModeCmd(client *BdClient, mode SortMode) tea.Cmd {
+	if client == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		err := client.SetSortMode(mode)
+		return sortModePersistMsg{mode: mode, err: err}
+	}
 }

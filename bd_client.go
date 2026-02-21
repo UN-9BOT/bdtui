@@ -18,6 +18,8 @@ type BdClient struct {
 	RepoDir string
 }
 
+const sortModeKVKey = "bdtui.sort_mode"
+
 func NewBdClient(repoDir string) *BdClient {
 	return &BdClient{RepoDir: repoDir}
 }
@@ -297,6 +299,30 @@ func (c *BdClient) DepList(issueID string) (string, error) {
 
 func (c *BdClient) SetParent(id, parent string) error {
 	_, err := c.run("update", id, "--parent", parent)
+	return err
+}
+
+func (c *BdClient) GetSortMode() (SortMode, error) {
+	out, err := c.run("kv", "get", sortModeKVKey)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "(not set)") {
+			return SortModeStatusDateOnly, nil
+		}
+		return SortModeStatusDateOnly, err
+	}
+
+	mode, ok := parseSortMode(out)
+	if !ok {
+		return SortModeStatusDateOnly, nil
+	}
+	return mode, nil
+}
+
+func (c *BdClient) SetSortMode(mode SortMode) error {
+	if _, ok := parseSortMode(string(mode)); !ok {
+		mode = SortModeStatusDateOnly
+	}
+	_, err := c.run("kv", "set", sortModeKVKey, string(mode))
 	return err
 }
 

@@ -664,6 +664,18 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
+	if key == "o" {
+		m.sortMode = m.sortMode.Toggle()
+		m.computeColumns()
+		m.normalizeSelectionBounds()
+		cmd := persistSortModeCmd(m.client, m.sortMode)
+		if cmd == nil {
+			m.setToast("warning", "sort mode changed: "+m.sortMode.Label()+" (not persisted)")
+			return m, nil
+		}
+		return m, cmd
+	}
+
 	issue := m.currentIssue()
 	if issue == nil {
 		m.setToast("warning", "no issue selected")
