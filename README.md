@@ -36,7 +36,7 @@ Options:
 - `d` - delete (preview + confirm)
 - `x` - close/reopen
 - `p` - cycle priority
-- `s` - cycle status
+- `s` / `S` - cycle status forward / backward
 - `a` - quick assignee
 - `y` - copy selected issue id to clipboard
 - `Y` - paste `skill $beads start implement task ...` command for selected issue into chosen `tmux` pane (tmux plugin)
