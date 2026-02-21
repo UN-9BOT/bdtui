@@ -9,7 +9,7 @@ func TestFormatBeadsStartTaskCommand_NoParent(t *testing.T) {
 		},
 	}
 	got := m.formatBeadsStartTaskCommand("bdtui-pa0.1")
-	want := "skill $beads start task bdtui-pa0.1"
+	want := "skill $beads start implement task bdtui-pa0.1"
 	if got != want {
 		t.Fatalf("unexpected command\nwant: %q\ngot:  %q", want, got)
 	}
@@ -23,7 +23,7 @@ func TestFormatBeadsStartTaskCommand_WithEpicParent(t *testing.T) {
 		},
 	}
 	got := m.formatBeadsStartTaskCommand("bdtui-pa0.1")
-	want := "skill $beads start task bdtui-pa0.1 (epic bdtui-pa0)"
+	want := "skill $beads start implement task bdtui-pa0.1 (epic bdtui-pa0)"
 	if got != want {
 		t.Fatalf("unexpected command\nwant: %q\ngot:  %q", want, got)
 	}
@@ -37,7 +37,7 @@ func TestFormatBeadsStartTaskCommand_ParentNotEpic(t *testing.T) {
 		},
 	}
 	got := m.formatBeadsStartTaskCommand("bdtui-pa0.1")
-	want := "skill $beads start task bdtui-pa0.1"
+	want := "skill $beads start implement task bdtui-pa0.1"
 	if got != want {
 		t.Fatalf("unexpected command\nwant: %q\ngot:  %q", want, got)
 	}

@@ -17,6 +17,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case ModeHelp:
 		return m.handleHelpKey(msg)
+	case ModeDetails:
+		return m.handleDetailsKey(msg)
 	case ModeSearch:
 		return m.handleSearchKey(msg)
 	case ModeFilter:
@@ -42,6 +44,33 @@ func (m model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "?" || key == "esc" || key == "q" {
 		m.mode = ModeBoard
+	}
+	return m, nil
+}
+
+func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case "q":
+		return m, tea.Quit
+	case "esc", "enter", " ":
+		m.showDetails = false
+		m.mode = ModeBoard
+		m.detailsScroll = 0
+		m.detailsIssueID = ""
+		return m, nil
+	case "j", "down":
+		issue := m.currentIssue()
+		maxOffset := m.detailsMaxScroll(issue)
+		if m.detailsScroll < maxOffset {
+			m.detailsScroll++
+		}
+		return m, nil
+	case "k", "up":
+		if m.detailsScroll > 0 {
+			m.detailsScroll--
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -434,7 +463,15 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter", " ":
-		m.showDetails = !m.showDetails
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		m.showDetails = true
+		m.mode = ModeDetails
+		m.detailsScroll = 0
+		m.detailsIssueID = issue.ID
 		return m, nil
 	case "/":
 		m.searchInput.SetValue(m.searchQuery)
@@ -458,6 +495,15 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadCmd("manual")
 	case "n":
 		m.form = newIssueFormCreate(m.issues)
+		m.mode = ModeCreate
+		return m, nil
+	case "N":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		m.form = newIssueFormCreateWithParent(m.issues, issue.ID)
 		m.mode = ModeCreate
 		return m, nil
 	case "e":
@@ -765,7 +811,7 @@ func (m model) formatBeadsStartTaskCommand(issueID string) string {
 		return ""
 	}
 
-	base := fmt.Sprintf("skill $beads start task %s", id)
+	base := fmt.Sprintf("skill $beads start implement task %s", id)
 	issue := m.byID[id]
 	if issue == nil {
 		return base

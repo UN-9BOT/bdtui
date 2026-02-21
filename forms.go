@@ -11,12 +11,16 @@ import (
 var issueTypes = []string{"task", "epic", "bug", "feature", "chore", "decision"}
 
 func newIssueFormCreate(issues []Issue) *IssueForm {
+	return newIssueFormCreateWithParent(issues, "")
+}
+
+func newIssueFormCreateWithParent(issues []Issue, selectedParent string) *IssueForm {
 	in := textinput.New()
 	in.Prompt = "> "
 	in.CharLimit = 500
 	in.Focus()
 
-	parentOpts, parentIdx := buildParentOptions(issues, "", "")
+	parentOpts, parentIdx := buildParentOptions(issues, "", selectedParent)
 
 	f := &IssueForm{
 		Create:      true,

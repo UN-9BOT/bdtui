@@ -143,7 +143,7 @@ func (m model) renderInspector() string {
 	}
 
 	w := max(20, m.width-4)
-	inner := max(4, w-4)
+	inner := m.inspectorInnerWidth()
 	innerHeight := m.inspectorInnerHeight()
 
 	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
@@ -192,13 +192,26 @@ func (m model) renderInspector() string {
 	}
 
 	if m.showDetails {
-		lines = append(lines,
-			truncate(
-				"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
-				inner,
-			),
-		)
-		lines = append(lines, truncate("Description: "+defaultString(issue.Description, "-"), inner))
+		details := detailLines(issue, inner)
+		height := m.detailsViewportHeight()
+		if height > 0 && len(details) > 0 {
+			maxOffset := len(details) - height
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			start := m.detailsScroll
+			if start < 0 {
+				start = 0
+			}
+			if start > maxOffset {
+				start = maxOffset
+			}
+			end := start + height
+			if end > len(details) {
+				end = len(details)
+			}
+			lines = append(lines, details[start:end]...)
+		}
 	}
 
 	for len(lines) < innerHeight {
@@ -211,10 +224,42 @@ func (m model) renderInspector() string {
 	return m.styles.Border.Width(w).Render(strings.Join(lines, "\n"))
 }
 
+func detailLines(issue *Issue, inner int) []string {
+	if issue == nil || inner <= 0 {
+		return nil
+	}
+
+	meta := truncate(
+		"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
+		inner,
+	)
+
+	lines := []string{meta}
+	prefix := "Description: "
+	available := inner - len(prefix)
+	if available < 1 {
+		available = 1
+	}
+
+	descRaw := defaultString(issue.Description, "-")
+	descLines := wrapPlainText(descRaw, available)
+	if len(descLines) == 0 {
+		descLines = []string{"-"}
+	}
+	lines = append(lines, prefix+descLines[0])
+	indent := strings.Repeat(" ", len(prefix))
+	for _, line := range descLines[1:] {
+		lines = append(lines, indent+line)
+	}
+	return lines
+}
+
 func (m model) renderFooter() string {
-	left := "j/k move | h/l col | Enter/Space expand info | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
+	left := "j/k move | h/l col | Enter/Space focus details | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
-		if m.mode == ModeCreate {
+		if m.mode == ModeDetails {
+			left = "mode: details | j/k scroll | Esc close"
+		} else if m.mode == ModeCreate {
 			left = "mode: create | Enter save | Esc close if title is empty"
 		} else if m.mode == ModeEdit {
 			left = "mode: edit | Enter/Esc save"

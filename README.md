@@ -24,10 +24,12 @@ Options:
 - `j/k` or `↑/↓` - select issue in current column
 - `h/l` or `←/→` - switch column
 - `0` / `G` - first / last issue in column
-- `Enter` / `Space` - toggle details panel for selected issue
+- `Enter` / `Space` - focus details panel for selected issue
+- details mode: `j/k` or `↑/↓` scroll, `Esc` close
 
 ### Issue Actions
 - `n` - create issue
+- `N` - create issue with `parent` prefilled from selected issue
 - `e` - edit selected issue
 - `Ctrl+X` (board) - open selected issue in `$EDITOR`, then return to `Edit Issue`
 - `Ctrl+X` (form) - open form fields in `$EDITOR` as Markdown with YAML frontmatter (`--- ... ---`)
@@ -37,7 +39,7 @@ Options:
 - `s` - cycle status
 - `a` - quick assignee
 - `y` - copy selected issue id to clipboard
-- `Y` - paste `skill $beads start task ...` command for selected issue into chosen `tmux` pane (tmux plugin)
+- `Y` - paste `skill $beads start implement task ...` command for selected issue into chosen `tmux` pane (tmux plugin)
 - `Shift+L` - quick labels
 
 `parent` in Create/Edit is selected interactively:
@@ -74,8 +76,8 @@ Options:
 - `blocked` column is derived automatically for `open` issues with unresolved blockers.
 - Watcher is polling-based (`bd list --json` + hash compare).
 - On first `Y`, bdtui opens a tmux target picker and then pastes one of:
-  - `skill $beads start task <issue-id>`
-  - `skill $beads start task <issue-id> (epic <parent-id>)` when parent is an epic
+  - `skill $beads start implement task <issue-id>`
+  - `skill $beads start implement task <issue-id> (epic <parent-id>)` when parent is an epic
 - In tmux picker, current cursor target is live-marked in tmux (`M`), and mark auto-clears 5 seconds after picker exit.
 - Editor mode (`Ctrl+X`) uses YAML frontmatter:
   - `--- ... ---` for fields (`title/status/priority/type/assignee/labels/parent`)

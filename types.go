@@ -67,6 +67,7 @@ type Mode string
 
 const (
 	ModeBoard         Mode = "board"
+	ModeDetails       Mode = "details"
 	ModeHelp          Mode = "help"
 	ModeSearch        Mode = "search"
 	ModeFilter        Mode = "filter"

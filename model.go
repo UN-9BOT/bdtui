@@ -29,9 +29,11 @@ type model struct {
 	selectedIdx  map[Status]int
 	scrollOffset map[Status]int
 
-	showDetails bool
-	mode        Mode
-	leader      bool
+	showDetails    bool
+	detailsScroll  int
+	detailsIssueID string
+	mode           Mode
+	leader         bool
 
 	searchQuery string
 	searchInput textinput.Model
@@ -110,6 +112,9 @@ func newModel(cfg Config) (model, error) {
 			StatusClosed:     0,
 		},
 
+		detailsScroll:  0,
+		detailsIssueID: "",
+
 		mode:        ModeBoard,
 		searchInput: sInput,
 		filter: Filter{
@@ -174,6 +179,7 @@ func (m *model) applyLoadedIssues(issues []Issue, hash string) {
 		m.selectIssueByID(selectedID)
 	}
 
+	m.clampDetailsScroll()
 	m.loading = false
 }
 
@@ -459,6 +465,11 @@ func (m model) boardInnerHeight() int {
 	return h
 }
 
+func (m model) inspectorInnerWidth() int {
+	w := max(20, m.width-4)
+	return max(4, w-4)
+}
+
 func (m model) inspectorInnerHeight() int {
 	if m.showDetails {
 		return 5
@@ -466,8 +477,61 @@ func (m model) inspectorInnerHeight() int {
 	return 3
 }
 
+func (m model) detailsViewportHeight() int {
+	if !m.showDetails {
+		return 0
+	}
+	h := m.inspectorInnerHeight() - 3
+	if h < 0 {
+		return 0
+	}
+	return h
+}
+
 func (m model) inspectorOuterHeight() int {
 	return m.inspectorInnerHeight() + 2
+}
+
+func (m model) detailsMaxScroll(issue *Issue) int {
+	if issue == nil {
+		return 0
+	}
+	height := m.detailsViewportHeight()
+	if height <= 0 {
+		return 0
+	}
+	lines := detailLines(issue, m.inspectorInnerWidth())
+	maxOffset := len(lines) - height
+	if maxOffset < 0 {
+		return 0
+	}
+	return maxOffset
+}
+
+func (m *model) clampDetailsScroll() {
+	if !m.showDetails {
+		m.detailsScroll = 0
+		m.detailsIssueID = ""
+		return
+	}
+	issue := m.currentIssue()
+	if issue == nil {
+		m.detailsScroll = 0
+		m.detailsIssueID = ""
+		return
+	}
+	if m.detailsIssueID != issue.ID {
+		m.detailsIssueID = issue.ID
+		m.detailsScroll = 0
+		return
+	}
+	maxOffset := m.detailsMaxScroll(issue)
+	if m.detailsScroll > maxOffset {
+		m.detailsScroll = maxOffset
+	}
+	if m.detailsScroll < 0 {
+		m.detailsScroll = 0
+	}
 }
 
 func (m *model) ensureSelectionVisible(status Status) {

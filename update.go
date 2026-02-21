@@ -15,6 +15,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, st := range statusOrder {
 			m.ensureSelectionVisible(st)
 		}
+		m.clampDetailsScroll()
 		return m, nil
 
 	case tickMsg:
