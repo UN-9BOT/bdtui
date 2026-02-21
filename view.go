@@ -436,6 +436,43 @@ func (m model) renderModal() string {
 }
 
 func (m model) renderHelpModal() string {
+	content := m.helpContentLines()
+	viewport := m.helpViewportContentLines()
+	if viewport < 1 {
+		viewport = 1
+	}
+
+	maxOffset := m.helpMaxScroll()
+	offset := m.helpScroll
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	end := offset + viewport
+	if end > len(content) {
+		end = len(content)
+	}
+	if end < offset {
+		end = offset
+	}
+
+	lines := make([]string, 0, viewport+2)
+	lines = append(lines, content[offset:end]...)
+	for len(lines) < viewport {
+		lines = append(lines, "")
+	}
+	if maxOffset > 0 {
+		lines = append(lines, "", fmt.Sprintf("j/k scroll (%d/%d) | ?/Esc close", offset+1, maxOffset+1))
+	} else {
+		lines = append(lines, "", "Press ? or Esc to close")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m model) helpContentLines() []string {
 	lines := []string{"Hotkeys"}
 	lines = append(lines, "")
 	lines = append(lines, "Global:")
@@ -446,8 +483,27 @@ func (m model) renderHelpModal() string {
 	lines = append(lines, "")
 	lines = append(lines, "Forms:")
 	lines = append(lines, m.keymap.Form...)
-	lines = append(lines, "", "Press ? or Esc to close")
-	return strings.Join(lines, "\n")
+	return lines
+}
+
+func (m model) helpViewportContentLines() int {
+	// HelpBox has top/bottom border + padding = 4 lines. Keep 2 lines for footer/hints.
+	available := m.height - 6
+	content := available - 2
+	if content < 1 {
+		return 1
+	}
+	return content
+}
+
+func (m model) helpMaxScroll() int {
+	contentLen := len(m.helpContentLines())
+	viewport := m.helpViewportContentLines()
+	maxOffset := contentLen - viewport
+	if maxOffset < 0 {
+		return 0
+	}
+	return maxOffset
 }
 
 func (m model) renderSearchModal() string {

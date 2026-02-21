@@ -42,9 +42,24 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key == "?" || key == "esc" || key == "q" {
+	switch key {
+	case "?", "esc", "q":
 		m.mode = ModeBoard
+		m.helpScroll = 0
+		return m, nil
+	case "j", "down":
+		maxOffset := m.helpMaxScroll()
+		if m.helpScroll < maxOffset {
+			m.helpScroll++
+		}
+		return m, nil
+	case "k", "up":
+		if m.helpScroll > 0 {
+			m.helpScroll--
+		}
+		return m, nil
 	}
+
 	return m, nil
 }
 
@@ -427,6 +442,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if key == "?" {
+		m.helpScroll = 0
 		m.mode = ModeHelp
 		return m, nil
 	}

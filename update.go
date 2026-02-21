@@ -16,6 +16,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureSelectionVisible(st)
 		}
 		m.clampDetailsScroll()
+		if m.helpScroll < 0 {
+			m.helpScroll = 0
+		}
+		maxHelpOffset := m.helpMaxScroll()
+		if m.helpScroll > maxHelpOffset {
+			m.helpScroll = maxHelpOffset
+		}
 		return m, nil
 
 	case tickMsg:

@@ -32,6 +32,7 @@ type model struct {
 	showDetails    bool
 	detailsScroll  int
 	detailsIssueID string
+	helpScroll     int
 	mode           Mode
 	leader         bool
 
