@@ -620,6 +620,18 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			p := next
 			return m.client.UpdateIssue(UpdateParams{ID: id, Priority: &p})
 		})
+	case "P":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		id := issue.ID
+		next := cyclePriorityBackward(issue.Priority)
+		return m, opCmd(fmt.Sprintf("%s: priority -> P%d", id, next), func() error {
+			p := next
+			return m.client.UpdateIssue(UpdateParams{ID: id, Priority: &p})
+		})
 	case "s":
 		issue := m.currentIssue()
 		if issue == nil {

@@ -23,7 +23,7 @@ func defaultKeymap() Keymap {
 			"Ctrl+X: open selected issue in $EDITOR and return to Edit",
 			"d: delete issue",
 			"x: close/reopen",
-			"p: cycle priority",
+			"p/P: cycle priority forward/back",
 			"s/S: cycle status forward/back",
 			"a: quick assignee",
 			"y: copy selected issue id",

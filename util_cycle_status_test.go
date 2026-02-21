@@ -51,3 +51,39 @@ func TestCycleStatusBackward(t *testing.T) {
 		})
 	}
 }
+
+func TestCyclePriorityForwardAndBackward(t *testing.T) {
+	t.Parallel()
+
+	forwardCases := []struct {
+		in   int
+		want int
+	}{
+		{in: 0, want: 1},
+		{in: 1, want: 2},
+		{in: 2, want: 3},
+		{in: 3, want: 4},
+		{in: 4, want: 0},
+	}
+	for _, tc := range forwardCases {
+		if got := cyclePriority(tc.in); got != tc.want {
+			t.Fatalf("cyclePriority(%d): got %d, want %d", tc.in, got, tc.want)
+		}
+	}
+
+	backwardCases := []struct {
+		in   int
+		want int
+	}{
+		{in: 0, want: 4},
+		{in: 1, want: 0},
+		{in: 2, want: 1},
+		{in: 3, want: 2},
+		{in: 4, want: 3},
+	}
+	for _, tc := range backwardCases {
+		if got := cyclePriorityBackward(tc.in); got != tc.want {
+			t.Fatalf("cyclePriorityBackward(%d): got %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}

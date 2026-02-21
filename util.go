@@ -101,6 +101,10 @@ func cyclePriority(current int) int {
 	return (current + 1) % 5
 }
 
+func cyclePriorityBackward(current int) int {
+	return (current - 1 + 5) % 5
+}
+
 func defaultAssigneeFromEnv() string {
 	candidates := []string{
 		os.Getenv("BD_ACTOR"),
