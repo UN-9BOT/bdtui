@@ -1406,18 +1406,14 @@ func renderPriorityLabel(priority int) string {
 func renderIssueRow(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
-	id := truncate(item.ID, 14)
 	prefix := treePrefix(depth)
-
-	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(id) + 1
-	titleWidth := max(1, maxTextWidth-fixedWidth)
-	title := truncate(item.Title, titleWidth)
+	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, item.Title, item.ID)
 
 	return prefix +
 		priorityStyle(item.Priority).Render(priority) +
 		" " + issueTypeStyle(item.IssueType).Render(issueType) +
-		" " + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(id) +
-		" " + title
+		" " + title +
+		gap + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(id)
 }
 
 func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string {
@@ -1435,14 +1431,37 @@ func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string
 func renderIssueRowGhostPlain(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
-	id := truncate(item.ID, 14)
 	prefix := treePrefix(depth)
+	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, item.Title, item.ID)
 
-	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(id) + 1
-	titleWidth := max(1, maxTextWidth-fixedWidth)
-	title := truncate(item.Title, titleWidth)
+	return prefix + priority + " " + issueType + " " + title + gap + id
+}
 
-	return prefix + priority + " " + issueType + " " + id + " " + title
+func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority string, issueType string, titleRaw string, idRaw string) (title string, id string, gap string) {
+	if maxTextWidth < 1 {
+		maxTextWidth = 1
+	}
+
+	fixedPrefixWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1
+	maxIDWidth := maxTextWidth - fixedPrefixWidth - 2
+	if maxIDWidth < 1 {
+		maxIDWidth = 1
+	}
+	id = truncate(idRaw, min(14, maxIDWidth))
+
+	titleWidth := maxTextWidth - fixedPrefixWidth - 1 - lipgloss.Width(id)
+	if titleWidth < 0 {
+		titleWidth = 0
+	}
+	title = truncate(titleRaw, titleWidth)
+
+	leftPlain := prefix + priority + " " + issueType + " " + title
+	gapWidth := maxTextWidth - lipgloss.Width(leftPlain) - lipgloss.Width(id)
+	if gapWidth < 1 {
+		gapWidth = 1
+	}
+	gap = strings.Repeat(" ", gapWidth)
+	return title, id, gap
 }
 
 func treePrefix(depth int) string {

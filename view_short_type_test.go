@@ -50,6 +50,55 @@ func TestRenderIssueRowUsesOneLetterType(t *testing.T) {
 	}
 }
 
+func TestRenderIssueRowPinsIDToRightEdge(t *testing.T) {
+	t.Parallel()
+
+	item := Issue{
+		ID:        "bdtui-56i.10",
+		Title:     "move id to right edge",
+		Priority:  2,
+		IssueType: "task",
+	}
+
+	row := renderIssueRow(item, 40, 0)
+	plain := stripANSI(row)
+	if !strings.HasSuffix(plain, item.ID) {
+		t.Fatalf("expected row to end with id %q, got %q", item.ID, plain)
+	}
+}
+
+func TestRenderIssueRowGhostPinsIDToRightEdge(t *testing.T) {
+	t.Parallel()
+
+	item := Issue{
+		ID:        "bdtui-56i.10",
+		Title:     "ghost row",
+		Priority:  2,
+		IssueType: "task",
+	}
+
+	row := renderIssueRowGhostPlain(item, 40, 1)
+	if !strings.HasSuffix(row, item.ID) {
+		t.Fatalf("expected ghost row to end with id %q, got %q", item.ID, row)
+	}
+}
+
+func TestRenderIssueRowSelectedPlainHidesID(t *testing.T) {
+	t.Parallel()
+
+	item := Issue{
+		ID:        "bdtui-56i.10",
+		Title:     "selected row",
+		Priority:  2,
+		IssueType: "task",
+	}
+
+	row := renderIssueRowSelectedPlain(item, 40, 0)
+	if strings.Contains(row, item.ID) {
+		t.Fatalf("selected row should not include id %q: %q", item.ID, row)
+	}
+}
+
 func TestShortTypeUnchangedForNonDashboard(t *testing.T) {
 	t.Parallel()
 
