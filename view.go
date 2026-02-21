@@ -462,19 +462,21 @@ func (m model) renderHelpModal() string {
 	emptyLine := strings.Repeat(" ", innerWidth)
 	lines := make([]string, 0, viewport+2)
 	for _, line := range m.helpFilterBoxLines(innerWidth, filterLinesCount) {
-		lines = append(lines, padRightToWidth(line, innerWidth))
+		padded := padRightToWidth(line, innerWidth)
+		lines = append(lines, m.styleHelpFilterBoxLine(line, padded))
 	}
 	for _, line := range content[offset:end] {
-		lines = append(lines, padRightToWidth(line, innerWidth))
+		padded := padRightToWidth(line, innerWidth)
+		lines = append(lines, m.styleHelpContentLine(line, padded))
 	}
 	for len(lines) < filterLinesCount+contentViewport {
 		lines = append(lines, emptyLine)
 	}
 
 	if maxOffset > 0 {
-		lines = append(lines, emptyLine, padRightToWidth(m.helpFooterLine(offset, maxOffset), innerWidth))
+		lines = append(lines, emptyLine, m.styleHelpFooterLine(padRightToWidth(m.helpFooterLine(offset, maxOffset), innerWidth)))
 	} else {
-		lines = append(lines, emptyLine, padRightToWidth(m.helpControlsHintLine()+" | ?/Esc close", innerWidth))
+		lines = append(lines, emptyLine, m.styleHelpFooterLine(padRightToWidth(m.helpControlsHintLine()+" | ?/Esc close", innerWidth)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -600,6 +602,78 @@ func (m model) helpFilterBoxLines(innerWidth int, linesCount int) []string {
 		bottom := "└" + strings.Repeat("─", topInner) + "┘"
 		return []string{top, middle, bottom}
 	}
+}
+
+func (m model) styleHelpFilterInput(input string) string {
+	inputStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("230"))
+	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	before, after, found := strings.Cut(input, "▏")
+	if !found {
+		return inputStyle.Render(input)
+	}
+	return inputStyle.Render(before) + cursorStyle.Render("▏") + inputStyle.Render(after)
+}
+
+func (m model) styleHelpFilterBoxLine(raw string, padded string) string {
+	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63")).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+
+	if strings.HasPrefix(raw, "┌") || strings.HasPrefix(raw, "└") {
+		if strings.Contains(raw, " Filter ") {
+			before, after, _ := strings.Cut(raw, " Filter ")
+			styled := borderStyle.Render(before) + labelStyle.Render(" Filter ") + borderStyle.Render(after)
+			return padRightToWidth(styled, lipgloss.Width(padded))
+		}
+		return borderStyle.Render(padded)
+	}
+
+	if strings.HasPrefix(raw, "│ ") && strings.HasSuffix(raw, " │") {
+		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "│ "), " │")
+		styled := borderStyle.Render("│ ") + m.styleHelpFilterInput(inner) + borderStyle.Render(" │")
+		return padRightToWidth(styled, lipgloss.Width(padded))
+	}
+
+	if strings.HasPrefix(raw, "└ ") && strings.HasSuffix(raw, " ┘") {
+		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "└ "), " ┘")
+		styled := borderStyle.Render("└ ") + m.styleHelpFilterInput(inner) + borderStyle.Render(" ┘")
+		return padRightToWidth(styled, lipgloss.Width(padded))
+	}
+
+	if strings.HasPrefix(raw, "[Filter: ") && strings.HasSuffix(raw, "]") {
+		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "[Filter: "), "]")
+		styled := borderStyle.Render("[") + labelStyle.Render("Filter: ") + m.styleHelpFilterInput(inner) + borderStyle.Render("]")
+		return padRightToWidth(styled, lipgloss.Width(padded))
+	}
+
+	return borderStyle.Render(padded)
+}
+
+func (m model) styleHelpContentLine(raw string, padded string) string {
+	switch raw {
+	case "":
+		return padded
+	case "Hotkeys":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true).Render(padded)
+	case "Global:", "Leader (g):", "Forms:":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Bold(true).Render(padded)
+	case "No matches":
+		return m.styles.Dim.Render(padded)
+	}
+
+	if idx := strings.Index(raw, ":"); idx > 0 && idx < len(raw)-1 {
+		keyPart := strings.TrimSpace(raw[:idx+1])
+		descPart := strings.TrimSpace(raw[idx+1:])
+		keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+		descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+		styled := keyStyle.Render(keyPart) + " " + descStyle.Render(descPart)
+		return padRightToWidth(styled, lipgloss.Width(padded))
+	}
+
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Render(padded)
+}
+
+func (m model) styleHelpFooterLine(padded string) string {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Render(padded)
 }
 
 func (m model) helpModalInnerWidth() int {
