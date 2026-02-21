@@ -438,9 +438,8 @@ func (m model) renderModal() string {
 func (m model) renderHelpModal() string {
 	content := m.helpContentLines()
 	viewport := m.helpViewportContentLines()
-	if viewport < 1 {
-		viewport = 1
-	}
+	filterLinesCount := m.helpFilterLinesCount(viewport)
+	contentViewport := max(1, viewport-filterLinesCount)
 
 	maxOffset := m.helpMaxScroll()
 	offset := m.helpScroll
@@ -451,7 +450,7 @@ func (m model) renderHelpModal() string {
 		offset = maxOffset
 	}
 
-	end := offset + viewport
+	end := offset + contentViewport
 	if end > len(content) {
 		end = len(content)
 	}
@@ -462,18 +461,20 @@ func (m model) renderHelpModal() string {
 	innerWidth := m.helpModalInnerWidth()
 	emptyLine := strings.Repeat(" ", innerWidth)
 	lines := make([]string, 0, viewport+2)
+	for _, line := range m.helpFilterBoxLines(innerWidth, filterLinesCount) {
+		lines = append(lines, padRightToWidth(line, innerWidth))
+	}
 	for _, line := range content[offset:end] {
 		lines = append(lines, padRightToWidth(line, innerWidth))
 	}
-	for len(lines) < viewport {
+	for len(lines) < filterLinesCount+contentViewport {
 		lines = append(lines, emptyLine)
 	}
 
-	filterHint := m.helpFilterHintLine()
 	if maxOffset > 0 {
-		lines = append(lines, emptyLine, padRightToWidth(m.helpFooterLine(offset, maxOffset, filterHint), innerWidth))
+		lines = append(lines, emptyLine, padRightToWidth(m.helpFooterLine(offset, maxOffset), innerWidth))
 	} else {
-		lines = append(lines, emptyLine, padRightToWidth(filterHint+" | ?/Esc close", innerWidth))
+		lines = append(lines, emptyLine, padRightToWidth(m.helpControlsHintLine()+" | ?/Esc close", innerWidth))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -536,7 +537,7 @@ func (m model) helpViewportContentLines() int {
 
 func (m model) helpMaxScroll() int {
 	contentLen := len(m.helpContentLines())
-	viewport := m.helpViewportContentLines()
+	viewport := max(1, m.helpViewportContentLines()-m.helpFilterLinesCount(m.helpViewportContentLines()))
 	maxOffset := contentLen - viewport
 	if maxOffset < 0 {
 		return 0
@@ -544,17 +545,61 @@ func (m model) helpMaxScroll() int {
 	return maxOffset
 }
 
-func (m model) helpFilterHintLine() string {
-	if strings.TrimSpace(m.helpQuery) == "" {
-		return "type to filter | Backspace delete | Ctrl+U clear"
+func (m model) helpFilterLinesCount(viewport int) int {
+	switch {
+	case viewport >= 4:
+		return 3
+	case viewport == 3:
+		return 2
+	case viewport == 2:
+		return 1
+	default:
+		return 0
 	}
-	return "filter: " + m.helpQuery + " | Backspace delete | Ctrl+U clear"
 }
 
-func (m model) helpFooterLine(offset int, maxOffset int, filterHint string) string {
+func (m model) helpFilterInputWithCursor() string {
+	return m.helpQuery + "▏"
+}
+
+func (m model) helpControlsHintLine() string {
+	return "Backspace delete | Ctrl+U clear"
+}
+
+func (m model) helpFooterLine(offset int, maxOffset int) string {
 	total := maxOffset + 1
 	digits := len(strconv.Itoa(total))
-	return fmt.Sprintf("↑/↓ scroll (%*d/%d) | %s | ?/Esc close", digits, offset+1, total, filterHint)
+	return fmt.Sprintf("↑/↓ scroll (%*d/%d) | %s | ?/Esc close", digits, offset+1, total, m.helpControlsHintLine())
+}
+
+func (m model) helpFilterBoxLines(innerWidth int, linesCount int) []string {
+	if innerWidth < 1 || linesCount <= 0 {
+		return nil
+	}
+
+	input := m.helpFilterInputWithCursor()
+	inputInner := max(1, innerWidth-4)
+	input = truncate(input, inputInner)
+
+	switch linesCount {
+	case 1:
+		line := "[Filter: " + input + "]"
+		return []string{truncate(line, innerWidth)}
+	case 2:
+		topInner := max(1, innerWidth-2)
+		topTitle := " Filter "
+		top := "┌" + truncate(topTitle+strings.Repeat("─", topInner), topInner) + "┐"
+		bottomInner := max(1, innerWidth-4)
+		bottom := "└ " + padRightToWidth(truncate(input, bottomInner), bottomInner) + " ┘"
+		return []string{top, bottom}
+	default:
+		topInner := max(1, innerWidth-2)
+		topTitle := " Filter "
+		top := "┌" + truncate(topTitle+strings.Repeat("─", topInner), topInner) + "┐"
+		middle := "│ " + padRightToWidth(input, inputInner) + " │"
+		bottom := "└" + strings.Repeat("─", topInner) + "┘"
+		return []string{top, middle, bottom}
+	}
 }
 
 func (m model) helpModalInnerWidth() int {
@@ -565,14 +610,17 @@ func (m model) helpModalInnerWidth() int {
 		}
 	}
 
-	filterHint := m.helpFilterHintLine()
+	if w := lipgloss.Width("Filter: "+m.helpFilterInputWithCursor()) + 4; w > width {
+		width = w
+	}
+
 	maxOffset := m.helpMaxScroll()
 	if maxOffset > 0 {
-		if w := lipgloss.Width(m.helpFooterLine(maxOffset, maxOffset, filterHint)); w > width {
+		if w := lipgloss.Width(m.helpFooterLine(maxOffset, maxOffset)); w > width {
 			width = w
 		}
 	} else {
-		if w := lipgloss.Width(filterHint + " | ?/Esc close"); w > width {
+		if w := lipgloss.Width(m.helpControlsHintLine() + " | ?/Esc close"); w > width {
 			width = w
 		}
 	}

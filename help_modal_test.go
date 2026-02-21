@@ -157,6 +157,45 @@ func TestRenderHelpModalWidthStableAcrossScroll(t *testing.T) {
 	}
 }
 
+func TestRenderHelpModalShowsFilterBoxBeforeHotkeys(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		height: 18,
+		mode:   ModeHelp,
+		keymap: defaultKeymap(),
+	}
+
+	out := m.renderHelpModal()
+	filterPos := strings.Index(out, "Filter")
+	hotkeysPos := strings.Index(out, "Hotkeys")
+	if filterPos == -1 {
+		t.Fatalf("expected filter box header in help modal: %q", out)
+	}
+	if hotkeysPos == -1 {
+		t.Fatalf("expected hotkeys header in help modal: %q", out)
+	}
+	if filterPos >= hotkeysPos {
+		t.Fatalf("expected filter box before Hotkeys, got filterPos=%d hotkeysPos=%d", filterPos, hotkeysPos)
+	}
+}
+
+func TestRenderHelpModalShowsFilterCursor(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		height:    18,
+		mode:      ModeHelp,
+		keymap:    defaultKeymap(),
+		helpQuery: "he",
+	}
+
+	out := m.renderHelpModal()
+	if !strings.Contains(out, "he▏") {
+		t.Fatalf("expected help filter cursor in modal, got %q", out)
+	}
+}
+
 func maxLineWidth(s string) int {
 	maxW := 0
 	for _, line := range strings.Split(s, "\n") {
