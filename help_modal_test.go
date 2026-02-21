@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestHelpMaxScrollIsPositiveOnSmallHeight(t *testing.T) {
@@ -63,4 +64,42 @@ func TestRenderHelpModalFitsViewport(t *testing.T) {
 	if !strings.Contains(out, "scroll") {
 		t.Fatalf("expected help modal to show scroll hint")
 	}
+}
+
+func TestRenderHelpModalWidthStableAcrossScroll(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		height: 12,
+		mode:   ModeHelp,
+		keymap: defaultKeymap(),
+	}
+	maxOffset := m.helpMaxScroll()
+	if maxOffset <= 1 {
+		t.Fatalf("expected scrollable help, got maxOffset=%d", maxOffset)
+	}
+
+	m.helpScroll = 0
+	w0 := maxLineWidth(m.renderHelpModal())
+
+	m.helpScroll = maxOffset / 2
+	w1 := maxLineWidth(m.renderHelpModal())
+
+	m.helpScroll = maxOffset
+	w2 := maxLineWidth(m.renderHelpModal())
+
+	if w0 != w1 || w1 != w2 {
+		t.Fatalf("expected stable widths, got w0=%d w1=%d w2=%d", w0, w1, w2)
+	}
+}
+
+func maxLineWidth(s string) int {
+	maxW := 0
+	for _, line := range strings.Split(s, "\n") {
+		w := lipgloss.Width(line)
+		if w > maxW {
+			maxW = w
+		}
+	}
+	return maxW
 }

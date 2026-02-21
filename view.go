@@ -459,15 +459,19 @@ func (m model) renderHelpModal() string {
 		end = offset
 	}
 
+	innerWidth := m.helpModalInnerWidth()
+	emptyLine := strings.Repeat(" ", innerWidth)
 	lines := make([]string, 0, viewport+2)
-	lines = append(lines, content[offset:end]...)
+	for _, line := range content[offset:end] {
+		lines = append(lines, padRightToWidth(line, innerWidth))
+	}
 	for len(lines) < viewport {
-		lines = append(lines, "")
+		lines = append(lines, emptyLine)
 	}
 	if maxOffset > 0 {
-		lines = append(lines, "", fmt.Sprintf("j/k scroll (%d/%d) | ?/Esc close", offset+1, maxOffset+1))
+		lines = append(lines, emptyLine, padRightToWidth(m.helpFooterLine(offset, maxOffset), innerWidth))
 	} else {
-		lines = append(lines, "", "Press ? or Esc to close")
+		lines = append(lines, emptyLine, padRightToWidth("Press ? or Esc to close", innerWidth))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -504,6 +508,47 @@ func (m model) helpMaxScroll() int {
 		return 0
 	}
 	return maxOffset
+}
+
+func (m model) helpFooterLine(offset int, maxOffset int) string {
+	total := maxOffset + 1
+	digits := len(strconv.Itoa(total))
+	return fmt.Sprintf("j/k scroll (%*d/%d) | ?/Esc close", digits, offset+1, total)
+}
+
+func (m model) helpModalInnerWidth() int {
+	width := 1
+	for _, line := range m.helpContentLines() {
+		w := lipgloss.Width(line)
+		if w > width {
+			width = w
+		}
+	}
+
+	maxOffset := m.helpMaxScroll()
+	if maxOffset > 0 {
+		footerWidth := lipgloss.Width(m.helpFooterLine(maxOffset, maxOffset))
+		if footerWidth > width {
+			width = footerWidth
+		}
+	} else {
+		footerWidth := lipgloss.Width("Press ? or Esc to close")
+		if footerWidth > width {
+			width = footerWidth
+		}
+	}
+	return width
+}
+
+func padRightToWidth(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
 
 func (m model) renderSearchModal() string {
