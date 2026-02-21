@@ -42,6 +42,7 @@ type model struct {
 	form         *IssueForm
 	prompt       *PromptState
 	parentPicker *ParentPickerState
+	tmuxPicker   *TmuxPickerState
 
 	depList *DepListState
 
@@ -56,6 +57,8 @@ type model struct {
 
 	keymap Keymap
 	styles Styles
+
+	plugins PluginRegistry
 
 	now time.Time
 }
@@ -113,6 +116,7 @@ func newModel(cfg Config) (model, error) {
 		now:     time.Now(),
 		keymap:  defaultKeymap(),
 		styles:  newStyles(),
+		plugins: newPluginRegistry(cfg),
 	}
 
 	return m, nil
@@ -142,6 +146,7 @@ func (m *model) clearTransientUI() {
 	m.leader = false
 	m.prompt = nil
 	m.parentPicker = nil
+	m.tmuxPicker = nil
 	m.depList = nil
 	m.confirmDelete = nil
 	m.form = nil
@@ -492,6 +497,13 @@ func opCmd(info string, fn func() error) tea.Cmd {
 	return func() tea.Msg {
 		err := fn()
 		return opMsg{info: info, err: err}
+	}
+}
+
+func pluginCmd(info string, fn func() error) tea.Cmd {
+	return func() tea.Msg {
+		err := fn()
+		return pluginMsg{info: info, err: err}
 	}
 }
 

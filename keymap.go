@@ -25,6 +25,7 @@ func defaultKeymap() Keymap {
 			"s: cycle status",
 			"a: quick assignee",
 			"y: copy selected issue id",
+			"Y: paste selected issue id into tmux pane",
 			"Shift+L: quick labels",
 			"r: refresh",
 			"g: leader combos",

@@ -212,7 +212,7 @@ func (m model) renderInspector() string {
 }
 
 func (m model) renderFooter() string {
-	left := "j/k move | h/l col | Enter/Space expand info | y copy id | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
+	left := "j/k move | h/l col | Enter/Space expand info | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
 		if m.mode == ModeCreate || m.mode == ModeEdit {
 			left = "mode: " + string(m.mode) + " | Enter/Esc save"
@@ -253,6 +253,8 @@ func (m model) renderModal() string {
 		return m.renderPromptModal()
 	case ModeParentPicker:
 		return m.renderParentPickerModal()
+	case ModeTmuxPicker:
+		return m.renderTmuxPickerModal()
 	case ModeDepList:
 		return m.renderDepListModal()
 	case ModeConfirmDelete:
@@ -537,6 +539,77 @@ func (m model) renderParentPickerModal() string {
 	}
 
 	lines = append(lines, "", m.styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
+	return strings.Join(lines, "\n")
+}
+
+func (m model) renderTmuxPickerModal() string {
+	if m.tmuxPicker == nil {
+		return "Tmux Picker\n\nloading..."
+	}
+
+	total := len(m.tmuxPicker.Targets)
+	if total == 0 {
+		return "Tmux Picker\n\nНет доступных tmux-целей\n\nEsc close"
+	}
+
+	lines := []string{
+		statusHeaderStyle(StatusInProgress).Render("Tmux Target Picker (Y)"),
+		"",
+		m.styles.Warning.Render("Выбор target: ↑/↓ (или j/k), Enter выбрать, Esc отмена"),
+		"",
+	}
+
+	center := m.tmuxPicker.Index
+	if center < 0 || center >= total {
+		center = 0
+	}
+	start := max(0, center-5)
+	end := min(total, start+11)
+	if end-start < 11 {
+		start = max(0, end-11)
+	}
+
+	for i := start; i < end; i++ {
+		target := m.tmuxPicker.Targets[i]
+		prefix := "  "
+		if i == center {
+			prefix = m.styles.Warning.Render("▶ ")
+		}
+
+		codexMark := "  "
+		if isLikelyCodexTarget(target) {
+			codexMark = m.styles.Success.Render("C ")
+		}
+		clientMark := "  "
+		if target.HasClient {
+			clientMark = m.styles.Success.Render("A ")
+		}
+
+		linePlain := fmt.Sprintf(
+			"%s %s %s %s %s",
+			defaultString(target.SessionName, "?"),
+			defaultString(target.PaneID, "?"),
+			defaultString(target.Command, "-"),
+			defaultString(target.Title, "-"),
+			map[bool]string{true: "client", false: "no-client"}[target.HasClient],
+		)
+
+		line := fmt.Sprintf(
+			"%s%s %s %s %s",
+			codexMark,
+			clientMark,
+			lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(defaultString(target.SessionName, "?")),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Render(defaultString(target.PaneID, "?")),
+			truncate(defaultString(target.Command, "-")+" | "+defaultString(target.Title, "-"), 70),
+		)
+		if i == center {
+			line = m.styles.Selected.Render(linePlain)
+		}
+		lines = append(lines, prefix+line)
+	}
+
+	legend := "C=codex-like, A=attached-client"
+	lines = append(lines, "", m.styles.Dim.Render(legend), m.styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
 	return strings.Join(lines, "\n")
 }
 

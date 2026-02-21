@@ -74,6 +74,7 @@ const (
 	ModeEdit          Mode = "edit"
 	ModePrompt        Mode = "prompt"
 	ModeParentPicker  Mode = "parent_picker"
+	ModeTmuxPicker    Mode = "tmux_picker"
 	ModeDepList       Mode = "dep_list"
 	ModeConfirmDelete Mode = "confirm_delete"
 )
@@ -130,6 +131,12 @@ type ParentPickerState struct {
 	Index         int
 }
 
+type TmuxPickerState struct {
+	IssueID string
+	Targets []TmuxTarget
+	Index   int
+}
+
 type FilterForm struct {
 	Cursor   int
 	Assignee string
@@ -181,6 +188,11 @@ type deletePreviewMsg struct {
 	issueID string
 	text    string
 	err     error
+}
+
+type pluginMsg struct {
+	info string
+	err  error
 }
 
 type tickMsg time.Time

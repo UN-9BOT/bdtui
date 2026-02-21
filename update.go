@@ -61,6 +61,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.loadCmd("mutation")
 
+	case pluginMsg:
+		if msg.err != nil {
+			m.setToast("error", msg.err.Error())
+			return m, nil
+		}
+		if strings.TrimSpace(msg.info) != "" {
+			m.setToast("success", msg.info)
+		}
+		return m, nil
+
 	case depListMsg:
 		if msg.err != nil {
 			m.setToast("error", msg.err.Error())

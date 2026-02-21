@@ -26,6 +26,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePromptKey(msg)
 	case ModeParentPicker:
 		return m.handleParentPickerKey(msg)
+	case ModeTmuxPicker:
+		return m.handleTmuxPickerKey(msg)
 	case ModeDepList:
 		return m.handleDepListKey(msg)
 	case ModeConfirmDelete:
@@ -272,6 +274,64 @@ func (m model) handleDepListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.tmuxPicker == nil {
+		m.mode = ModeBoard
+		return m, nil
+	}
+
+	key := msg.String()
+	switch key {
+	case "esc", "q":
+		m.tmuxPicker = nil
+		m.mode = ModeBoard
+		return m, nil
+	case "j", "down":
+		if len(m.tmuxPicker.Targets) > 0 {
+			m.tmuxPicker.Index = (m.tmuxPicker.Index + 1) % len(m.tmuxPicker.Targets)
+		}
+		return m, nil
+	case "k", "up":
+		if len(m.tmuxPicker.Targets) > 0 {
+			m.tmuxPicker.Index--
+			if m.tmuxPicker.Index < 0 {
+				m.tmuxPicker.Index = len(m.tmuxPicker.Targets) - 1
+			}
+		}
+		return m, nil
+	case "enter":
+		if len(m.tmuxPicker.Targets) == 0 {
+			m.tmuxPicker = nil
+			m.mode = ModeBoard
+			m.setToast("warning", "нет tmux-целей")
+			return m, nil
+		}
+
+		selected := m.tmuxPicker.Targets[m.tmuxPicker.Index]
+		issueID := strings.TrimSpace(m.tmuxPicker.IssueID)
+		m.tmuxPicker = nil
+		m.mode = ModeBoard
+
+		tmuxPlugin := m.plugins.Tmux()
+		if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
+			m.setToast("warning", "tmux plugin disabled")
+			return m, nil
+		}
+		tmuxPlugin.SetTarget(selected)
+
+		if issueID == "" {
+			m.setToast("success", "tmux target выбран: "+selected.Label())
+			return m, nil
+		}
+
+		return m, pluginCmd("tmux buffer updated: "+issueID, func() error {
+			return tmuxPlugin.SendIssueIDToBuffer(issueID)
+		})
+	}
+
+	return m, nil
+}
+
 func (m model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirmDelete == nil {
 		m.mode = ModeBoard
@@ -420,6 +480,8 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.setToast("success", "copied id: "+issue.ID)
 		return m, nil
+	case "Y":
+		return m.handleTmuxSendIssueID()
 	case "L":
 		issue := m.currentIssue()
 		if issue == nil {
@@ -626,6 +688,43 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 
 	return m, opCmd(fmt.Sprintf("%s updated", form.IssueID), func() error {
 		return m.client.UpdateIssue(upd)
+	})
+}
+
+func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
+	issue := m.currentIssue()
+	if issue == nil {
+		m.setToast("warning", "нет выбранной задачи")
+		return m, nil
+	}
+
+	tmuxPlugin := m.plugins.Tmux()
+	if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
+		m.setToast("warning", "tmux plugin disabled (--plugins=tmux)")
+		return m, nil
+	}
+
+	if tmuxPlugin.CurrentTarget() == nil {
+		targets, err := tmuxPlugin.ListTargets()
+		if err != nil {
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		if len(targets) == 0 {
+			m.setToast("warning", "нет доступных tmux-целей")
+			return m, nil
+		}
+		m.tmuxPicker = &TmuxPickerState{
+			IssueID: issue.ID,
+			Targets: targets,
+			Index:   0,
+		}
+		m.mode = ModeTmuxPicker
+		return m, nil
+	}
+
+	return m, pluginCmd("tmux buffer updated: "+issue.ID, func() error {
+		return tmuxPlugin.SendIssueIDToBuffer(issue.ID)
 	})
 }
 

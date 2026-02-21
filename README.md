@@ -16,6 +16,7 @@ go build ./...
 Опции:
 - `--beads-dir /abs/path/to/.beads`
 - `--no-watch`
+- `--plugins tmux,-foo` (вкл/выкл plugins, по умолчанию `tmux` включен)
 
 ## Горячие клавиши
 
@@ -36,6 +37,7 @@ go build ./...
 - `s` - cycle status
 - `a` - quick assignee
 - `y` - copy selected issue id to clipboard
+- `Y` - вставить selected issue id в выбранный `tmux` pane (tmux plugin)
 - `Shift+L` - quick labels
 
 `parent` в форме Create/Edit выбирается интерактивно стрелками:
@@ -70,6 +72,7 @@ go build ./...
 - Данные читаются и изменяются только через `bd` бинарь.
 - Колонка `blocked` рассчитывается автоматически для `open` задач с незакрытыми блокерами.
 - Watcher реализован polling-циклом (`bd list --json` + hash compare).
+- `Y` при первом вызове открывает picker tmux target (сессия/pane), затем вставляет ID в pane через `tmux set-buffer` + `tmux paste-buffer`.
 - В editor-режиме (`Ctrl+X`) используется YAML frontmatter:
   - блок `--- ... ---` для полей (`title/status/priority/type/assignee/labels/parent`)
   - текст после закрывающего `---` трактуется как `description` (можно многострочно)
