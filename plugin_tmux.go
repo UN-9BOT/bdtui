@@ -155,6 +155,18 @@ func (p *TmuxPlugin) SendIssueIDToBuffer(issueID string) error {
 	return p.SendTextToBuffer(issueID)
 }
 
+func (p *TmuxPlugin) FocusPane(paneID string) error {
+	if !p.Enabled() {
+		return errors.New("tmux plugin disabled")
+	}
+	target := strings.TrimSpace(paneID)
+	if target == "" {
+		return errors.New("empty pane id")
+	}
+	_, err := p.runner.Run("select-pane", "-t", target)
+	return err
+}
+
 func (p *TmuxPlugin) MarkPane(paneID string) error {
 	if !p.Enabled() {
 		return errors.New("tmux plugin disabled")

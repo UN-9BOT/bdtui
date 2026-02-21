@@ -234,8 +234,9 @@ type deletePreviewMsg struct {
 }
 
 type pluginMsg struct {
-	info string
-	err  error
+	info    string
+	warning string
+	err     error
 }
 
 type tmuxMarkCleanupMsg struct {

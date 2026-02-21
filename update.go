@@ -78,6 +78,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(msg.info) != "" {
 			m.setToast("success", msg.info)
 		}
+		if strings.TrimSpace(msg.warning) != "" {
+			m.setToast("warning", msg.warning)
+		}
 		return m, nil
 
 	case sortModePersistMsg:

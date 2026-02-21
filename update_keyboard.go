@@ -412,9 +412,18 @@ func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			cleanupCmd,
-			pluginCmd("tmux command pasted", func() error {
-				return tmuxPlugin.SendTextToBuffer(payload)
-			}),
+			func() tea.Msg {
+				if err := tmuxPlugin.SendTextToBuffer(payload); err != nil {
+					return pluginMsg{info: "tmux command pasted", err: err}
+				}
+				if err := tmuxPlugin.FocusPane(selected.PaneID); err != nil {
+					return pluginMsg{
+						info:    "tmux command pasted",
+						warning: "focus pane failed: " + err.Error(),
+					}
+				}
+				return pluginMsg{info: "tmux command pasted"}
+			},
 		)
 	}
 
@@ -860,9 +869,23 @@ func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 	}
 
 	payload := m.formatBeadsStartTaskCommand(issue.ID)
-	return m, pluginCmd("tmux command pasted", func() error {
-		return tmuxPlugin.SendTextToBuffer(payload)
-	})
+	target := tmuxPlugin.CurrentTarget()
+	targetPane := ""
+	if target != nil {
+		targetPane = target.PaneID
+	}
+	return m, func() tea.Msg {
+		if err := tmuxPlugin.SendTextToBuffer(payload); err != nil {
+			return pluginMsg{info: "tmux command pasted", err: err}
+		}
+		if err := tmuxPlugin.FocusPane(targetPane); err != nil {
+			return pluginMsg{
+				info:    "tmux command pasted",
+				warning: "focus pane failed: " + err.Error(),
+			}
+		}
+		return pluginMsg{info: "tmux command pasted"}
+	}
 }
 
 func (m model) formatBeadsStartTaskCommand(issueID string) string {

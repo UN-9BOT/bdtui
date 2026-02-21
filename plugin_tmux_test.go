@@ -106,6 +106,41 @@ func TestTmuxPlugin_SendTextToBufferRequiresTarget(t *testing.T) {
 	}
 }
 
+func TestTmuxPlugin_FocusPane(t *testing.T) {
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"select-pane\x1f-t\x1f%2": {out: ""},
+	}}
+	plugin := newTmuxPlugin(true, runner)
+	if err := plugin.FocusPane("%2"); err != nil {
+		t.Fatalf("FocusPane() error = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(runner.calls))
+	}
+}
+
+func TestTmuxPlugin_FocusPaneRequiresPaneID(t *testing.T) {
+	plugin := newTmuxPlugin(true, &fakeTmuxRunner{})
+	err := plugin.FocusPane("   ")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "empty pane id") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTmuxPlugin_FocusPaneDisabled(t *testing.T) {
+	plugin := newTmuxPlugin(false, &fakeTmuxRunner{})
+	err := plugin.FocusPane("%2")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestTmuxPlugin_ListTargetsDisabled(t *testing.T) {
 	plugin := newTmuxPlugin(false, &fakeTmuxRunner{})
 	_, err := plugin.ListTargets()
