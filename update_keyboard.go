@@ -46,17 +46,36 @@ func (m model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?", "esc", "q":
 		m.mode = ModeBoard
 		m.helpScroll = 0
+		m.helpQuery = ""
 		return m, nil
-	case "j", "down":
+	case "down":
 		maxOffset := m.helpMaxScroll()
 		if m.helpScroll < maxOffset {
 			m.helpScroll++
 		}
 		return m, nil
-	case "k", "up":
+	case "up":
 		if m.helpScroll > 0 {
 			m.helpScroll--
 		}
+		return m, nil
+	case "backspace":
+		if m.helpQuery == "" {
+			return m, nil
+		}
+		queryRunes := []rune(m.helpQuery)
+		m.helpQuery = string(queryRunes[:len(queryRunes)-1])
+		m.helpScroll = 0
+		return m, nil
+	case "ctrl+u":
+		m.helpQuery = ""
+		m.helpScroll = 0
+		return m, nil
+	}
+
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		m.helpQuery += string(msg.Runes)
+		m.helpScroll = 0
 		return m, nil
 	}
 
@@ -443,6 +462,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "?" {
 		m.helpScroll = 0
+		m.helpQuery = ""
 		m.mode = ModeHelp
 		return m, nil
 	}

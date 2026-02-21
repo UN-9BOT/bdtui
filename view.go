@@ -464,26 +464,62 @@ func (m model) renderHelpModal() string {
 	for len(lines) < viewport {
 		lines = append(lines, "")
 	}
+	filterHint := "type to filter | Backspace delete | Ctrl+U clear"
+	if strings.TrimSpace(m.helpQuery) != "" {
+		filterHint = "filter: " + m.helpQuery + " | Backspace delete | Ctrl+U clear"
+	}
 	if maxOffset > 0 {
-		lines = append(lines, "", fmt.Sprintf("j/k scroll (%d/%d) | ?/Esc close", offset+1, maxOffset+1))
+		lines = append(lines, "", fmt.Sprintf("↑/↓ scroll (%d/%d) | %s | ?/Esc close", offset+1, maxOffset+1, filterHint))
 	} else {
-		lines = append(lines, "", "Press ? or Esc to close")
+		lines = append(lines, "", filterHint+" | ?/Esc close")
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (m model) helpContentLines() []string {
 	lines := []string{"Hotkeys"}
+	query := strings.TrimSpace(strings.ToLower(m.helpQuery))
+	global := m.filterHelpEntries(m.keymap.Global, query)
+	leader := m.filterHelpEntries(m.keymap.Leader, query)
+	form := m.filterHelpEntries(m.keymap.Form, query)
+
 	lines = append(lines, "")
-	lines = append(lines, "Global:")
-	lines = append(lines, m.keymap.Global...)
-	lines = append(lines, "")
-	lines = append(lines, "Leader (g):")
-	lines = append(lines, m.keymap.Leader...)
-	lines = append(lines, "")
-	lines = append(lines, "Forms:")
-	lines = append(lines, m.keymap.Form...)
+	if len(global) > 0 {
+		lines = append(lines, "Global:")
+		lines = append(lines, global...)
+		lines = append(lines, "")
+	}
+	if len(leader) > 0 {
+		lines = append(lines, "Leader (g):")
+		lines = append(lines, leader...)
+		lines = append(lines, "")
+	}
+	if len(form) > 0 {
+		lines = append(lines, "Forms:")
+		lines = append(lines, form...)
+	}
+	if len(global) == 0 && len(leader) == 0 && len(form) == 0 {
+		lines = append(lines, "No matches")
+	}
 	return lines
+}
+
+func (m model) filterHelpEntries(entries []string, query string) []string {
+	if query == "" {
+		return entries
+	}
+
+	filtered := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		text := entry
+		if idx := strings.Index(text, ":"); idx >= 0 && idx < len(text)-1 {
+			text = text[idx+1:]
+		}
+		if strings.Contains(strings.ToLower(strings.TrimSpace(text)), query) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func (m model) helpViewportContentLines() int {
