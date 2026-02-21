@@ -303,7 +303,7 @@ func (m *model) normalizeSelectionBounds() {
 		}
 		m.selectedIdx[status] = idx
 
-		maxOffset := idx
+		maxOffset := m.selectedVisibleRowIndex(status)
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
@@ -540,7 +540,7 @@ func (m *model) ensureSelectionVisible(status Status) {
 		itemsPerPage = 1
 	}
 
-	idx := m.selectedIdx[status]
+	idx := m.selectedVisibleRowIndex(status)
 	off := m.scrollOffset[status]
 	if idx < off {
 		off = idx
@@ -552,6 +552,31 @@ func (m *model) ensureSelectionVisible(status Status) {
 		off = 0
 	}
 	m.scrollOffset[status] = off
+}
+
+func (m model) selectedVisibleRowIndex(status Status) int {
+	col := m.columns[status]
+	if len(col) == 0 {
+		return 0
+	}
+
+	idx := m.selectedIdx[status]
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(col) {
+		idx = len(col) - 1
+	}
+
+	rows, issueRowIndex := m.buildColumnRows(status)
+	if len(rows) == 0 {
+		return 0
+	}
+	issueID := col[idx].ID
+	if rowIdx, ok := issueRowIndex[issueID]; ok {
+		return rowIdx
+	}
+	return idx
 }
 
 func (m model) loadCmd(source string) tea.Cmd {

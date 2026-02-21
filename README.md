@@ -74,6 +74,7 @@ Options:
 
 - Data is read and mutated only via `bd` binary.
 - `blocked` column is derived automatically for `open` issues with unresolved blockers.
+- if an issue has parent(s) in other status columns, those parents are shown above it as dimmed ghost tree rows.
 - Watcher is polling-based (`bd list --json` + hash compare).
 - On first `Y`, bdtui opens a tmux target picker and then pastes one of:
   - `skill $beads start implement task <issue-id>`

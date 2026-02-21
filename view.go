@@ -79,6 +79,117 @@ func (m model) renderBoard() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, cols...)
 }
 
+type boardRow struct {
+	issue Issue
+	depth int
+	ghost bool
+}
+
+func (m model) issueBaseDepth(status Status, issueID string) int {
+	if m.columnDepths == nil {
+		return 0
+	}
+	statusDepths, ok := m.columnDepths[status]
+	if !ok || statusDepths == nil {
+		return 0
+	}
+	return statusDepths[issueID]
+}
+
+func (m model) crossStatusParentChain(item Issue, status Status) []Issue {
+	parentID := strings.TrimSpace(item.Parent)
+	if parentID == "" {
+		return nil
+	}
+
+	visited := map[string]bool{
+		strings.TrimSpace(item.ID): true,
+	}
+	nearestToRoot := make([]Issue, 0, 4)
+
+	for strings.TrimSpace(parentID) != "" {
+		pid := strings.TrimSpace(parentID)
+		if visited[pid] {
+			break
+		}
+		visited[pid] = true
+
+		parent := m.byID[pid]
+		if parent == nil {
+			break
+		}
+		if parent.Display != status {
+			nearestToRoot = append(nearestToRoot, *parent)
+		}
+		parentID = strings.TrimSpace(parent.Parent)
+	}
+
+	if len(nearestToRoot) == 0 {
+		return nil
+	}
+
+	out := make([]Issue, 0, len(nearestToRoot))
+	for i := len(nearestToRoot) - 1; i >= 0; i-- {
+		out = append(out, nearestToRoot[i])
+	}
+	return out
+}
+
+func (m model) buildColumnRows(status Status) ([]boardRow, map[string]int) {
+	col := m.columns[status]
+	if len(col) == 0 {
+		return nil, map[string]int{}
+	}
+
+	rows := make([]boardRow, 0, len(col))
+	issueRowIndex := make(map[string]int, len(col))
+	prevChainIDs := make([]string, 0, 4)
+	prevBaseDepth := -1
+
+	commonPrefixLen := func(a, b []string) int {
+		n := min(len(a), len(b))
+		i := 0
+		for i < n && a[i] == b[i] {
+			i++
+		}
+		return i
+	}
+
+	for _, item := range col {
+		baseDepth := m.issueBaseDepth(status, item.ID)
+		ghostChain := m.crossStatusParentChain(item, status)
+		chainIDs := make([]string, 0, len(ghostChain))
+		for _, ghostIssue := range ghostChain {
+			chainIDs = append(chainIDs, ghostIssue.ID)
+		}
+
+		start := 0
+		if baseDepth == prevBaseDepth {
+			start = commonPrefixLen(prevChainIDs, chainIDs)
+		}
+
+		for i := start; i < len(ghostChain); i++ {
+			ghostIssue := ghostChain[i]
+			rows = append(rows, boardRow{
+				issue: ghostIssue,
+				depth: baseDepth + i,
+				ghost: true,
+			})
+		}
+
+		rows = append(rows, boardRow{
+			issue: item,
+			depth: baseDepth + len(ghostChain),
+			ghost: false,
+		})
+		issueRowIndex[item.ID] = len(rows) - 1
+		prevChainIDs = chainIDs
+		prevBaseDepth = baseDepth
+	}
+
+	return rows, issueRowIndex
+}
+
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
@@ -88,9 +199,16 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 		Width(width)
 
 	col := m.columns[status]
+	rows, issueRowIndex := m.buildColumnRows(status)
 	idx := m.selectedIdx[status]
 	if idx < 0 {
 		idx = 0
+	}
+	selectedRowIdx := -1
+	if len(col) > 0 && idx >= 0 && idx < len(col) {
+		if rowIdx, ok := issueRowIndex[col[idx].ID]; ok {
+			selectedRowIdx = rowIdx
+		}
 	}
 
 	offset := m.scrollOffset[status]
@@ -105,21 +223,27 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 
 	itemsPerPage := max(1, innerHeight-2)
 
-	if len(col) == 0 {
+	if len(rows) == 0 {
 		lines = append(lines, m.styles.Dim.Render(truncate("(empty)", maxTextWidth)))
 	} else {
-		end := min(len(col), offset+itemsPerPage)
+		if offset >= len(rows) {
+			offset = len(rows) - 1
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		end := min(len(rows), offset+itemsPerPage)
 		for i := offset; i < end; i++ {
-			item := col[i]
-			depth := 0
-			if m.columnDepths != nil {
-				if statusDepths, ok := m.columnDepths[status]; ok {
-					depth = statusDepths[item.ID]
-				}
+			rowItem := rows[i]
+			row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth)
+			if rowItem.ghost {
+				row = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("242")).
+					Faint(true).
+					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
-			row := renderIssueRow(item, maxTextWidth, depth)
-			if i == idx && active {
-				row = m.styles.Selected.Render(renderIssueRowSelectedPlain(item, maxTextWidth, depth))
+			if i == selectedRowIdx && active && !rowItem.ghost {
+				row = m.styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			lines = append(lines, row)
 		}
@@ -1147,6 +1271,19 @@ func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string
 	title := truncate(item.Title, titleWidth)
 
 	return prefix + priority + " " + issueType + " " + title
+}
+
+func renderIssueRowGhostPlain(item Issue, maxTextWidth int, depth int) string {
+	priority := renderPriorityLabel(item.Priority)
+	issueType := shortType(item.IssueType)
+	id := truncate(item.ID, 14)
+	prefix := treePrefix(depth)
+
+	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(id) + 1
+	titleWidth := max(1, maxTextWidth-fixedWidth)
+	title := truncate(item.Title, titleWidth)
+
+	return prefix + priority + " " + issueType + " " + id + " " + title
 }
 
 func treePrefix(depth int) string {
