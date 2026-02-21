@@ -603,6 +603,18 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			st := next
 			return m.client.UpdateIssue(UpdateParams{ID: id, Status: &st})
 		})
+	case "S":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		id := issue.ID
+		next := cycleStatusBackward(issue.Status)
+		return m, opCmd(fmt.Sprintf("%s: status -> %s", id, next), func() error {
+			st := next
+			return m.client.UpdateIssue(UpdateParams{ID: id, Status: &st})
+		})
 	case "x":
 		issue := m.currentIssue()
 		if issue == nil {

@@ -85,6 +85,18 @@ func cycleStatus(current Status) Status {
 	return order[(idx+1)%len(order)]
 }
 
+func cycleStatusBackward(current Status) Status {
+	order := []Status{StatusOpen, StatusInProgress, StatusBlocked, StatusClosed}
+	idx := 0
+	for i, s := range order {
+		if s == current {
+			idx = i
+			break
+		}
+	}
+	return order[(idx-1+len(order))%len(order)]
+}
+
 func cyclePriority(current int) int {
 	return (current + 1) % 5
 }

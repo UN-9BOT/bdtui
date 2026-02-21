@@ -24,7 +24,7 @@ func defaultKeymap() Keymap {
 			"d: delete issue",
 			"x: close/reopen",
 			"p: cycle priority",
-			"s: cycle status",
+			"s/S: cycle status forward/back",
 			"a: quick assignee",
 			"y: copy selected issue id",
 			"Y: paste selected issue id into tmux pane (picker marks pane)",
