@@ -1380,13 +1380,32 @@ func shortType(issueType string) string {
 	}
 }
 
+func shortTypeDashboard(issueType string) string {
+	switch strings.ToLower(strings.TrimSpace(issueType)) {
+	case "epic":
+		return "E"
+	case "feature":
+		return "F"
+	case "task":
+		return "T"
+	case "bug":
+		return "B"
+	case "chore":
+		return "C"
+	case "decision":
+		return "D"
+	default:
+		return "?"
+	}
+}
+
 func renderPriorityLabel(priority int) string {
 	return fmt.Sprintf("P%d", priority)
 }
 
 func renderIssueRow(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
-	issueType := shortType(item.IssueType)
+	issueType := shortTypeDashboard(item.IssueType)
 	id := truncate(item.ID, 14)
 	prefix := treePrefix(depth)
 
@@ -1403,7 +1422,7 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int) string {
 
 func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
-	issueType := shortType(item.IssueType)
+	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
 
 	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1
@@ -1415,7 +1434,7 @@ func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string
 
 func renderIssueRowGhostPlain(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
-	issueType := shortType(item.IssueType)
+	issueType := shortTypeDashboard(item.IssueType)
 	id := truncate(item.ID, 14)
 	prefix := treePrefix(depth)
 
