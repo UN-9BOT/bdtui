@@ -31,7 +31,7 @@ func TestHandleHelpKeyScrollIsClamped(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ {
-		next, _ := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		next, _ := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyDown})
 		m = next.(model)
 	}
 	maxOffset := m.helpMaxScroll()
@@ -39,10 +39,74 @@ func TestHandleHelpKeyScrollIsClamped(t *testing.T) {
 		t.Fatalf("expected helpScroll to clamp at %d, got %d", maxOffset, m.helpScroll)
 	}
 
-	next, _ := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	next, _ := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyUp})
 	m = next.(model)
 	if m.helpScroll != maxOffset-1 {
 		t.Fatalf("expected helpScroll to decrease to %d, got %d", maxOffset-1, m.helpScroll)
+	}
+}
+
+func TestHandleHelpKeyRunesUpdateQuery(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		height:     12,
+		mode:       ModeHelp,
+		keymap:     defaultKeymap(),
+		helpScroll: 3,
+	}
+
+	next, _ := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = next.(model)
+
+	if m.helpQuery != "j" {
+		t.Fatalf("expected helpQuery to be 'j', got %q", m.helpQuery)
+	}
+	if m.helpScroll != 0 {
+		t.Fatalf("expected helpScroll to reset to 0, got %d", m.helpScroll)
+	}
+}
+
+func TestHelpContentLinesFiltersByActionValue(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		keymap:    defaultKeymap(),
+		helpQuery: "help",
+	}
+
+	lines := m.helpContentLines()
+	all := strings.Join(lines, "\n")
+	if !strings.Contains(all, "?: help") {
+		t.Fatalf("expected help line to stay when filtering by action value")
+	}
+
+	m.helpQuery = "?"
+	lines = m.helpContentLines()
+	all = strings.Join(lines, "\n")
+	if strings.Contains(all, "?: help") {
+		t.Fatalf("expected key glyph query not to match by key side")
+	}
+	if !strings.Contains(all, "No matches") {
+		t.Fatalf("expected 'No matches' when nothing is found")
+	}
+}
+
+func TestHandleBoardKeyOpenHelpResetsQuery(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		mode:      ModeBoard,
+		helpQuery: "old",
+	}
+
+	next, _ := m.handleBoardKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = next.(model)
+	if m.mode != ModeHelp {
+		t.Fatalf("expected mode help, got %s", m.mode)
+	}
+	if m.helpQuery != "" {
+		t.Fatalf("expected helpQuery to reset, got %q", m.helpQuery)
 	}
 }
 
