@@ -5,4 +5,5 @@ test:
 
 build:
 	go build ./...
-	go build -o bdtui ./cmd/bdtui
+	mkdir -p bin
+	go build -o bin/bdtui ./cmd/bdtui

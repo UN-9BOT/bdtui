@@ -1,6 +1,6 @@
 package bdtui_test
 
-import b "bdtui"
+import b "bdtui/internal/app"
 
 type model = b.Model
 

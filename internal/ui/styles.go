@@ -1,4 +1,4 @@
-package bdtui
+package ui
 
 import "github.com/charmbracelet/lipgloss"
 
@@ -16,7 +16,7 @@ type Styles struct {
 	HelpBox  lipgloss.Style
 }
 
-func newStyles() Styles {
+func NewStyles() Styles {
 	return Styles{
 		App: lipgloss.NewStyle().Padding(0, 1),
 		Title: lipgloss.NewStyle().

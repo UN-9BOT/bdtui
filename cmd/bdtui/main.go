@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"bdtui"
+	"bdtui/internal/app"
 )
 
 func main() {
-	if err := bdtui.Run(os.Args[1:]); err != nil {
+	if err := app.Run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

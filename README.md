@@ -10,7 +10,7 @@ A Go/Bubble Tea TUI inspired by `bdui`, focused on:
 ```bash
 cd ../bdtui
 make build
-./bdtui
+./bin/bdtui
 ```
 
 ## Install from GitHub Releases (macOS/Linux)
@@ -52,7 +52,7 @@ git clone <repo-url>
 cd bdtui
 make test
 make build
-./bdtui
+./bin/bdtui
 ```
 
 Options:
@@ -128,6 +128,7 @@ Options:
   - [docs/RELEASE_RUNBOOK.md](./docs/RELEASE_RUNBOOK.md)
   - [docs/POST_RELEASE_CHECKLIST.md](./docs/POST_RELEASE_CHECKLIST.md)
 - Watcher is polling-based (`bd list --json` + hash compare).
+- Repository layout overview: [docs/STRUCTURE.md](./docs/STRUCTURE.md)
 - Dashboard sort mode is persisted in beads kv (`bdtui.sort_mode`):
   - `status_date_only`: `updated_at` desc, then id
   - `priority_then_status_date`: priority asc, then `updated_at` desc, then id

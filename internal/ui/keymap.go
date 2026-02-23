@@ -1,4 +1,4 @@
-package bdtui
+package ui
 
 type Keymap struct {
 	Global []string
@@ -6,7 +6,7 @@ type Keymap struct {
 	Form   []string
 }
 
-func defaultKeymap() Keymap {
+func DefaultKeymap() Keymap {
 	return Keymap{
 		Global: []string{
 			"j/k, ↑/↓: select issue",
