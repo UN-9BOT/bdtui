@@ -977,6 +977,24 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 		m.parentPicker = newParentPickerState(m.issues, issue.ID, issue.Parent)
 		m.mode = ModeParentPicker
 		return m, nil
+	case "u":
+		parentID := strings.TrimSpace(issue.Parent)
+		if parentID == "" {
+			m.setToast("warning", "issue has no parent")
+			return m, nil
+		}
+
+		if m.selectIssueByID(parentID) {
+			return m, nil
+		}
+
+		m.clearSearchAndFilters()
+		if m.selectIssueByID(parentID) {
+			return m, nil
+		}
+
+		m.setToast("warning", fmt.Sprintf("parent not found: %s", parentID))
+		return m, nil
 	case "P":
 		id := issue.ID
 		return m, opCmd(fmt.Sprintf("%s parent cleared", id), func() error {

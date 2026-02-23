@@ -63,6 +63,7 @@ Options:
 - `g b` - add blocker
 - `g B` - remove blocker
 - `g p` - interactive parent picker (`↑/↓`, `Enter`)
+- `g u` - jump to parent
 - `g P` - clear parent
 - `g d` - dependencies list
 - `g o` - toggle dashboard sort mode (`status_date_only` / `priority_then_status_date`)

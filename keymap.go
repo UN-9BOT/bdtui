@@ -40,6 +40,7 @@ func defaultKeymap() Keymap {
 			"g b: add blocker",
 			"g B: remove blocker",
 			"g p: set parent (interactive picker)",
+			"g u: jump to parent",
 			"g P: clear parent",
 			"g d: show dependencies",
 			"g o: toggle sort mode",
