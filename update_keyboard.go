@@ -369,8 +369,9 @@ func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if err := m.markTmuxPickerSelection(); err != nil {
 			m.setToast("warning", err.Error())
+			return m, nil
 		}
-		return m, nil
+		return m, m.blinkTmuxPaneCmd(m.currentTmuxPickerPaneID())
 	case "k", "up":
 		if len(m.tmuxPicker.Targets) > 0 {
 			m.tmuxPicker.Index--
@@ -380,8 +381,9 @@ func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if err := m.markTmuxPickerSelection(); err != nil {
 			m.setToast("warning", err.Error())
+			return m, nil
 		}
-		return m, nil
+		return m, m.blinkTmuxPaneCmd(m.currentTmuxPickerPaneID())
 	case "enter":
 		if len(m.tmuxPicker.Targets) == 0 {
 			cleanupCmd := m.scheduleTmuxMarkCleanup(5 * time.Second)
@@ -876,8 +878,9 @@ func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 		m.mode = ModeTmuxPicker
 		if err := m.markTmuxPickerSelection(); err != nil {
 			m.setToast("warning", err.Error())
+			return m, nil
 		}
-		return m, nil
+		return m, m.blinkTmuxPaneCmd(m.currentTmuxPickerPaneID())
 	}
 
 	payload := m.formatBeadsStartTaskCommand(issue.ID)
@@ -969,10 +972,40 @@ func (m *model) markTmuxPickerSelection() error {
 
 	m.tmuxMark.paneID = targetPane
 	m.tmuxPicker.MarkedPaneID = targetPane
-	if err := tmuxPlugin.BlinkPaneWindow(targetPane); err != nil {
-		return fmt.Errorf("blink pane failed: %w", err)
-	}
 	return nil
+}
+
+func (m model) currentTmuxPickerPaneID() string {
+	if m.tmuxPicker == nil || len(m.tmuxPicker.Targets) == 0 {
+		return ""
+	}
+	idx := m.tmuxPicker.Index
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(m.tmuxPicker.Targets) {
+		idx = len(m.tmuxPicker.Targets) - 1
+	}
+	return strings.TrimSpace(m.tmuxPicker.Targets[idx].PaneID)
+}
+
+func (m model) blinkTmuxPaneCmd(paneID string) tea.Cmd {
+	targetPane := strings.TrimSpace(paneID)
+	if targetPane == "" {
+		return nil
+	}
+
+	tmuxPlugin := m.plugins.Tmux()
+	if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
+		return nil
+	}
+
+	return func() tea.Msg {
+		if err := tmuxPlugin.BlinkPaneWindow(targetPane); err != nil {
+			return pluginMsg{warning: "tmux blink failed: " + err.Error()}
+		}
+		return nil
+	}
 }
 
 func (m model) submitPrompt(issueID string, action PromptAction, value string) tea.Cmd {
