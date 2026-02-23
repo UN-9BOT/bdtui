@@ -1178,6 +1178,15 @@ func (m model) renderConfirmClosedParentCreateModal() string {
 		return "Create From Closed Parent\n\nloading..."
 	}
 
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	parentTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	questionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	yesStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
+	noStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+
 	parentID := strings.TrimSpace(m.confirmClosedParentCreate.ParentID)
 	parentTitle := strings.TrimSpace(m.confirmClosedParentCreate.ParentTitle)
 	if parentTitle == "" {
@@ -1187,16 +1196,20 @@ func (m model) renderConfirmClosedParentCreateModal() string {
 	if targetStatus == "" {
 		targetStatus = string(StatusInProgress)
 	}
+	targetStatusStyled := targetStatus
+	if parsed, ok := statusFromString(targetStatus); ok {
+		targetStatusStyled = statusHeaderStyle(parsed).Render(targetStatus)
+	}
 
 	lines := []string{
-		"Create From Closed Parent",
+		titleStyle.Render("Create From Closed Parent"),
 		"",
-		"Cannot create issue with closed parent:",
-		fmt.Sprintf("%s %s", parentID, parentTitle),
+		warningStyle.Render("Cannot create issue with closed parent:"),
+		idStyle.Render(parentID) + " " + parentTitleStyle.Render(parentTitle),
 		"",
-		fmt.Sprintf("Move parent to %s and continue?", targetStatus),
+		questionStyle.Render("Move parent to ") + targetStatusStyled + questionStyle.Render(" and continue?"),
 		"",
-		"y confirm | n/Esc cancel",
+		yesStyle.Render("y") + " " + hintStyle.Render("confirm") + " | " + noStyle.Render("n/Esc") + " " + hintStyle.Render("cancel"),
 	}
 	return strings.Join(lines, "\n")
 }

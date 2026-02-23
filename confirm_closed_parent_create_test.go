@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestHandleConfirmClosedParentCreateKeyCancel(t *testing.T) {
@@ -166,5 +168,38 @@ func TestRenderConfirmClosedParentCreateModal(t *testing.T) {
 	}
 	if !strings.Contains(out, "y confirm | n/Esc cancel") {
 		t.Fatalf("expected controls text, got %q", out)
+	}
+}
+
+func TestRenderConfirmClosedParentCreateModalUsesColors(t *testing.T) {
+	prevProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prevProfile)
+
+	m := model{
+		confirmClosedParentCreate: &ConfirmClosedParentCreate{
+			ParentID:     "bdtui-56i.22",
+			ParentTitle:  "closed parent",
+			TargetStatus: StatusInProgress,
+		},
+	}
+
+	out := m.renderConfirmClosedParentCreateModal()
+	if !strings.Contains(out, "38;5;") {
+		t.Fatalf("expected ansi256 colors in modal, got %q", out)
+	}
+
+	titleStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true).Render("Create From Closed Parent")
+	if !strings.Contains(out, titleStyled) {
+		t.Fatalf("expected styled title, got %q", out)
+	}
+
+	warnStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("Cannot create issue with closed parent:")
+	if !strings.Contains(out, warnStyled) {
+		t.Fatalf("expected styled warning line, got %q", out)
+	}
+
+	if !strings.Contains(out, statusHeaderStyle(StatusInProgress).Render(string(StatusInProgress))) {
+		t.Fatalf("expected styled target status in_progress, got %q", out)
 	}
 }
