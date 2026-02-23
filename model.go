@@ -607,7 +607,7 @@ func (m *model) clampDetailsScroll() {
 }
 
 func (m *model) ensureSelectionVisible(status Status) {
-	itemsPerPage := m.boardInnerHeight() - 2
+	itemsPerPage := m.boardInnerHeight() - 3
 	if itemsPerPage < 1 {
 		itemsPerPage = 1
 	}

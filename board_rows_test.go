@@ -222,7 +222,7 @@ func TestEnsureSelectionVisibleUsesRenderedRowsWithGhosts(t *testing.T) {
 	}
 
 	m.ensureSelectionVisible(StatusBlocked)
-	if m.scrollOffset[StatusBlocked] != 1 {
-		t.Fatalf("expected scroll offset 1, got %d", m.scrollOffset[StatusBlocked])
+	if m.scrollOffset[StatusBlocked] != 2 {
+		t.Fatalf("expected scroll offset 2, got %d", m.scrollOffset[StatusBlocked])
 	}
 }

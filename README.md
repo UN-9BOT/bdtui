@@ -24,6 +24,7 @@ Options:
 - `j/k` or `↑/↓` - select issue in current column
 - `h/l` or `←/→` - switch column
 - `0` / `G` - first / last issue in column
+- `Left click` - select issue in board; click ghost parent row to focus parent (board mode only)
 - `Enter` / `Space` - focus details panel for selected issue
 - details mode: `j/k` or `↑/↓` scroll, `Esc` close
 

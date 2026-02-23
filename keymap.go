@@ -12,6 +12,7 @@ func defaultKeymap() Keymap {
 			"j/k, ↑/↓: select issue",
 			"h/l, ←/→: switch column",
 			"0 / G: first/last issue in column",
+			"Mouse left-click: select issue (ghost row => focus parent, board only)",
 			"Enter/Space: focus details panel",
 			"details: j/k or ↑/↓ scroll, Ctrl+X ext edit, Esc close",
 			"/: focus search",

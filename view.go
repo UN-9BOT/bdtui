@@ -410,9 +410,17 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 			Bold(true).
 			Render(header)
 	}
-	lines := []string{headerLine}
+	divider := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(strings.Repeat("─", maxTextWidth))
+	if grayBoard {
+		divider = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("242")).
+			Render(strings.Repeat("─", maxTextWidth))
+	}
+	lines := []string{headerLine, divider}
 
-	itemsPerPage := max(1, innerHeight-2)
+	itemsPerPage := max(1, innerHeight-3)
 
 	if len(rows) == 0 {
 		emptyLine := truncate("(empty)", maxTextWidth)
