@@ -969,6 +969,9 @@ func (m *model) markTmuxPickerSelection() error {
 
 	m.tmuxMark.paneID = targetPane
 	m.tmuxPicker.MarkedPaneID = targetPane
+	if err := tmuxPlugin.BlinkPaneWindow(targetPane); err != nil {
+		return fmt.Errorf("blink pane failed: %w", err)
+	}
 	return nil
 }
 

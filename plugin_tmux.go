@@ -57,13 +57,14 @@ type TmuxPlugin struct {
 	enabled bool
 	runner  tmuxRunner
 	target  *TmuxTarget
+	sleepFn func(time.Duration)
 }
 
 func newTmuxPlugin(enabled bool, runner tmuxRunner) *TmuxPlugin {
 	if runner == nil {
 		runner = shellTmuxRunner{}
 	}
-	return &TmuxPlugin{enabled: enabled, runner: runner}
+	return &TmuxPlugin{enabled: enabled, runner: runner, sleepFn: time.Sleep}
 }
 
 func (p *TmuxPlugin) Enabled() bool {
@@ -210,6 +211,46 @@ func (p *TmuxPlugin) ClearMarkPane(paneID string) error {
 		return nil
 	}
 	_, err = p.runner.Run("select-pane", "-M", "-t", target)
+	return err
+}
+
+func (p *TmuxPlugin) BlinkPaneWindow(paneID string) error {
+	if !p.Enabled() {
+		return errors.New("tmux plugin disabled")
+	}
+	target := strings.TrimSpace(paneID)
+	if target == "" {
+		return errors.New("empty pane id")
+	}
+
+	windowID, err := p.runner.Run("display-message", "-p", "-t", target, "#{window_id}")
+	if err != nil {
+		return err
+	}
+	windowID = strings.TrimSpace(windowID)
+	if windowID == "" {
+		return errors.New("empty window id")
+	}
+
+	oldStyle, err := p.runner.Run("show-options", "-w", "-v", "-t", windowID, "window-active-style")
+	if err != nil {
+		return err
+	}
+	oldStyle = strings.TrimSpace(oldStyle)
+	if oldStyle == "" {
+		oldStyle = "default"
+	}
+
+	steps := []string{"colour160", "default", "colour160", "default"}
+	for _, bg := range steps {
+		style := fmt.Sprintf("fg=default,bg=%s", bg)
+		if _, err := p.runner.Run("set-option", "-w", "-t", windowID, "window-active-style", style); err != nil {
+			return err
+		}
+		p.sleepFn(90 * time.Millisecond)
+	}
+
+	_, err = p.runner.Run("set-option", "-w", "-t", windowID, "window-active-style", oldStyle)
 	return err
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeTmuxResult struct {
@@ -200,5 +201,32 @@ func TestTmuxPlugin_ClearMarkPaneTogglesWhenMarked(t *testing.T) {
 	}
 	if len(runner.calls) != 2 {
 		t.Fatalf("expected 2 calls, got %d", len(runner.calls))
+	}
+}
+
+func TestTmuxPlugin_BlinkPaneWindow(t *testing.T) {
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"display-message\x1f-p\x1f-t\x1f%14\x1f#{window_id}":                              {out: "@10"},
+		"show-options\x1f-w\x1f-v\x1f-t\x1f@10\x1fwindow-active-style":                    {out: "default"},
+		"set-option\x1f-w\x1f-t\x1f@10\x1fwindow-active-style\x1ffg=default,bg=colour160": {out: ""},
+		"set-option\x1f-w\x1f-t\x1f@10\x1fwindow-active-style\x1ffg=default,bg=default":   {out: ""},
+		"set-option\x1f-w\x1f-t\x1f@10\x1fwindow-active-style\x1fdefault":                 {out: ""},
+	}}
+
+	plugin := newTmuxPlugin(true, runner)
+	plugin.sleepFn = func(_ time.Duration) {}
+
+	if err := plugin.BlinkPaneWindow("%14"); err != nil {
+		t.Fatalf("BlinkPaneWindow() error = %v", err)
+	}
+	if len(runner.calls) != 7 {
+		t.Fatalf("expected 7 calls, got %d", len(runner.calls))
+	}
+}
+
+func TestTmuxPlugin_BlinkPaneWindowRequiresPaneID(t *testing.T) {
+	plugin := newTmuxPlugin(true, &fakeTmuxRunner{})
+	if err := plugin.BlinkPaneWindow("   "); err == nil {
+		t.Fatalf("expected error")
 	}
 }
