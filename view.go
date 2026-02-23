@@ -193,6 +193,10 @@ func (m model) buildColumnRows(status Status) ([]boardRow, map[string]int) {
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
+	grayBoard := m.mode == ModeDetails
+	if grayBoard {
+		borderColor = lipgloss.Color("241")
+	}
 	style := lipgloss.NewStyle().
 		Border(border).
 		BorderForeground(borderColor).
@@ -219,12 +223,24 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 	maxTextWidth := max(1, width-4)
 
 	header := truncate(fmt.Sprintf("%s (%d)", status.Label(), len(col)), maxTextWidth)
-	lines := []string{statusHeaderStyle(status).Render(header)}
+	headerLine := statusHeaderStyle(status).Render(header)
+	if grayBoard {
+		headerLine = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Bold(true).
+			Render(header)
+	}
+	lines := []string{headerLine}
 
 	itemsPerPage := max(1, innerHeight-2)
 
 	if len(rows) == 0 {
-		lines = append(lines, m.styles.Dim.Render(truncate("(empty)", maxTextWidth)))
+		emptyLine := truncate("(empty)", maxTextWidth)
+		if grayBoard {
+			lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render(emptyLine))
+		} else {
+			lines = append(lines, m.styles.Dim.Render(emptyLine))
+		}
 	} else {
 		if offset >= len(rows) {
 			offset = len(rows) - 1
@@ -242,7 +258,12 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 					Faint(true).
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
-			if i == selectedRowIdx && active && !rowItem.ghost {
+			if grayBoard && !rowItem.ghost {
+				row = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("243")).
+					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+			}
+			if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
 				row = m.styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			lines = append(lines, row)
