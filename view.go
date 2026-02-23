@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"fmt"
@@ -12,12 +12,12 @@ import (
 var ansiSGRRegexp = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func (m model) View() string {
-	if m.width <= 0 || m.height <= 0 {
+	if m.Width <= 0 || m.Height <= 0 {
 		return "loading terminal size..."
 	}
 
-	if m.loading {
-		return m.styles.App.Render("Loading beads data...")
+	if m.Loading {
+		return m.Styles.App.Render("Loading beads data...")
 	}
 
 	title := m.renderTitle()
@@ -31,15 +31,15 @@ func (m model) View() string {
 	base := strings.Join(parts, "\n")
 	modal := m.renderModal()
 	if modal == "" {
-		out := m.styles.App.Render(base)
+		out := m.Styles.App.Render(base)
 		return m.applyFocusDimming(out)
 	}
 
-	wrappedBase := m.styles.App.Render(base)
-	modalStyle := m.styles.HelpBox.MaxWidth(max(30, m.width-4))
+	wrappedBase := m.Styles.App.Render(base)
+	modalStyle := m.Styles.HelpBox.MaxWidth(max(30, m.Width-4))
 	overlay := lipgloss.Place(
-		m.width,
-		m.height,
+		m.Width,
+		m.Height,
 		lipgloss.Center,
 		lipgloss.Center,
 		modalStyle.Render(modal),
@@ -48,7 +48,7 @@ func (m model) View() string {
 }
 
 func (m model) applyFocusDimming(out string) string {
-	if m.uiFocused {
+	if m.UIFocused {
 		return out
 	}
 	plain := ansiSGRRegexp.ReplaceAllString(out, "")
@@ -57,22 +57,22 @@ func (m model) applyFocusDimming(out string) string {
 
 func (m model) renderTitle() string {
 	leaderHint := ""
-	if m.leader {
-		leaderHint = " | leader: g ..."
+	if m.Leader {
+		leaderHint = " | Leader: g ..."
 	}
 
-	line := truncate(buildTitle(m)+leaderHint, max(10, m.width-4))
-	return m.styles.Title.Render(line)
+	line := truncate(buildTitle(m)+leaderHint, max(10, m.Width-4))
+	return m.Styles.Title.Render(line)
 }
 
 func (m model) renderInlineSearchBlock() string {
-	maxWidth := max(10, m.width-4)
+	maxWidth := max(10, m.Width-4)
 	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 
-	queryValue := strings.TrimSpace(m.searchQuery)
-	if m.mode == ModeSearch {
-		raw := m.searchInput.Value()
-		queryValue = injectCursorMarker(raw, m.searchInput.Position())
+	queryValue := strings.TrimSpace(m.SearchQuery)
+	if m.Mode == ModeSearch {
+		raw := m.SearchInput.Value()
+		queryValue = injectCursorMarker(raw, m.SearchInput.Position())
 		if strings.TrimSpace(raw) == "" {
 			queryValue = "|"
 		}
@@ -84,16 +84,16 @@ func (m model) renderInlineSearchBlock() string {
 	lines := []string{searchLine}
 
 	if m.inlineFiltersVisible() {
-		if m.mode == ModeSearch && m.searchExpanded {
+		if m.Mode == ModeSearch && m.SearchExpanded {
 			lines = append(lines, m.renderInlineFiltersExpandedLines(maxWidth)...)
 		} else {
 			lines = append(lines, truncate(m.renderInlineFiltersSummaryLine(), maxWidth))
 		}
 	}
 
-	if m.mode != ModeSearch {
+	if m.Mode != ModeSearch {
 		for i := range lines {
-			lines[i] = m.styles.Dim.Render(lines[i])
+			lines[i] = m.Styles.Dim.Render(lines[i])
 		}
 	}
 
@@ -115,31 +115,31 @@ func (m model) renderInlineFiltersSummaryLine() string {
 		{name: "type", key: "type", value: "any"},
 	}
 
-	if m.mode == ModeSearch && m.filterForm != nil {
-		fields[0].value = defaultString(strings.TrimSpace(m.filterForm.Assignee), "any")
-		fields[1].value = defaultString(strings.TrimSpace(m.filterForm.Label), "any")
-		fields[2].value = defaultString(strings.TrimSpace(m.filterForm.Status), "any")
-		fields[3].value = defaultString(strings.TrimSpace(m.filterForm.Priority), "any")
-		fields[4].value = defaultString(strings.TrimSpace(m.filterForm.Type), "any")
+	if m.Mode == ModeSearch && m.FilterForm != nil {
+		fields[0].value = defaultString(strings.TrimSpace(m.FilterForm.Assignee), "any")
+		fields[1].value = defaultString(strings.TrimSpace(m.FilterForm.Label), "any")
+		fields[2].value = defaultString(strings.TrimSpace(m.FilterForm.Status), "any")
+		fields[3].value = defaultString(strings.TrimSpace(m.FilterForm.Priority), "any")
+		fields[4].value = defaultString(strings.TrimSpace(m.FilterForm.Type), "any")
 	} else {
-		fields[0].value = defaultString(strings.TrimSpace(m.filter.Assignee), "any")
-		fields[1].value = defaultString(strings.TrimSpace(m.filter.Label), "any")
-		fields[2].value = defaultString(strings.TrimSpace(m.filter.Status), "any")
-		fields[3].value = defaultString(strings.TrimSpace(m.filter.Priority), "any")
-		fields[4].value = defaultString(strings.TrimSpace(m.filter.Type), "any")
+		fields[0].value = defaultString(strings.TrimSpace(m.Filter.Assignee), "any")
+		fields[1].value = defaultString(strings.TrimSpace(m.Filter.Label), "any")
+		fields[2].value = defaultString(strings.TrimSpace(m.Filter.Status), "any")
+		fields[3].value = defaultString(strings.TrimSpace(m.Filter.Priority), "any")
+		fields[4].value = defaultString(strings.TrimSpace(m.Filter.Type), "any")
 	}
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true)
 	activeField := ""
-	if m.mode == ModeSearch && m.searchExpanded && m.filterForm != nil {
-		activeField = m.filterForm.currentField()
+	if m.Mode == ModeSearch && m.SearchExpanded && m.FilterForm != nil {
+		activeField = m.FilterForm.currentField()
 	}
 
 	parts := make([]string, 0, len(fields))
 	for _, entry := range fields {
 		segment := fmt.Sprintf("%s=%s", entry.key, entry.value)
 		if entry.name == activeField {
-			parts = append(parts, m.styles.Selected.Render(segment))
+			parts = append(parts, m.Styles.Selected.Render(segment))
 			continue
 		}
 		parts = append(parts, segment)
@@ -164,8 +164,8 @@ func (m model) renderInlineFiltersExpandedLines(maxWidth int) []string {
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true)
 	activeField := ""
-	if m.filterForm != nil {
-		activeField = m.filterForm.currentField()
+	if m.FilterForm != nil {
+		activeField = m.FilterForm.currentField()
 	}
 
 	lines := []string{truncate(keyStyle.Render("filters:"), maxWidth)}
@@ -186,31 +186,31 @@ func (m model) inlineFilterOptionsAndCurrent(field string) ([]string, string) {
 	options := m.searchFilterOptions(field)
 	current := "any"
 
-	if m.mode == ModeSearch && m.filterForm != nil {
+	if m.Mode == ModeSearch && m.FilterForm != nil {
 		switch field {
 		case "assignee":
-			current = defaultString(strings.TrimSpace(m.filterForm.Assignee), "any")
+			current = defaultString(strings.TrimSpace(m.FilterForm.Assignee), "any")
 		case "label":
-			current = defaultString(strings.TrimSpace(m.filterForm.Label), "any")
+			current = defaultString(strings.TrimSpace(m.FilterForm.Label), "any")
 		case "status":
-			current = defaultString(strings.TrimSpace(m.filterForm.Status), "any")
+			current = defaultString(strings.TrimSpace(m.FilterForm.Status), "any")
 		case "priority":
-			current = defaultString(strings.TrimSpace(m.filterForm.Priority), "any")
+			current = defaultString(strings.TrimSpace(m.FilterForm.Priority), "any")
 		case "type":
-			current = defaultString(strings.TrimSpace(m.filterForm.Type), "any")
+			current = defaultString(strings.TrimSpace(m.FilterForm.Type), "any")
 		}
 	} else {
 		switch field {
 		case "assignee":
-			current = defaultString(strings.TrimSpace(m.filter.Assignee), "any")
+			current = defaultString(strings.TrimSpace(m.Filter.Assignee), "any")
 		case "label":
-			current = defaultString(strings.TrimSpace(m.filter.Label), "any")
+			current = defaultString(strings.TrimSpace(m.Filter.Label), "any")
 		case "status":
-			current = defaultString(strings.TrimSpace(m.filter.Status), "any")
+			current = defaultString(strings.TrimSpace(m.Filter.Status), "any")
 		case "priority":
-			current = defaultString(strings.TrimSpace(m.filter.Priority), "any")
+			current = defaultString(strings.TrimSpace(m.Filter.Priority), "any")
 		case "type":
-			current = defaultString(strings.TrimSpace(m.filter.Type), "any")
+			current = defaultString(strings.TrimSpace(m.Filter.Type), "any")
 		}
 	}
 
@@ -230,18 +230,18 @@ func (m model) inlineFilterOptionsAndCurrent(field string) ([]string, string) {
 func (m model) renderInlineFilterValues(field string, values []string, current string) string {
 	switch field {
 	case "status":
-		return renderEnumValuesStyled(values, current, m.styles.Selected, enumStyleStatus)
+		return renderEnumValuesStyled(values, current, m.Styles.Selected, enumStyleStatus)
 	case "priority":
-		return renderEnumValuesStyled(values, current, m.styles.Selected, enumStylePriority)
+		return renderEnumValuesStyled(values, current, m.Styles.Selected, enumStylePriority)
 	case "type":
-		return renderEnumValuesStyled(values, current, m.styles.Selected, enumStyleIssueType)
+		return renderEnumValuesStyled(values, current, m.Styles.Selected, enumStyleIssueType)
 	default:
-		return renderEnumValues(values, current, m.styles.Selected)
+		return renderEnumValues(values, current, m.Styles.Selected)
 	}
 }
 
 func (m model) renderBoard() string {
-	availableWidth := max(20, m.width-4)
+	availableWidth := max(20, m.Width-4)
 	gap := 1
 	totalGap := gap * (len(statusOrder) - 1)
 	panelWidth := (availableWidth - totalGap) / len(statusOrder)
@@ -253,7 +253,7 @@ func (m model) renderBoard() string {
 
 	cols := make([]string, 0, len(statusOrder))
 	for idx, status := range statusOrder {
-		cols = append(cols, m.renderColumn(status, panelWidth, innerHeight, idx == m.selectedCol))
+		cols = append(cols, m.renderColumn(status, panelWidth, innerHeight, idx == m.SelectedCol))
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, cols...)
@@ -266,10 +266,10 @@ type boardRow struct {
 }
 
 func (m model) issueBaseDepth(status Status, issueID string) int {
-	if m.columnDepths == nil {
+	if m.ColumnDepths == nil {
 		return 0
 	}
-	statusDepths, ok := m.columnDepths[status]
+	statusDepths, ok := m.ColumnDepths[status]
 	if !ok || statusDepths == nil {
 		return 0
 	}
@@ -294,7 +294,7 @@ func (m model) crossStatusParentChain(item Issue, status Status) []Issue {
 		}
 		visited[pid] = true
 
-		parent := m.byID[pid]
+		parent := m.ByID[pid]
 		if parent == nil {
 			break
 		}
@@ -316,7 +316,7 @@ func (m model) crossStatusParentChain(item Issue, status Status) []Issue {
 }
 
 func (m model) buildColumnRows(status Status) ([]boardRow, map[string]int) {
-	col := m.columns[status]
+	col := m.Columns[status]
 	if len(col) == 0 {
 		return nil, map[string]int{}
 	}
@@ -373,7 +373,7 @@ func (m model) buildColumnRows(status Status) ([]boardRow, map[string]int) {
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
-	grayBoard := m.mode == ModeDetails
+	grayBoard := m.Mode == ModeDetails
 	if grayBoard {
 		borderColor = lipgloss.Color("241")
 	}
@@ -382,9 +382,9 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 		BorderForeground(borderColor).
 		Width(width)
 
-	col := m.columns[status]
+	col := m.Columns[status]
 	rows, issueRowIndex := m.buildColumnRows(status)
-	idx := m.selectedIdx[status]
+	idx := m.SelectedIdx[status]
 	if idx < 0 {
 		idx = 0
 	}
@@ -395,7 +395,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 		}
 	}
 
-	offset := m.scrollOffset[status]
+	offset := m.ScrollOffset[status]
 	if offset < 0 {
 		offset = 0
 	}
@@ -427,7 +427,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 		if grayBoard {
 			lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render(emptyLine))
 		} else {
-			lines = append(lines, m.styles.Dim.Render(emptyLine))
+			lines = append(lines, m.Styles.Dim.Render(emptyLine))
 		}
 	} else {
 		if offset >= len(rows) {
@@ -449,7 +449,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
-				row = m.styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+				row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			lines = append(lines, row)
 		}
@@ -467,17 +467,17 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 }
 
 func (m model) renderInspector() string {
-	containerStyle := m.styles.Border
-	if m.mode == ModeDetails {
-		containerStyle = m.styles.Active
+	containerStyle := m.Styles.Border
+	if m.Mode == ModeDetails {
+		containerStyle = m.Styles.Active
 	}
 
 	issue := m.currentIssue()
 	if issue == nil {
-		return containerStyle.Width(max(20, m.width-4)).Render("No selected issue")
+		return containerStyle.Width(max(20, m.Width-4)).Render("No selected issue")
 	}
 
-	w := max(20, m.width-4)
+	w := max(20, m.Width-4)
 	inner := m.inspectorInnerWidth()
 	innerHeight := m.inspectorInnerHeight()
 
@@ -526,7 +526,7 @@ func (m model) renderInspector() string {
 			labelsStyle.Render(labelsText),
 	}
 
-	if m.showDetails {
+	if m.ShowDetails {
 		details := detailLines(issue, inner)
 		height := m.detailsViewportHeight()
 		if height > 0 && len(details) > 0 {
@@ -534,7 +534,7 @@ func (m model) renderInspector() string {
 			if maxOffset < 0 {
 				maxOffset = 0
 			}
-			start := m.detailsScroll
+			start := m.DetailsScroll
 			if start < 0 {
 				start = 0
 			}
@@ -606,42 +606,42 @@ func styleDetailMetaLine(line string, keyStyle lipgloss.Style) string {
 
 func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space focus details | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
-	if m.mode != ModeBoard {
-		if m.mode == ModeDetails {
-			left = "mode: details | j/k scroll | Ctrl+X ext edit | Esc close"
-		} else if m.mode == ModeSearch {
-			left = "mode: search | type search query | Ctrl+F filters | ↑/↓ field | Tab/Shift+Tab value | Enter/Esc apply+exit | Ctrl+C clear"
-		} else if m.mode == ModeConfirmClosedParentCreate {
-			left = "mode: confirm closed parent | y confirm | n/Esc cancel"
-		} else if m.mode == ModeCreate {
-			left = "mode: create | Enter save | Esc close if title is empty"
-		} else if m.mode == ModeEdit {
-			left = "mode: edit | Enter/Esc save"
+	if m.Mode != ModeBoard {
+		if m.Mode == ModeDetails {
+			left = "Mode: details | j/k scroll | Ctrl+X ext edit | Esc close"
+		} else if m.Mode == ModeSearch {
+			left = "Mode: search | type search query | Ctrl+F filters | ↑/↓ field | Tab/Shift+Tab value | Enter/Esc apply+exit | Ctrl+C clear"
+		} else if m.Mode == ModeConfirmClosedParentCreate {
+			left = "Mode: confirm closed parent | y confirm | n/Esc cancel"
+		} else if m.Mode == ModeCreate {
+			left = "Mode: create | Enter save | Esc close if title is empty"
+		} else if m.Mode == ModeEdit {
+			left = "Mode: edit | Enter/Esc save"
 		} else {
-			left = "mode: " + string(m.mode) + " | Esc cancel"
+			left = "Mode: " + string(m.Mode) + " | Esc cancel"
 		}
 	}
 
 	right := ""
-	if m.toast != "" {
-		switch m.toastKind {
+	if m.Toast != "" {
+		switch m.ToastKind {
 		case "error":
-			right = m.styles.Error.Render(m.toast)
+			right = m.Styles.Error.Render(m.Toast)
 		case "warning":
-			right = m.styles.Warning.Render(m.toast)
+			right = m.Styles.Warning.Render(m.Toast)
 		case "success":
-			right = m.styles.Success.Render(m.toast)
+			right = m.Styles.Success.Render(m.Toast)
 		default:
-			right = m.toast
+			right = m.Toast
 		}
 	}
 
-	line := truncate(left+"  "+right, max(10, m.width-4))
-	return m.styles.Footer.Render(line)
+	line := truncate(left+"  "+right, max(10, m.Width-4))
+	return m.Styles.Footer.Render(line)
 }
 
 func (m model) renderModal() string {
-	switch m.mode {
+	switch m.Mode {
 	case ModeHelp:
 		return m.renderHelpModal()
 	case ModeCreate, ModeEdit:
@@ -670,7 +670,7 @@ func (m model) renderHelpModal() string {
 	contentViewport := max(1, viewport-filterLinesCount)
 
 	maxOffset := m.helpMaxScroll()
-	offset := m.helpScroll
+	offset := m.HelpScroll
 	if offset < 0 {
 		offset = 0
 	}
@@ -711,10 +711,10 @@ func (m model) renderHelpModal() string {
 
 func (m model) helpContentLines() []string {
 	lines := []string{"Hotkeys"}
-	query := strings.TrimSpace(strings.ToLower(m.helpQuery))
-	global := m.filterHelpEntries(m.keymap.Global, query)
-	leader := m.filterHelpEntries(m.keymap.Leader, query)
-	form := m.filterHelpEntries(m.keymap.Form, query)
+	query := strings.TrimSpace(strings.ToLower(m.HelpQuery))
+	global := m.filterHelpEntries(m.Keymap.Global, query)
+	leader := m.filterHelpEntries(m.Keymap.Leader, query)
+	form := m.filterHelpEntries(m.Keymap.Form, query)
 
 	lines = append(lines, "")
 	if len(global) > 0 {
@@ -757,7 +757,7 @@ func (m model) filterHelpEntries(entries []string, query string) []string {
 
 func (m model) helpViewportContentLines() int {
 	// HelpBox has top/bottom border + padding = 4 lines. Keep 2 lines for footer/hints.
-	available := m.height - 6
+	available := m.Height - 6
 	content := available - 2
 	if content < 1 {
 		return 1
@@ -789,7 +789,7 @@ func (m model) helpFilterLinesCount(viewport int) int {
 }
 
 func (m model) helpFilterInputWithCursor() string {
-	return m.helpQuery + "▏"
+	return m.HelpQuery + "▏"
 }
 
 func (m model) helpControlsHintLine() string {
@@ -885,7 +885,7 @@ func (m model) styleHelpContentLine(raw string, padded string) string {
 	case "Global:", "Leader (g):", "Forms:":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Bold(true).Render(padded)
 	case "No matches":
-		return m.styles.Dim.Render(padded)
+		return m.Styles.Dim.Render(padded)
 	}
 
 	if idx := strings.Index(raw, ":"); idx > 0 && idx < len(raw)-1 {
@@ -945,18 +945,18 @@ func (m model) renderSearchModal() string {
 		"Search",
 		"",
 		"Searches by id/title/description/assignee/labels (interactive)",
-		m.searchInput.View(),
+		m.SearchInput.View(),
 		"",
 		"Type to filter | Enter: done | Esc: cancel",
 	}, "\n")
 }
 
 func (m model) renderFilterModal() string {
-	if m.filterForm == nil {
+	if m.FilterForm == nil {
 		return "Filter\n\nloading..."
 	}
 
-	field := m.filterForm.currentField()
+	field := m.FilterForm.currentField()
 	mark := func(name string) string {
 		if name == field {
 			return "▶"
@@ -964,13 +964,13 @@ func (m model) renderFilterModal() string {
 		return " "
 	}
 
-	assignee := m.filterForm.Assignee
-	label := m.filterForm.Label
+	assignee := m.FilterForm.Assignee
+	label := m.FilterForm.Label
 	if field == "assignee" || field == "label" {
 		if field == "assignee" {
-			assignee = m.filterForm.Input.Value()
+			assignee = m.FilterForm.Input.Value()
 		} else {
-			label = m.filterForm.Input.Value()
+			label = m.FilterForm.Input.Value()
 		}
 	}
 
@@ -979,13 +979,13 @@ func (m model) renderFilterModal() string {
 		"",
 		fmt.Sprintf("%s assignee: %s", mark("assignee"), defaultString(assignee, "any")),
 		fmt.Sprintf("%s label:    %s", mark("label"), defaultString(label, "any")),
-		fmt.Sprintf("%s status:   %s", mark("status"), defaultString(m.filterForm.Status, "any")),
-		fmt.Sprintf("%s priority: %s", mark("priority"), defaultString(m.filterForm.Priority, "any")),
+		fmt.Sprintf("%s status:   %s", mark("status"), defaultString(m.FilterForm.Status, "any")),
+		fmt.Sprintf("%s priority: %s", mark("priority"), defaultString(m.FilterForm.Priority, "any")),
 		"",
 	}
 
 	if field == "assignee" || field == "label" {
-		lines = append(lines, "edit: "+m.filterForm.Input.View())
+		lines = append(lines, "edit: "+m.FilterForm.Input.View())
 	} else {
 		lines = append(lines, "use ↑/↓ to cycle enum")
 	}
@@ -995,16 +995,16 @@ func (m model) renderFilterModal() string {
 }
 
 func (m model) renderFormModal() string {
-	if m.form == nil {
+	if m.Form == nil {
 		return "Form\n\nloading..."
 	}
 
 	title := "Create Issue"
-	if !m.form.Create {
-		title = "Edit Issue: " + m.form.IssueID
+	if !m.Form.Create {
+		title = "Edit Issue: " + m.Form.IssueID
 	}
 
-	field := m.form.currentField()
+	field := m.Form.currentField()
 	mark := func(name string) string {
 		if field == name {
 			return "▶"
@@ -1017,8 +1017,8 @@ func (m model) renderFormModal() string {
 			if field != activeField {
 				return saved
 			}
-			raw := m.form.Input.Value()
-			display := injectCursorMarker(raw, m.form.Input.Position())
+			raw := m.Form.Input.Value()
+			display := injectCursorMarker(raw, m.Form.Input.Position())
 			if strings.TrimSpace(raw) == "" {
 				return "|"
 			}
@@ -1027,25 +1027,25 @@ func (m model) renderFormModal() string {
 
 		switch name {
 		case "title":
-			return inlineTextValue("title", m.form.Title)
+			return inlineTextValue("title", m.Form.Title)
 		case "status":
-			return string(m.form.Status)
+			return string(m.Form.Status)
 		case "priority":
-			return fmt.Sprintf("%d", m.form.Priority)
+			return fmt.Sprintf("%d", m.Form.Priority)
 		case "type":
-			return m.form.IssueType
+			return m.Form.IssueType
 		case "assignee":
-			return inlineTextValue("assignee", m.form.Assignee)
+			return inlineTextValue("assignee", m.Form.Assignee)
 		case "labels":
-			return inlineTextValue("labels", m.form.Labels)
+			return inlineTextValue("labels", m.Form.Labels)
 		case "parent":
-			return m.form.parentDisplay()
+			return m.Form.parentDisplay()
 		}
 		return ""
 	}
 
-	showParentSide := field == "parent" && len(m.form.ParentOpts) > 0
-	modalContentWidth := max(40, min(170, m.width-14))
+	showParentSide := field == "parent" && len(m.Form.ParentOpts) > 0
+	modalContentWidth := max(40, min(170, m.Width-14))
 	leftPaneWidth := modalContentWidth
 	rightPaneWidth := 0
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -1056,7 +1056,7 @@ func (m model) renderFormModal() string {
 
 	lines := []string{title, ""}
 	maxLineWidth := leftPaneWidth
-	for _, f := range m.form.fields() {
+	for _, f := range m.Form.fields() {
 		prefixPlain := fmt.Sprintf("%s %s: ", mark(f), f)
 		prefix := fmt.Sprintf("%s %s ", mark(f), keyStyle.Render(f+":"))
 		rawValue := defaultString(valueFor(f), "-")
@@ -1075,49 +1075,49 @@ func (m model) renderFormModal() string {
 	prefixPlain := "description: "
 	prefix := keyStyle.Render("description:") + " "
 	previewWidth := max(8, maxLineWidth-lipgloss.Width(prefixPlain))
-	previewLines, wasClipped := firstNDescriptionLines(m.form.Description, 5, previewWidth)
+	previewLines, wasClipped := firstNDescriptionLines(m.Form.Description, 5, previewWidth)
 	lines = append(lines, prefix+previewLines[0])
 	indent := strings.Repeat(" ", lipgloss.Width(prefixPlain))
 	for _, line := range previewLines[1:] {
 		lines = append(lines, indent+line)
 	}
 	if wasClipped {
-		lines = append(lines, indent+m.styles.Dim.Render("..."))
+		lines = append(lines, indent+m.Styles.Dim.Render("..."))
 	}
 
-	if !m.form.isTextField(field) {
+	if !m.Form.isTextField(field) {
 		enumValues := "values: -"
 		cycleHint := "use Tab/Shift+Tab to cycle enum"
 		switch field {
 		case "status":
 			enumValues = "values: " + renderEnumValuesStyled(
 				[]string{"open", "in_progress", "blocked", "closed"},
-				string(m.form.Status),
-				m.styles.Selected,
+				string(m.Form.Status),
+				m.Styles.Selected,
 				enumStyleStatus,
 			)
 		case "type":
 			enumValues = "values: " + renderEnumValuesStyled(
 				[]string{"task", "epic", "bug", "feature", "chore", "decision"},
-				m.form.IssueType,
-				m.styles.Selected,
+				m.Form.IssueType,
+				m.Styles.Selected,
 				enumStyleIssueType,
 			)
 		case "priority":
 			enumValues = "values: " + renderEnumValuesStyled(
 				[]string{"0", "1", "2", "3", "4"},
-				fmt.Sprintf("%d", m.form.Priority),
-				m.styles.Selected,
+				fmt.Sprintf("%d", m.Form.Priority),
+				m.Styles.Selected,
 				enumStylePriority,
 			)
 		case "parent":
-			enumValues = "values: " + strings.Join(m.form.parentHints(7), " | ")
+			enumValues = "values: " + strings.Join(m.Form.parentHints(7), " | ")
 		}
 		lines = append(lines, "", cycleHint, enumValues)
 	}
 
 	helpLine := "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter save | Esc close if empty title"
-	if !m.form.Create {
+	if !m.Form.Create {
 		helpLine = "↑/↓ move fields | Tab/Shift+Tab cycle enum fields | Ctrl+X edit description in $EDITOR | Enter/Esc save"
 	}
 	lines = append(lines, "", helpLine)
@@ -1131,26 +1131,26 @@ func (m model) renderFormModal() string {
 }
 
 func (m model) renderPromptModal() string {
-	if m.prompt == nil {
+	if m.Prompt == nil {
 		return "Prompt\n\nloading..."
 	}
 
 	return strings.Join([]string{
-		m.prompt.Title,
+		m.Prompt.Title,
 		"",
-		m.prompt.Description,
-		m.prompt.Input.View(),
+		m.Prompt.Description,
+		m.Prompt.Input.View(),
 		"",
 		"Enter submit | Esc cancel",
 	}, "\n")
 }
 
 func (m model) renderParentPickerModal() string {
-	if m.parentPicker == nil {
+	if m.ParentPicker == nil {
 		return "Parent Picker\n\nloading..."
 	}
 
-	total := len(m.parentPicker.Options)
+	total := len(m.ParentPicker.Options)
 	if total == 0 {
 		return "Parent Picker\n\nNo parent candidates available\n\nEsc close"
 	}
@@ -1158,11 +1158,11 @@ func (m model) renderParentPickerModal() string {
 	lines := []string{
 		statusHeaderStyle(StatusInProgress).Render("Parent Picker (g p)"),
 		"",
-		m.styles.Warning.Render("Choose parent: ↑/↓ (or j/k), Enter apply, Esc cancel"),
+		m.Styles.Warning.Render("Choose parent: ↑/↓ (or j/k), Enter apply, Esc cancel"),
 		"",
 	}
 
-	center := m.parentPicker.Index
+	center := m.ParentPicker.Index
 	if center < 0 || center >= total {
 		center = 0
 	}
@@ -1173,13 +1173,13 @@ func (m model) renderParentPickerModal() string {
 	}
 
 	for i := start; i < end; i++ {
-		opt := m.parentPicker.Options[i]
+		opt := m.ParentPicker.Options[i]
 		prefix := "  "
 		if i == center {
-			prefix = m.styles.Warning.Render("▶ ")
+			prefix = m.Styles.Warning.Render("▶ ")
 		}
 
-		line := m.styles.Dim.Render("(none)")
+		line := m.Styles.Dim.Render("(none)")
 		linePlain := "(none)"
 		if opt.ID != "" {
 			statusText := string(opt.Display)
@@ -1200,21 +1200,21 @@ func (m model) renderParentPickerModal() string {
 		}
 
 		if i == center {
-			line = m.styles.Selected.Render(linePlain)
+			line = m.Styles.Selected.Render(linePlain)
 		}
 		lines = append(lines, prefix+line)
 	}
 
-	lines = append(lines, "", m.styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
+	lines = append(lines, "", m.Styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
 	return strings.Join(lines, "\n")
 }
 
 func (m model) renderTmuxPickerModal() string {
-	if m.tmuxPicker == nil {
+	if m.TmuxPicker == nil {
 		return "Tmux Picker\n\nloading..."
 	}
 
-	total := len(m.tmuxPicker.Targets)
+	total := len(m.TmuxPicker.Targets)
 	if total == 0 {
 		return "Tmux Picker\n\nNo tmux targets available\n\nEsc close"
 	}
@@ -1222,12 +1222,12 @@ func (m model) renderTmuxPickerModal() string {
 	lines := []string{
 		statusHeaderStyle(StatusInProgress).Render("Tmux Target Picker (Y)"),
 		"",
-		m.styles.Warning.Render("Choose target: ↑/↓ (or j/k), Enter select, Esc cancel"),
-		m.styles.Dim.Render("current pane is marked in tmux, mark clears 5s after picker exit"),
+		m.Styles.Warning.Render("Choose target: ↑/↓ (or j/k), Enter select, Esc cancel"),
+		m.Styles.Dim.Render("current pane is marked in tmux, mark clears 5s after picker exit"),
 		"",
 	}
 
-	center := m.tmuxPicker.Index
+	center := m.TmuxPicker.Index
 	if center < 0 || center >= total {
 		center = 0
 	}
@@ -1238,26 +1238,26 @@ func (m model) renderTmuxPickerModal() string {
 	}
 
 	for i := start; i < end; i++ {
-		target := m.tmuxPicker.Targets[i]
+		target := m.TmuxPicker.Targets[i]
 		prefix := "  "
 		if i == center {
-			prefix = m.styles.Warning.Render("▶ ")
+			prefix = m.Styles.Warning.Render("▶ ")
 		}
 
 		codexMark := "  "
 		if isLikelyCodexTarget(target) {
-			codexMark = m.styles.Success.Render("C ")
+			codexMark = m.Styles.Success.Render("C ")
 		}
 		clientMark := "  "
 		if target.HasClient {
-			clientMark = m.styles.Success.Render("A ")
+			clientMark = m.Styles.Success.Render("A ")
 		}
 		markMark := "  "
-		if strings.TrimSpace(target.PaneID) != "" && target.PaneID == m.tmuxPicker.MarkedPaneID {
-			markMark = m.styles.Warning.Render("M ")
+		if strings.TrimSpace(target.PaneID) != "" && target.PaneID == m.TmuxPicker.MarkedPaneID {
+			markMark = m.Styles.Warning.Render("M ")
 		}
 		markFlag := "-"
-		if strings.TrimSpace(target.PaneID) != "" && target.PaneID == m.tmuxPicker.MarkedPaneID {
+		if strings.TrimSpace(target.PaneID) != "" && target.PaneID == m.TmuxPicker.MarkedPaneID {
 			markFlag = "M"
 		}
 		codexFlag := "-"
@@ -1291,40 +1291,40 @@ func (m model) renderTmuxPickerModal() string {
 			truncate(defaultString(target.Command, "-")+" | "+defaultString(target.Title, "-"), 70),
 		)
 		if i == center {
-			line = m.styles.Selected.Render(linePlain)
+			line = m.Styles.Selected.Render(linePlain)
 		}
 		lines = append(lines, prefix+line)
 	}
 
 	legend := "M=marked, C=codex-like, A=attached-client"
-	lines = append(lines, "", m.styles.Dim.Render(legend), m.styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
+	lines = append(lines, "", m.Styles.Dim.Render(legend), m.Styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
 	return strings.Join(lines, "\n")
 }
 
 func (m model) renderDepListModal() string {
-	if m.depList == nil {
+	if m.DepList == nil {
 		return "Dependencies\n\nloading..."
 	}
 
 	maxLines := 18
-	if m.height > 24 {
-		maxLines = m.height - 8
+	if m.Height > 24 {
+		maxLines = m.Height - 8
 	}
 
-	start := min(max(0, m.depList.Scroll), max(0, len(m.depList.Lines)-1))
-	end := min(len(m.depList.Lines), start+maxLines)
+	start := min(max(0, m.DepList.Scroll), max(0, len(m.DepList.Lines)-1))
+	end := min(len(m.DepList.Lines), start+maxLines)
 	if end < start {
 		end = start
 	}
 
-	lines := []string{fmt.Sprintf("Dependencies: %s", m.depList.IssueID), ""}
-	lines = append(lines, m.depList.Lines[start:end]...)
+	lines := []string{fmt.Sprintf("Dependencies: %s", m.DepList.IssueID), ""}
+	lines = append(lines, m.DepList.Lines[start:end]...)
 	lines = append(lines, "", "j/k scroll | Esc close")
 	return strings.Join(lines, "\n")
 }
 
 func (m model) renderDeleteModal() string {
-	if m.confirmDelete == nil {
+	if m.ConfirmDelete == nil {
 		return "Delete\n\nloading..."
 	}
 
@@ -1343,14 +1343,14 @@ func (m model) renderDeleteModal() string {
 	forceOption := modeStyle.Render("1 force")
 	cascadeOption := modeStyle.Render("2 cascade")
 	modeLine := forceStyle.Render("force")
-	if m.confirmDelete.Mode == DeleteModeCascade {
+	if m.ConfirmDelete.Mode == DeleteModeCascade {
 		cascadeOption = cascadeStyle.Render("2 cascade")
 		modeLine = cascadeStyle.Render("cascade")
 	} else {
 		forceOption = forceStyle.Render("1 force")
 	}
 
-	previewLines := strings.Split(m.confirmDelete.Preview, "\n")
+	previewLines := strings.Split(m.ConfirmDelete.Preview, "\n")
 	if len(previewLines) > 10 {
 		previewLines = previewLines[:10]
 		previewLines = append(previewLines, "...")
@@ -1359,8 +1359,8 @@ func (m model) renderDeleteModal() string {
 	lines := []string{
 		titleStyle.Render("Delete Issue"),
 		"",
-		labelStyle.Render("issue: ") + idStyle.Render(m.confirmDelete.IssueID),
-		labelStyle.Render("mode: ") + modeLine,
+		labelStyle.Render("issue: ") + idStyle.Render(m.ConfirmDelete.IssueID),
+		labelStyle.Render("Mode: ") + modeLine,
 		"",
 		previewTitleStyle.Render("Preview:"),
 	}
@@ -1380,7 +1380,7 @@ func (m model) renderDeleteModal() string {
 }
 
 func (m model) renderConfirmClosedParentCreateModal() string {
-	if m.confirmClosedParentCreate == nil {
+	if m.ConfirmClosedParentCreate == nil {
 		return "Create From Closed Parent\n\nloading..."
 	}
 
@@ -1393,12 +1393,12 @@ func (m model) renderConfirmClosedParentCreateModal() string {
 	yesStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
 	noStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 
-	parentID := strings.TrimSpace(m.confirmClosedParentCreate.ParentID)
-	parentTitle := strings.TrimSpace(m.confirmClosedParentCreate.ParentTitle)
+	parentID := strings.TrimSpace(m.ConfirmClosedParentCreate.ParentID)
+	parentTitle := strings.TrimSpace(m.ConfirmClosedParentCreate.ParentTitle)
 	if parentTitle == "" {
 		parentTitle = "-"
 	}
-	targetStatus := strings.TrimSpace(string(m.confirmClosedParentCreate.TargetStatus))
+	targetStatus := strings.TrimSpace(string(m.ConfirmClosedParentCreate.TargetStatus))
 	if targetStatus == "" {
 		targetStatus = string(StatusInProgress)
 	}
@@ -1628,7 +1628,7 @@ func enumStyleIssueType(raw string) lipgloss.Style {
 }
 
 func (m model) renderParentOptionsSidebar(width int) string {
-	if m.form == nil || len(m.form.ParentOpts) == 0 {
+	if m.Form == nil || len(m.Form.ParentOpts) == 0 {
 		return "Parent candidates\n\n(no options)"
 	}
 
@@ -1638,8 +1638,8 @@ func (m model) renderParentOptionsSidebar(width int) string {
 		"",
 	}
 
-	total := len(m.form.ParentOpts)
-	center := m.form.ParentIndex
+	total := len(m.Form.ParentOpts)
+	center := m.Form.ParentIndex
 	if center < 0 || center >= total {
 		center = 0
 	}
@@ -1653,7 +1653,7 @@ func (m model) renderParentOptionsSidebar(width int) string {
 
 	maxText := max(12, width-3)
 	for i := start; i < end; i++ {
-		opt := m.form.ParentOpts[i]
+		opt := m.Form.ParentOpts[i]
 		prefix := "  "
 		if i == center {
 			prefix = "▶ "
@@ -1683,7 +1683,7 @@ func (m model) renderParentOptionsSidebar(width int) string {
 		}
 
 		if i == center {
-			line = m.styles.Selected.Render(truncate(linePlain, maxText))
+			line = m.Styles.Selected.Render(truncate(linePlain, maxText))
 		}
 		lines = append(lines, prefix+line)
 	}

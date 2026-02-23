@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"context"
@@ -65,6 +65,14 @@ func newTmuxPlugin(enabled bool, runner tmuxRunner) *TmuxPlugin {
 		runner = shellTmuxRunner{}
 	}
 	return &TmuxPlugin{enabled: enabled, runner: runner, sleepFn: time.Sleep}
+}
+
+func (p *TmuxPlugin) SetSleepFn(fn func(time.Duration)) {
+	if fn == nil {
+		p.sleepFn = time.Sleep
+		return
+	}
+	p.sleepFn = fn
 }
 
 func (p *TmuxPlugin) Enabled() bool {

@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"fmt"
@@ -10,73 +10,75 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type model struct {
-	cfg Config
+type Model struct {
+	Cfg Config
 
-	width  int
-	height int
+	Width  int
+	Height int
 
-	beadsDir string
-	repoDir  string
-	client   *BdClient
+	BeadsDir string
+	RepoDir  string
+	Client   *BdClient
 
-	issues []Issue
-	byID   map[string]*Issue
+	Issues []Issue
+	ByID   map[string]*Issue
 
-	columns      map[Status][]Issue
-	columnDepths map[Status]map[string]int
-	selectedCol  int
-	selectedIdx  map[Status]int
-	scrollOffset map[Status]int
+	Columns      map[Status][]Issue
+	ColumnDepths map[Status]map[string]int
+	SelectedCol  int
+	SelectedIdx  map[Status]int
+	ScrollOffset map[Status]int
 
-	showDetails    bool
-	detailsScroll  int
-	detailsIssueID string
-	helpScroll     int
-	helpQuery      string
-	sortMode       SortMode
-	mode           Mode
-	leader         bool
+	ShowDetails    bool
+	DetailsScroll  int
+	DetailsIssueID string
+	HelpScroll     int
+	HelpQuery      string
+	SortMode       SortMode
+	Mode           Mode
+	Leader         bool
 
-	searchQuery    string
-	searchPrev     string
-	searchInput    textinput.Model
-	searchExpanded bool
+	SearchQuery    string
+	SearchPrev     string
+	SearchInput    textinput.Model
+	SearchExpanded bool
 
-	filter     Filter
-	filterForm *FilterForm
+	Filter     Filter
+	FilterForm *FilterForm
 
-	form         *IssueForm
-	prompt       *PromptState
-	parentPicker *ParentPickerState
-	tmuxPicker   *TmuxPickerState
+	Form         *IssueForm
+	Prompt       *PromptState
+	ParentPicker *ParentPickerState
+	TmuxPicker   *TmuxPickerState
 
-	depList *DepListState
+	DepList *DepListState
 
-	confirmDelete             *ConfirmDelete
-	confirmClosedParentCreate *ConfirmClosedParentCreate
+	ConfirmDelete             *ConfirmDelete
+	ConfirmClosedParentCreate *ConfirmClosedParentCreate
 
-	toast      string
-	toastKind  string
-	toastUntil time.Time
+	Toast      string
+	ToastKind  string
+	ToastUntil time.Time
 
-	lastHash string
-	loading  bool
+	LastHash string
+	Loading  bool
 
-	keymap Keymap
-	styles Styles
+	Keymap Keymap
+	Styles Styles
 
-	plugins                  PluginRegistry
-	openFormInEditorOverride func(model) (tea.Cmd, error)
-	resumeDetailsAfterEditor bool
-	tmuxMark                 struct {
-		paneID string
-		token  int
+	Plugins                  PluginRegistry
+	OpenFormInEditorOverride func(Model) (tea.Cmd, error)
+	ResumeDetailsAfterEditor bool
+	TmuxMark                 struct {
+		PaneID string
+		Token  int
 	}
-	uiFocused bool
+	UIFocused bool
 
-	now time.Time
+	Now time.Time
 }
+
+type model = Model
 
 func newModel(cfg Config) (model, error) {
 	beadsDir, repoDir, err := findBeadsDir(cfg.BeadsDir)
@@ -90,58 +92,58 @@ func newModel(cfg Config) (model, error) {
 	sInput.Focus()
 
 	m := model{
-		cfg:      cfg,
-		beadsDir: beadsDir,
-		repoDir:  repoDir,
-		client:   NewBdClient(repoDir),
+		Cfg:      cfg,
+		BeadsDir: beadsDir,
+		RepoDir:  repoDir,
+		Client:   NewBdClient(repoDir),
 
-		columns: map[Status][]Issue{
+		Columns: map[Status][]Issue{
 			StatusOpen:       {},
 			StatusInProgress: {},
 			StatusBlocked:    {},
 			StatusClosed:     {},
 		},
-		columnDepths: map[Status]map[string]int{
+		ColumnDepths: map[Status]map[string]int{
 			StatusOpen:       {},
 			StatusInProgress: {},
 			StatusBlocked:    {},
 			StatusClosed:     {},
 		},
-		selectedCol: 0,
-		selectedIdx: map[Status]int{
+		SelectedCol: 0,
+		SelectedIdx: map[Status]int{
 			StatusOpen:       0,
 			StatusInProgress: 0,
 			StatusBlocked:    0,
 			StatusClosed:     0,
 		},
-		scrollOffset: map[Status]int{
+		ScrollOffset: map[Status]int{
 			StatusOpen:       0,
 			StatusInProgress: 0,
 			StatusBlocked:    0,
 			StatusClosed:     0,
 		},
 
-		detailsScroll:  0,
-		detailsIssueID: "",
-		sortMode:       SortModeStatusDateOnly,
+		DetailsScroll:  0,
+		DetailsIssueID: "",
+		SortMode:       SortModeStatusDateOnly,
 
-		mode:        ModeBoard,
-		searchInput: sInput,
-		filter: Filter{
+		Mode:        ModeBoard,
+		SearchInput: sInput,
+		Filter: Filter{
 			Status:   "any",
 			Priority: "any",
 			Type:     "any",
 		},
-		loading:   true,
-		now:       time.Now(),
-		keymap:    defaultKeymap(),
-		styles:    newStyles(),
-		plugins:   newPluginRegistry(cfg),
-		uiFocused: true,
+		Loading:   true,
+		Now:       time.Now(),
+		Keymap:    defaultKeymap(),
+		Styles:    newStyles(),
+		Plugins:   newPluginRegistry(cfg),
+		UIFocused: true,
 	}
 
-	if mode, err := m.client.GetSortMode(); err == nil {
-		m.sortMode = mode
+	if mode, err := m.Client.GetSortMode(); err == nil {
+		m.SortMode = mode
 	}
 
 	return m, nil
@@ -149,9 +151,9 @@ func newModel(cfg Config) (model, error) {
 
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadCmd("init")}
-	if !m.cfg.NoWatch {
+	if !m.Cfg.NoWatch {
 		cmds = append(cmds, tickCmd())
-		cmds = append(cmds, watchBeadsChangesCmd(m.beadsDir))
+		cmds = append(cmds, watchBeadsChangesCmd(m.BeadsDir))
 	}
 	return tea.Batch(cmds...)
 }
@@ -163,32 +165,32 @@ func tickCmd() tea.Cmd {
 }
 
 func (m *model) setToast(kind, msg string) {
-	m.toastKind = kind
-	m.toast = msg
-	m.toastUntil = time.Now().Add(3500 * time.Millisecond)
+	m.ToastKind = kind
+	m.Toast = msg
+	m.ToastUntil = time.Now().Add(3500 * time.Millisecond)
 }
 
 func (m *model) clearTransientUI() {
-	m.leader = false
-	m.prompt = nil
-	m.parentPicker = nil
-	m.tmuxPicker = nil
-	m.depList = nil
-	m.confirmDelete = nil
-	m.confirmClosedParentCreate = nil
-	m.form = nil
-	m.filterForm = nil
+	m.Leader = false
+	m.Prompt = nil
+	m.ParentPicker = nil
+	m.TmuxPicker = nil
+	m.DepList = nil
+	m.ConfirmDelete = nil
+	m.ConfirmClosedParentCreate = nil
+	m.Form = nil
+	m.FilterForm = nil
 }
 
 func (m *model) applyLoadedIssues(issues []Issue, hash string) {
 	selectedID := m.currentIssueID()
 
-	m.issues = issues
-	m.byID = make(map[string]*Issue, len(issues))
-	for i := range m.issues {
-		m.byID[m.issues[i].ID] = &m.issues[i]
+	m.Issues = issues
+	m.ByID = make(map[string]*Issue, len(issues))
+	for i := range m.Issues {
+		m.ByID[m.Issues[i].ID] = &m.Issues[i]
 	}
-	m.lastHash = hash
+	m.LastHash = hash
 
 	m.computeColumns()
 	m.normalizeSelectionBounds()
@@ -198,7 +200,7 @@ func (m *model) applyLoadedIssues(issues []Issue, hash string) {
 	}
 
 	m.clampDetailsScroll()
-	m.loading = false
+	m.Loading = false
 }
 
 func (m *model) computeColumns() {
@@ -215,7 +217,7 @@ func (m *model) computeColumns() {
 		StatusClosed:     {},
 	}
 
-	for _, issue := range m.issues {
+	for _, issue := range m.Issues {
 		if !m.matchesFilter(issue) {
 			continue
 		}
@@ -226,14 +228,14 @@ func (m *model) computeColumns() {
 	}
 
 	for _, status := range statusOrder {
-		sortIssuesByMode(next[status], m.sortMode)
+		sortIssuesByMode(next[status], m.SortMode)
 		ordered, depthMap := orderColumnAsTree(next[status])
 		next[status] = ordered
 		depths[status] = depthMap
 	}
 
-	m.columns = next
-	m.columnDepths = depths
+	m.Columns = next
+	m.ColumnDepths = depths
 }
 
 func orderColumnAsTree(input []Issue) ([]Issue, map[string]int) {
@@ -312,28 +314,28 @@ func orderColumnAsTree(input []Issue) ([]Issue, map[string]int) {
 
 func (m *model) normalizeSelectionBounds() {
 	for _, status := range statusOrder {
-		col := m.columns[status]
-		idx := m.selectedIdx[status]
+		col := m.Columns[status]
+		idx := m.SelectedIdx[status]
 		if idx >= len(col) {
 			idx = len(col) - 1
 		}
 		if idx < 0 {
 			idx = 0
 		}
-		m.selectedIdx[status] = idx
+		m.SelectedIdx[status] = idx
 
 		maxOffset := m.selectedVisibleRowIndex(status)
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
-		if m.scrollOffset[status] > maxOffset {
-			m.scrollOffset[status] = maxOffset
+		if m.ScrollOffset[status] > maxOffset {
+			m.ScrollOffset[status] = maxOffset
 		}
 	}
 }
 
 func (m model) matchesSearch(issue Issue) bool {
-	q := strings.TrimSpace(strings.ToLower(m.searchQuery))
+	q := strings.TrimSpace(strings.ToLower(m.SearchQuery))
 	if q == "" {
 		return true
 	}
@@ -354,14 +356,14 @@ func (m model) matchesSearch(issue Issue) bool {
 }
 
 func (m model) matchesFilter(issue Issue) bool {
-	if m.filter.Assignee != "" && !strings.EqualFold(issue.Assignee, m.filter.Assignee) {
+	if m.Filter.Assignee != "" && !strings.EqualFold(issue.Assignee, m.Filter.Assignee) {
 		return false
 	}
 
-	if m.filter.Label != "" {
+	if m.Filter.Label != "" {
 		found := false
 		for _, label := range issue.Labels {
-			if strings.EqualFold(label, m.filter.Label) {
+			if strings.EqualFold(label, m.Filter.Label) {
 				found = true
 				break
 			}
@@ -371,18 +373,18 @@ func (m model) matchesFilter(issue Issue) bool {
 		}
 	}
 
-	if m.filter.Status != "" && m.filter.Status != "any" && string(issue.Display) != m.filter.Status {
+	if m.Filter.Status != "" && m.Filter.Status != "any" && string(issue.Display) != m.Filter.Status {
 		return false
 	}
 
-	if m.filter.Priority != "" && m.filter.Priority != "any" {
-		p, err := parsePriority(m.filter.Priority)
+	if m.Filter.Priority != "" && m.Filter.Priority != "any" {
+		p, err := parsePriority(m.Filter.Priority)
 		if err == nil && issue.Priority != p {
 			return false
 		}
 	}
 
-	if m.filter.Type != "" && m.filter.Type != "any" && !strings.EqualFold(issue.IssueType, m.filter.Type) {
+	if m.Filter.Type != "" && m.Filter.Type != "any" && !strings.EqualFold(issue.IssueType, m.Filter.Type) {
 		return false
 	}
 
@@ -390,11 +392,11 @@ func (m model) matchesFilter(issue Issue) bool {
 }
 
 func (m model) currentStatus() Status {
-	return statusOrder[m.selectedCol]
+	return statusOrder[m.SelectedCol]
 }
 
 func (m model) currentColumn() []Issue {
-	return m.columns[m.currentStatus()]
+	return m.Columns[m.currentStatus()]
 }
 
 func (m model) currentIssue() *Issue {
@@ -402,12 +404,12 @@ func (m model) currentIssue() *Issue {
 	if len(col) == 0 {
 		return nil
 	}
-	idx := m.selectedIdx[m.currentStatus()]
+	idx := m.SelectedIdx[m.currentStatus()]
 	if idx < 0 || idx >= len(col) {
 		return nil
 	}
 	issue := col[idx]
-	base := m.byID[issue.ID]
+	base := m.ByID[issue.ID]
 	if base != nil {
 		return base
 	}
@@ -424,11 +426,11 @@ func (m model) currentIssueID() string {
 
 func (m *model) selectIssueByID(id string) bool {
 	for colIdx, status := range statusOrder {
-		col := m.columns[status]
+		col := m.Columns[status]
 		for idx, issue := range col {
 			if strings.EqualFold(issue.ID, id) {
-				m.selectedCol = colIdx
-				m.selectedIdx[status] = idx
+				m.SelectedCol = colIdx
+				m.SelectedIdx[status] = idx
 				m.ensureSelectionVisible(status)
 				return true
 			}
@@ -439,38 +441,38 @@ func (m *model) selectIssueByID(id string) bool {
 
 func (m *model) moveSelection(delta int) {
 	status := m.currentStatus()
-	col := m.columns[status]
+	col := m.Columns[status]
 	if len(col) == 0 {
-		m.selectedIdx[status] = 0
-		m.scrollOffset[status] = 0
+		m.SelectedIdx[status] = 0
+		m.ScrollOffset[status] = 0
 		return
 	}
 
-	idx := m.selectedIdx[status] + delta
+	idx := m.SelectedIdx[status] + delta
 	if idx < 0 {
 		idx = 0
 	}
 	if idx >= len(col) {
 		idx = len(col) - 1
 	}
-	m.selectedIdx[status] = idx
+	m.SelectedIdx[status] = idx
 	m.ensureSelectionVisible(status)
 }
 
 func (m *model) moveColumn(delta int) {
-	next := m.selectedCol + delta
+	next := m.SelectedCol + delta
 	if next < 0 {
 		next = 0
 	}
 	if next >= len(statusOrder) {
 		next = len(statusOrder) - 1
 	}
-	m.selectedCol = next
+	m.SelectedCol = next
 	m.ensureSelectionVisible(m.currentStatus())
 }
 
 func (m model) boardInnerHeight() int {
-	h := m.height
+	h := m.Height
 	if h <= 0 {
 		return 10
 	}
@@ -490,7 +492,7 @@ func (m model) boardInnerHeight() int {
 }
 
 func (m model) inspectorInnerWidth() int {
-	w := max(20, m.width-4)
+	w := max(20, m.Width-4)
 	return max(4, w-4)
 }
 
@@ -503,17 +505,17 @@ func (m model) inspectorInnerHeight() int {
 		minBoardInner    = 6
 		baseLayoutChrome = 4 // title + footer + board border
 	)
-	if !m.showDetails {
+	if !m.ShowDetails {
 		return collapsedInner
 	}
 
-	targetOuter := (m.height * maxPercentNum) / maxPercentDen
+	targetOuter := (m.Height * maxPercentNum) / maxPercentDen
 	if targetOuter < minOuter {
 		targetOuter = minOuter
 	}
 
 	layoutChrome := baseLayoutChrome + m.inlineSearchBlockHeight()
-	maxOuter := m.height - (layoutChrome + minBoardInner)
+	maxOuter := m.Height - (layoutChrome + minBoardInner)
 	if maxOuter < minOuter {
 		maxOuter = minOuter
 	}
@@ -536,21 +538,21 @@ func (m model) inlineFiltersBlockHeight() int {
 	if !m.inlineFiltersVisible() {
 		return 0
 	}
-	if m.mode == ModeSearch && m.searchExpanded {
+	if m.Mode == ModeSearch && m.SearchExpanded {
 		return 6 // header + 5 filter keys
 	}
 	return 1
 }
 
 func (m model) inlineFiltersVisible() bool {
-	if m.mode == ModeSearch && m.searchExpanded {
+	if m.Mode == ModeSearch && m.SearchExpanded {
 		return true
 	}
-	return m.mode != ModeSearch && !m.filter.IsEmpty()
+	return m.Mode != ModeSearch && !m.Filter.IsEmpty()
 }
 
 func (m model) detailsViewportHeight() int {
-	if !m.showDetails {
+	if !m.ShowDetails {
 		return 0
 	}
 	h := m.inspectorInnerHeight() - 3
@@ -581,28 +583,28 @@ func (m model) detailsMaxScroll(issue *Issue) int {
 }
 
 func (m *model) clampDetailsScroll() {
-	if !m.showDetails {
-		m.detailsScroll = 0
-		m.detailsIssueID = ""
+	if !m.ShowDetails {
+		m.DetailsScroll = 0
+		m.DetailsIssueID = ""
 		return
 	}
 	issue := m.currentIssue()
 	if issue == nil {
-		m.detailsScroll = 0
-		m.detailsIssueID = ""
+		m.DetailsScroll = 0
+		m.DetailsIssueID = ""
 		return
 	}
-	if m.detailsIssueID != issue.ID {
-		m.detailsIssueID = issue.ID
-		m.detailsScroll = 0
+	if m.DetailsIssueID != issue.ID {
+		m.DetailsIssueID = issue.ID
+		m.DetailsScroll = 0
 		return
 	}
 	maxOffset := m.detailsMaxScroll(issue)
-	if m.detailsScroll > maxOffset {
-		m.detailsScroll = maxOffset
+	if m.DetailsScroll > maxOffset {
+		m.DetailsScroll = maxOffset
 	}
-	if m.detailsScroll < 0 {
-		m.detailsScroll = 0
+	if m.DetailsScroll < 0 {
+		m.DetailsScroll = 0
 	}
 }
 
@@ -613,7 +615,7 @@ func (m *model) ensureSelectionVisible(status Status) {
 	}
 
 	idx := m.selectedVisibleRowIndex(status)
-	off := m.scrollOffset[status]
+	off := m.ScrollOffset[status]
 	if idx < off {
 		off = idx
 	}
@@ -623,16 +625,16 @@ func (m *model) ensureSelectionVisible(status Status) {
 	if off < 0 {
 		off = 0
 	}
-	m.scrollOffset[status] = off
+	m.ScrollOffset[status] = off
 }
 
 func (m model) selectedVisibleRowIndex(status Status) int {
-	col := m.columns[status]
+	col := m.Columns[status]
 	if len(col) == 0 {
 		return 0
 	}
 
-	idx := m.selectedIdx[status]
+	idx := m.SelectedIdx[status]
 	if idx < 0 {
 		idx = 0
 	}
@@ -653,8 +655,8 @@ func (m model) selectedVisibleRowIndex(status Status) int {
 
 func (m model) loadCmd(source string) tea.Cmd {
 	return func() tea.Msg {
-		issues, hash, err := m.client.ListIssues()
-		return loadedMsg{issues: issues, hash: hash, err: err, source: source}
+		issues, hash, err := m.Client.ListIssues()
+		return loadedMsg{Issues: issues, hash: hash, err: err, source: source}
 	}
 }
 
@@ -673,19 +675,19 @@ func pluginCmd(info string, fn func() error) tea.Cmd {
 }
 
 func (m *model) scheduleTmuxMarkCleanup(delay time.Duration) tea.Cmd {
-	paneID := strings.TrimSpace(m.tmuxMark.paneID)
+	paneID := strings.TrimSpace(m.TmuxMark.PaneID)
 	if paneID == "" {
 		return nil
 	}
-	m.tmuxMark.token++
-	token := m.tmuxMark.token
+	m.TmuxMark.Token++
+	token := m.TmuxMark.Token
 	return tea.Tick(delay, func(time.Time) tea.Msg {
-		return tmuxMarkCleanupMsg{paneID: paneID, token: token}
+		return tmuxMarkCleanupMsg{PaneID: paneID, Token: token}
 	})
 }
 
 func (m *model) cancelTmuxMarkCleanup() {
-	m.tmuxMark.token++
+	m.TmuxMark.Token++
 }
 
 func depListCmd(c *BdClient, issueID string) tea.Cmd {
@@ -703,7 +705,7 @@ func deletePreviewCmd(c *BdClient, issueID string) tea.Cmd {
 }
 
 func buildTitle(m model) string {
-	return fmt.Sprintf("BDTUI | %s | .beads: %s", strings.ToUpper(string(m.mode)), m.beadsDir)
+	return fmt.Sprintf("BDTUI | %s | .beads: %s", strings.ToUpper(string(m.Mode)), m.BeadsDir)
 }
 
 func sortIssuesByMode(items []Issue, mode SortMode) {
@@ -729,7 +731,7 @@ func persistSortModeCmd(client *BdClient, mode SortMode) tea.Cmd {
 
 	return func() tea.Msg {
 		err := client.SetSortMode(mode)
-		return sortModePersistMsg{mode: mode, err: err}
+		return sortModePersistMsg{Mode: mode, err: err}
 	}
 }
 
@@ -737,15 +739,15 @@ func (m *model) setIssueStatusLocal(id string, status Status) {
 	if strings.TrimSpace(id) == "" {
 		return
 	}
-	for i := range m.issues {
-		if m.issues[i].ID != id {
+	for i := range m.Issues {
+		if m.Issues[i].ID != id {
 			continue
 		}
-		m.issues[i].Status = status
-		m.issues[i].Display = status
+		m.Issues[i].Status = status
+		m.Issues[i].Display = status
 		break
 	}
-	if issue := m.byID[id]; issue != nil {
+	if issue := m.ByID[id]; issue != nil {
 		issue.Status = status
 		issue.Display = status
 	}

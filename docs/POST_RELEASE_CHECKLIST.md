@@ -34,8 +34,8 @@ sha256sum -c checksums.txt --ignore-missing
 - [ ] README source build commands are current and executable:
 
 ```bash
-go test ./...
-go build ./...
+make test
+make build
 ./bdtui --help
 ```
 

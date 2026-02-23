@@ -23,7 +23,7 @@ jobs:
           check-latest: true
 
       - name: Run tests
-        run: go test ./...
+        run: make test
 
       - name: Build
-        run: go build ./...
+        run: make build

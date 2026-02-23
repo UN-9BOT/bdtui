@@ -23,7 +23,7 @@ This document defines the repeatable release process for `bdtui`.
 ## Release Steps
 
 1. Update `CHANGELOG.md` in the PR that is intended for release.
-2. Ensure `go test ./...` and `go build ./...` pass locally and in CI.
+2. Ensure `make test` and `make build` pass locally and in CI.
 3. Merge PR into `master`.
 4. Wait for `release` workflow completion in GitHub Actions.
 5. Verify GitHub Release contains:

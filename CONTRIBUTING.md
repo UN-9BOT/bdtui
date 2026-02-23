@@ -10,8 +10,8 @@ Thanks for contributing to `bdtui`.
 ## Local setup
 
 ```bash
-go test ./...
-go build ./...
+make test
+make build
 ```
 
 ## Development workflow

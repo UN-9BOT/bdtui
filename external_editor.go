@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"fmt"
@@ -38,26 +38,26 @@ type formEditorMsg struct {
 }
 
 func (m model) openFormInEditor() (tea.Cmd, error) {
-	if m.openFormInEditorOverride != nil {
-		return m.openFormInEditorOverride(m)
+	if m.OpenFormInEditorOverride != nil {
+		return m.OpenFormInEditorOverride(m)
 	}
 	return m.openFormInEditorCmd()
 }
 
 func (m model) openFormInEditorCmd() (tea.Cmd, error) {
-	if m.form == nil {
+	if m.Form == nil {
 		return nil, fmt.Errorf("form is not active")
 	}
 
 	payload := formEditorPayload{
-		Title:       m.form.Title,
-		Description: m.form.Description,
-		Status:      string(m.form.Status),
-		Priority:    m.form.Priority,
-		IssueType:   m.form.IssueType,
-		Assignee:    m.form.Assignee,
-		Labels:      m.form.Labels,
-		Parent:      m.form.Parent,
+		Title:       m.Form.Title,
+		Description: m.Form.Description,
+		Status:      string(m.Form.Status),
+		Priority:    m.Form.Priority,
+		IssueType:   m.Form.IssueType,
+		Assignee:    m.Form.Assignee,
+		Labels:      m.Form.Labels,
+		Parent:      m.Form.Parent,
 	}
 
 	bytes, err := marshalEditorContent(payload)

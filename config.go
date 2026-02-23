@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"errors"
@@ -59,7 +59,7 @@ func parsePluginToggles(raw string) (PluginToggles, error) {
 			name = strings.TrimSpace(strings.TrimPrefix(token, "-"))
 		}
 		if name == "" {
-			return nil, errors.New("plugins: empty plugin token")
+			return nil, errors.New("Plugins: empty plugin token")
 		}
 
 		toggles[normalizePluginName(name)] = enabled
