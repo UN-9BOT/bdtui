@@ -140,9 +140,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, watchBeadsChangesCmd(m.beadsDir)
 
 	case tea.KeyMsg:
+		m.uiFocused = true
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
+		m.uiFocused = true
 		return m.handleMouse(msg)
 
 	case depListMsg:

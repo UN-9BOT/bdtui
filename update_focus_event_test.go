@@ -29,3 +29,18 @@ func TestUpdateBlurAndFocusToggleUIFocusState(t *testing.T) {
 		t.Fatalf("expected nil cmd on focus")
 	}
 }
+
+func TestUpdateMouseRestoresUIFocusState(t *testing.T) {
+	t.Parallel()
+
+	m := model{uiFocused: false}
+
+	next, cmd := m.Update(tea.MouseMsg{})
+	got := next.(model)
+	if !got.uiFocused {
+		t.Fatalf("expected uiFocused=true after mouse event")
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd on mouse event")
+	}
+}
