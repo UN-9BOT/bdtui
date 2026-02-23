@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -148,6 +149,7 @@ func marshalEditorContent(payload formEditorPayload) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	body = annotateEditorFrontmatter(body)
 
 	var b strings.Builder
 	b.WriteString("---\n")
@@ -157,6 +159,53 @@ func marshalEditorContent(payload formEditorPayload) ([]byte, error) {
 		b.WriteString(payload.Description)
 	}
 	return []byte(b.String()), nil
+}
+
+func annotateEditorFrontmatter(body []byte) []byte {
+	annotations := map[string]string{
+		"status":   strings.Join(statusValuesForEditor(), " | "),
+		"priority": strings.Join(priorityValuesForEditor(), " | "),
+		"type":     strings.Join(issueTypeValuesForEditor(), " | "),
+	}
+
+	lines := strings.Split(string(body), "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.Contains(trimmed, "#") {
+			continue
+		}
+
+		for key, hint := range annotations {
+			prefix := key + ":"
+			if strings.HasPrefix(trimmed, prefix) {
+				lines[i] = line + " # " + hint
+				break
+			}
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
+func statusValuesForEditor() []string {
+	values := make([]string, 0, len(statusOrder))
+	for _, status := range statusOrder {
+		values = append(values, string(status))
+	}
+	return values
+}
+
+func priorityValuesForEditor() []string {
+	values := make([]string, 0, 5)
+	for priority := 0; priority <= 4; priority++ {
+		values = append(values, strconv.Itoa(priority))
+	}
+	return values
+}
+
+func issueTypeValuesForEditor() []string {
+	values := make([]string, len(issueTypes))
+	copy(values, issueTypes)
+	return values
 }
 
 func parseEditorContent(raw []byte) (formEditorPayload, error) {

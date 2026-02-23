@@ -117,6 +117,68 @@ func TestMarshalEditorContentDoesNotAppendExtraNewline(t *testing.T) {
 	}
 }
 
+func TestMarshalEditorContentAddsEnumHints(t *testing.T) {
+	t.Parallel()
+
+	payload := formEditorPayload{
+		Title:       "test",
+		Status:      "open",
+		Priority:    2,
+		IssueType:   "task",
+		Assignee:    "unbot",
+		Labels:      "",
+		Parent:      "",
+		Description: "desc",
+	}
+
+	raw, err := marshalEditorContent(payload)
+	if err != nil {
+		t.Fatalf("marshalEditorContent returned error: %v", err)
+	}
+
+	text := string(raw)
+	if !strings.Contains(text, "status: open # open | in_progress | blocked | closed") {
+		t.Fatalf("expected status hint, got: %q", text)
+	}
+	if !strings.Contains(text, "priority: 2 # 0 | 1 | 2 | 3 | 4") {
+		t.Fatalf("expected priority hint, got: %q", text)
+	}
+	if !strings.Contains(text, "type: task # task | epic | bug | feature | chore | decision") {
+		t.Fatalf("expected type hint, got: %q", text)
+	}
+}
+
+func TestParseEditorContentWithInlineHints(t *testing.T) {
+	t.Parallel()
+
+	raw := strings.Join([]string{
+		"---",
+		"title: test",
+		"status: in_progress # open | in_progress | blocked | closed",
+		"priority: 3 # 0 | 1 | 2 | 3 | 4",
+		"type: feature # task | epic | bug | feature | chore | decision",
+		"assignee: unbot",
+		"labels: \"\"",
+		"parent: \"\"",
+		"---",
+		"description",
+	}, "\n")
+
+	parsed, err := parseEditorContent([]byte(raw))
+	if err != nil {
+		t.Fatalf("parseEditorContent returned error: %v", err)
+	}
+	if parsed.Status != "in_progress" {
+		t.Fatalf("unexpected status: %q", parsed.Status)
+	}
+	if parsed.Priority != 3 {
+		t.Fatalf("unexpected priority: %d", parsed.Priority)
+	}
+	if parsed.IssueType != "feature" {
+		t.Fatalf("unexpected type: %q", parsed.IssueType)
+	}
+}
+
 func editorDocument(description string) string {
 	return strings.Join([]string{
 		"---",
