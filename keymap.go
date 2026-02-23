@@ -13,7 +13,7 @@ func defaultKeymap() Keymap {
 			"h/l, ←/→: switch column",
 			"0 / G: first/last issue in column",
 			"Enter/Space: focus details panel",
-			"details: j/k or ↑/↓ scroll, Esc close",
+			"details: j/k or ↑/↓ scroll, Ctrl+X ext edit, Esc close",
 			"/: search",
 			"f: filters",
 			"c: clear search/filters",

@@ -105,6 +105,16 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailsScroll--
 		}
 		return m, nil
+	case "ctrl+x":
+		if !m.activateEditForCurrentIssue() {
+			return m, nil
+		}
+		cmd, err := m.openFormInEditor()
+		if err != nil {
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		return m, cmd
 	}
 	return m, nil
 }
@@ -251,7 +261,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+x":
 		m.form.saveInputToField()
-		cmd, err := m.openFormInEditorCmd()
+		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.setToast("error", err.Error())
 			return m, nil
@@ -567,25 +577,15 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeCreate
 		return m, nil
 	case "e":
-		issue := m.currentIssue()
-		if issue == nil {
-			m.setToast("warning", "no issue selected")
+		if !m.activateEditForCurrentIssue() {
 			return m, nil
 		}
-		clone := *issue
-		m.form = newIssueFormEdit(&clone, m.issues)
-		m.mode = ModeEdit
 		return m, nil
 	case "ctrl+x":
-		issue := m.currentIssue()
-		if issue == nil {
-			m.setToast("warning", "no issue selected")
+		if !m.activateEditForCurrentIssue() {
 			return m, nil
 		}
-		clone := *issue
-		m.form = newIssueFormEdit(&clone, m.issues)
-		m.mode = ModeEdit
-		cmd, err := m.openFormInEditorCmd()
+		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.setToast("error", err.Error())
 			return m, nil
@@ -914,6 +914,18 @@ func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 		}
 		return pluginMsg{info: "tmux command pasted"}
 	}
+}
+
+func (m *model) activateEditForCurrentIssue() bool {
+	issue := m.currentIssue()
+	if issue == nil {
+		m.setToast("warning", "no issue selected")
+		return false
+	}
+	clone := *issue
+	m.form = newIssueFormEdit(&clone, m.issues)
+	m.mode = ModeEdit
+	return true
 }
 
 func (m model) formatBeadsStartTaskCommand(issueID string) string {

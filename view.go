@@ -423,7 +423,7 @@ func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space focus details | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.mode != ModeBoard {
 		if m.mode == ModeDetails {
-			left = "mode: details | j/k scroll | Esc close"
+			left = "mode: details | j/k scroll | Ctrl+X ext edit | Esc close"
 		} else if m.mode == ModeCreate {
 			left = "mode: create | Enter save | Esc close if title is empty"
 		} else if m.mode == ModeEdit {

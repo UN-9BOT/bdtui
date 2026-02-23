@@ -64,8 +64,9 @@ type model struct {
 	keymap Keymap
 	styles Styles
 
-	plugins  PluginRegistry
-	tmuxMark struct {
+	plugins                  PluginRegistry
+	openFormInEditorOverride func(model) (tea.Cmd, error)
+	tmuxMark                 struct {
 		paneID string
 		token  int
 	}

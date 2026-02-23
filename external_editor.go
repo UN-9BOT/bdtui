@@ -36,6 +36,13 @@ type formEditorMsg struct {
 	err     error
 }
 
+func (m model) openFormInEditor() (tea.Cmd, error) {
+	if m.openFormInEditorOverride != nil {
+		return m.openFormInEditorOverride(m)
+	}
+	return m.openFormInEditorCmd()
+}
+
 func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 	if m.form == nil {
 		return nil, fmt.Errorf("form is not active")
