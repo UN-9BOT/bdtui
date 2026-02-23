@@ -353,10 +353,13 @@ func detailLines(issue *Issue, inner int) []string {
 		return nil
 	}
 
-	meta := truncate(
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
+	metaPlain := truncate(
 		"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
 		inner,
 	)
+	meta := styleDetailMetaLine(metaPlain, keyStyle)
 
 	lines := []string{meta}
 	prefix := "Description: "
@@ -370,12 +373,24 @@ func detailLines(issue *Issue, inner int) []string {
 	if len(descLines) == 0 {
 		descLines = []string{"-"}
 	}
-	lines = append(lines, prefix+descLines[0])
+	lines = append(lines, keyStyle.Render(prefix)+descLines[0])
 	indent := strings.Repeat(" ", len(prefix))
 	for _, line := range descLines[1:] {
 		lines = append(lines, indent+line)
 	}
 	return lines
+}
+
+func styleDetailMetaLine(line string, keyStyle lipgloss.Style) string {
+	if strings.TrimSpace(line) == "" {
+		return line
+	}
+	replacer := strings.NewReplacer(
+		"Parent:", keyStyle.Render("Parent:"),
+		"blockedBy:", keyStyle.Render("blockedBy:"),
+		"blocks:", keyStyle.Render("blocks:"),
+	)
+	return replacer.Replace(line)
 }
 
 func (m model) renderFooter() string {
