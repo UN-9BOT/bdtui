@@ -1145,9 +1145,26 @@ func (m model) renderDeleteModal() string {
 		return "Delete\n\nloading..."
 	}
 
-	modeLine := "1 force"
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	previewTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	previewLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	confirmStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	cancelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
+	forceStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	cascadeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	modeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+	forceOption := modeStyle.Render("1 force")
+	cascadeOption := modeStyle.Render("2 cascade")
+	modeLine := forceStyle.Render("force")
 	if m.confirmDelete.Mode == DeleteModeCascade {
-		modeLine = "2 cascade"
+		cascadeOption = cascadeStyle.Render("2 cascade")
+		modeLine = cascadeStyle.Render("cascade")
+	} else {
+		forceOption = forceStyle.Render("1 force")
 	}
 
 	previewLines := strings.Split(m.confirmDelete.Preview, "\n")
@@ -1157,18 +1174,24 @@ func (m model) renderDeleteModal() string {
 	}
 
 	lines := []string{
-		"Delete Issue",
+		titleStyle.Render("Delete Issue"),
 		"",
-		"issue: " + m.confirmDelete.IssueID,
-		"mode: " + modeLine,
+		labelStyle.Render("issue: ") + idStyle.Render(m.confirmDelete.IssueID),
+		labelStyle.Render("mode: ") + modeLine,
 		"",
-		"Preview:",
+		previewTitleStyle.Render("Preview:"),
 	}
-	lines = append(lines, previewLines...)
+	for _, previewLine := range previewLines {
+		if previewLine == "" {
+			lines = append(lines, "")
+			continue
+		}
+		lines = append(lines, previewLineStyle.Render(previewLine))
+	}
 	lines = append(lines,
 		"",
-		"1 force | 2 cascade",
-		"y/Enter confirm | n/Esc cancel",
+		forceOption+" | "+cascadeOption,
+		confirmStyle.Render("y/Enter")+" "+hintStyle.Render("confirm")+" | "+cancelStyle.Render("n/Esc")+" "+hintStyle.Render("cancel"),
 	)
 	return strings.Join(lines, "\n")
 }
