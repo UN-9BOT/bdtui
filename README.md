@@ -13,6 +13,48 @@ go build ./...
 ./bdtui
 ```
 
+## Install from GitHub Releases (macOS/Linux)
+
+1. Open the Releases page and choose the desired generated tag (`YYYY.MM.DD-pr<PR_NUMBER>-<MERGE_SHA7>`).
+2. Download one binary matching your platform:
+- `bdtui-darwin-amd64`
+- `bdtui-darwin-arm64`
+- `bdtui-linux-amd64`
+- `bdtui-linux-arm64`
+3. Download `checksums.txt` from the same release.
+4. Verify checksum before running:
+
+```bash
+sha256sum -c checksums.txt --ignore-missing
+chmod +x bdtui-<os>-<arch>
+./bdtui-<os>-<arch>
+```
+
+Example for Linux amd64:
+
+```bash
+sha256sum bdtui-linux-amd64
+grep "bdtui-linux-amd64" checksums.txt
+chmod +x bdtui-linux-amd64
+./bdtui-linux-amd64
+```
+
+## Build from source
+
+Prerequisites:
+- Go toolchain version from `go.mod`
+- `bd` CLI in `PATH`
+
+Commands:
+
+```bash
+git clone <repo-url>
+cd bdtui
+go test ./...
+go build ./...
+./bdtui
+```
+
 Options:
 - `--beads-dir /abs/path/to/.beads`
 - `--no-watch`
@@ -78,6 +120,13 @@ Options:
 - Data is read and mutated only via `bd` binary.
 - `blocked` column is derived automatically for `open` issues with unresolved blockers.
 - if an issue has parent(s) in other status columns, those parents are shown above it as dimmed ghost tree rows.
+- Release/change policy references:
+  - [LICENSE](./LICENSE) (GNU GPL v3)
+  - [CHANGELOG.md](./CHANGELOG.md) (date-based release tags with PR/SHA suffix)
+  - [SECURITY.md](./SECURITY.md)
+  - [CONTRIBUTING.md](./CONTRIBUTING.md)
+  - [docs/RELEASE_RUNBOOK.md](./docs/RELEASE_RUNBOOK.md)
+  - [docs/POST_RELEASE_CHECKLIST.md](./docs/POST_RELEASE_CHECKLIST.md)
 - Watcher is polling-based (`bd list --json` + hash compare).
 - Dashboard sort mode is persisted in beads kv (`bdtui.sort_mode`):
   - `status_date_only`: `updated_at` desc, then id
