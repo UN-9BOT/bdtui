@@ -435,6 +435,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.Mode == ModeCreate && strings.TrimSpace(m.Form.Title) == "" {
 			m.Mode = ModeBoard
 			m.Form = nil
+			m.CreateBlockerID = ""
 			m.setToast("info", "creation canceled")
 			return m, nil
 		}
@@ -800,10 +801,12 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.loadCmd("manual")
 	case "n":
+		m.CreateBlockerID = ""
 		m.Form = newIssueFormCreate(m.Issues)
 		m.Mode = ModeCreate
 		return m, nil
 	case "N":
+		m.CreateBlockerID = ""
 		issue := m.currentIssue()
 		if issue == nil {
 			m.setToast("warning", "no issue selected")
@@ -820,6 +823,18 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.Form = newIssueFormCreateWithParent(m.Issues, issue.ID)
 		m.Mode = ModeCreate
+		return m, nil
+	case "b":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		m.CreateBlockerID = strings.TrimSpace(issue.ID)
+		m.Form = newIssueFormCreate(m.Issues)
+		m.Form.Status = StatusBlocked
+		m.Mode = ModeCreate
+		m.setToast("info", "create blocked issue")
 		return m, nil
 	case "e":
 		if !m.activateEditForCurrentIssue() {
@@ -965,10 +980,6 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
-	case "b":
-		m.Prompt = newPrompt(ModePrompt, "Add Blocker", "Enter blocker issue ID", issue.ID, PromptDepAdd, "")
-		m.Mode = ModePrompt
-		return m, nil
 	case "B":
 		m.Prompt = newPrompt(ModePrompt, "Remove Blocker", "Enter blocker issue ID to remove", issue.ID, PromptDepRemove, "")
 		m.Mode = ModePrompt
@@ -1031,6 +1042,8 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 			Labels:      parseLabels(form.Labels),
 			Parent:      form.Parent,
 		}
+		blockerID := strings.TrimSpace(m.CreateBlockerID)
+		m.CreateBlockerID = ""
 
 		return m, func() tea.Msg {
 			id, err := m.Client.CreateIssue(params)
@@ -1039,6 +1052,9 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 			}
 
 			status := form.Status
+			if blockerID != "" {
+				status = StatusBlocked
+			}
 			if status == "" {
 				status = StatusOpen
 			}
@@ -1054,8 +1070,20 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 				}
 			}
 
+			if blockerID != "" {
+				if strings.TrimSpace(id) == "" {
+					return opMsg{err: fmt.Errorf("created issue id is empty, cannot add blocker")}
+				}
+				if err := m.Client.DepAdd(id, blockerID); err != nil {
+					return opMsg{err: err}
+				}
+			}
+
 			if id == "" {
 				return opMsg{info: "issue created"}
+			}
+			if blockerID != "" {
+				return opMsg{info: fmt.Sprintf("created %s (blocked by %s)", id, blockerID)}
 			}
 			return opMsg{info: "created " + id}
 		}

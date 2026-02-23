@@ -73,6 +73,7 @@ Options:
 ### Issue Actions
 - `n` - create issue
 - `N` - create issue with `parent` prefilled from selected issue
+- `b` - create blocked issue from selected issue (selected issue becomes blocker)
 - `e` - edit selected issue
 - `Ctrl+X` (board) - open selected issue in `$EDITOR`, then return to `Edit Issue`
 - `Ctrl+X` (form) - open form fields in `$EDITOR` as Markdown with YAML frontmatter (`--- ... ---`)
@@ -102,7 +103,6 @@ Options:
 - `c` - clear search and filters
 
 ### Dependencies (`g` leader)
-- `g b` - add blocker
 - `g B` - remove blocker
 - `g p` - interactive parent picker (`↑/↓`, `Enter`)
 - `g u` - jump to parent

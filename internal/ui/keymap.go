@@ -21,6 +21,7 @@ func DefaultKeymap() Keymap {
 			"Ctrl+C / c: clear search/filters",
 			"n: create issue",
 			"N: create issue with parent = selected issue (closed => confirm)",
+			"b: create blocked issue from selected",
 			"e: edit issue",
 			"Ctrl+X: open selected issue in $EDITOR and return to Edit",
 			"d: delete issue",
@@ -37,7 +38,6 @@ func DefaultKeymap() Keymap {
 			"q: quit",
 		},
 		Leader: []string{
-			"g b: add blocker",
 			"g B: remove blocker",
 			"g p: set parent (interactive picker)",
 			"g u: jump to parent",
