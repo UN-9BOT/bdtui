@@ -861,6 +861,7 @@ func (m model) renderFormModal() string {
 	modalContentWidth := max(40, min(170, m.width-14))
 	leftPaneWidth := modalContentWidth
 	rightPaneWidth := 0
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	if showParentSide {
 		rightPaneWidth = max(36, min(56, (modalContentWidth*40)/100))
 		leftPaneWidth = max(36, modalContentWidth-rightPaneWidth-2)
@@ -869,25 +870,27 @@ func (m model) renderFormModal() string {
 	lines := []string{title, ""}
 	maxLineWidth := leftPaneWidth
 	for _, f := range m.form.fields() {
-		prefix := fmt.Sprintf("%s %s: ", mark(f), f)
+		prefixPlain := fmt.Sprintf("%s %s: ", mark(f), f)
+		prefix := fmt.Sprintf("%s %s ", mark(f), keyStyle.Render(f+":"))
 		rawValue := defaultString(valueFor(f), "-")
-		segments := wrapPlainText(rawValue, max(8, maxLineWidth-lipgloss.Width(prefix)))
+		segments := wrapPlainText(rawValue, max(8, maxLineWidth-lipgloss.Width(prefixPlain)))
 		if len(segments) == 0 {
 			segments = []string{"-"}
 		}
 		lines = append(lines, prefix+styleFormFieldSegment(f, segments[0]))
-		indent := strings.Repeat(" ", lipgloss.Width(prefix))
+		indent := strings.Repeat(" ", lipgloss.Width(prefixPlain))
 		for _, seg := range segments[1:] {
 			lines = append(lines, indent+styleFormFieldSegment(f, seg))
 		}
 	}
 
 	lines = append(lines, "")
-	prefix := "description: "
-	previewWidth := max(8, maxLineWidth-lipgloss.Width(prefix))
+	prefixPlain := "description: "
+	prefix := keyStyle.Render("description:") + " "
+	previewWidth := max(8, maxLineWidth-lipgloss.Width(prefixPlain))
 	previewLines, wasClipped := firstNDescriptionLines(m.form.Description, 5, previewWidth)
 	lines = append(lines, prefix+previewLines[0])
-	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	indent := strings.Repeat(" ", lipgloss.Width(prefixPlain))
 	for _, line := range previewLines[1:] {
 		lines = append(lines, indent+line)
 	}
