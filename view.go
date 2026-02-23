@@ -441,14 +441,11 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 			rowItem := rows[i]
 			row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth)
 			if rowItem.ghost {
-				row = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("242")).
-					Faint(true).
+				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			if grayBoard && !rowItem.ghost {
-				row = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("243")).
+				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("243"), false).
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
@@ -1829,6 +1826,17 @@ func dashboardEpicAccentStyle(issueType string) (lipgloss.Style, bool) {
 	}
 
 	return lipgloss.NewStyle().Bold(true), true
+}
+
+func dashboardDimmedRowStyle(issueType string, foreground lipgloss.Color, faint bool) lipgloss.Style {
+	style := lipgloss.NewStyle().Foreground(foreground)
+	if faint {
+		style = style.Faint(true)
+	}
+	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
+		style = style.Bold(true)
+	}
+	return style
 }
 
 func renderIssueRow(item Issue, maxTextWidth int, depth int) string {

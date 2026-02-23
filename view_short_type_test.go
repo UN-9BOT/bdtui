@@ -125,6 +125,24 @@ func TestDashboardEpicAccentStyleNonEpicDisabled(t *testing.T) {
 	}
 }
 
+func TestDashboardDimmedRowStyleEpicIsBold(t *testing.T) {
+	t.Parallel()
+
+	style := dashboardDimmedRowStyle("epic", lipgloss.Color("242"), true)
+	if !style.GetBold() {
+		t.Fatalf("expected dimmed epic style to be bold")
+	}
+}
+
+func TestDashboardDimmedRowStyleNonEpicStaysNotBold(t *testing.T) {
+	t.Parallel()
+
+	style := dashboardDimmedRowStyle("task", lipgloss.Color("242"), true)
+	if style.GetBold() {
+		t.Fatalf("expected dimmed non-epic style to be non-bold")
+	}
+}
+
 func TestShortTypeUnchangedForNonDashboard(t *testing.T) {
 	t.Parallel()
 
