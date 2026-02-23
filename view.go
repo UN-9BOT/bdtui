@@ -1815,17 +1815,41 @@ func renderPriorityLabel(priority int) string {
 	return fmt.Sprintf("P%d", priority)
 }
 
+func dashboardEpicAccentStyle(issueType string) (lipgloss.Style, bool) {
+	if !strings.EqualFold(strings.TrimSpace(issueType), "epic") {
+		return lipgloss.NewStyle(), false
+	}
+
+	return lipgloss.NewStyle().Bold(true), true
+}
+
 func renderIssueRow(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
 	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, item.Title, item.ID)
+	epicStyle, isEpic := dashboardEpicAccentStyle(item.IssueType)
 
-	return prefix +
-		priorityStyle(item.Priority).Render(priority) +
-		" " + issueTypeStyle(item.IssueType).Render(issueType) +
-		" " + title +
-		gap + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(id)
+	prefixStyle := lipgloss.NewStyle()
+	priorityTokenStyle := priorityStyle(item.Priority)
+	issueTypeTokenStyle := issueTypeStyle(item.IssueType)
+	titleStyle := lipgloss.NewStyle()
+	gapStyle := lipgloss.NewStyle()
+	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	if isEpic {
+		prefixStyle = prefixStyle.Inherit(epicStyle)
+		priorityTokenStyle = priorityTokenStyle.Inherit(epicStyle)
+		issueTypeTokenStyle = issueTypeTokenStyle.Inherit(epicStyle)
+		titleStyle = titleStyle.Inherit(epicStyle)
+		gapStyle = gapStyle.Inherit(epicStyle)
+		idStyle = idStyle.Inherit(epicStyle)
+	}
+
+	return prefixStyle.Render(prefix) +
+		priorityTokenStyle.Render(priority) +
+		" " + issueTypeTokenStyle.Render(issueType) +
+		" " + titleStyle.Render(title) +
+		gapStyle.Render(gap) + idStyle.Render(id)
 }
 
 func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string {

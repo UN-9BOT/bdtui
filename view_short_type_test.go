@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestShortTypeDashboardMapping(t *testing.T) {
@@ -96,6 +98,30 @@ func TestRenderIssueRowSelectedPlainHidesID(t *testing.T) {
 	row := renderIssueRowSelectedPlain(item, 40, 0)
 	if strings.Contains(row, item.ID) {
 		t.Fatalf("selected row should not include id %q: %q", item.ID, row)
+	}
+}
+
+func TestDashboardEpicAccentStyleEpicIsBoldWithoutBackground(t *testing.T) {
+	t.Parallel()
+
+	style, enabled := dashboardEpicAccentStyle("epic")
+	if !enabled {
+		t.Fatalf("expected epic accent style to be enabled")
+	}
+	if !style.GetBold() {
+		t.Fatalf("expected epic accent style to be bold")
+	}
+	if _, ok := style.GetBackground().(lipgloss.NoColor); !ok {
+		t.Fatalf("expected epic accent style to not set background, got %T", style.GetBackground())
+	}
+}
+
+func TestDashboardEpicAccentStyleNonEpicDisabled(t *testing.T) {
+	t.Parallel()
+
+	_, enabled := dashboardEpicAccentStyle("task")
+	if enabled {
+		t.Fatalf("expected non-epic accent style to be disabled")
 	}
 }
 
