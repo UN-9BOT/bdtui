@@ -282,9 +282,14 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 }
 
 func (m model) renderInspector() string {
+	containerStyle := m.styles.Border
+	if m.mode == ModeDetails {
+		containerStyle = m.styles.Active
+	}
+
 	issue := m.currentIssue()
 	if issue == nil {
-		return m.styles.Border.Width(max(20, m.width-4)).Render("No selected issue")
+		return containerStyle.Width(max(20, m.width-4)).Render("No selected issue")
 	}
 
 	w := max(20, m.width-4)
@@ -366,7 +371,7 @@ func (m model) renderInspector() string {
 		lines = lines[:innerHeight]
 	}
 
-	return m.styles.Border.Width(w).Render(strings.Join(lines, "\n"))
+	return containerStyle.Width(w).Render(strings.Join(lines, "\n"))
 }
 
 func detailLines(issue *Issue, inner int) []string {
