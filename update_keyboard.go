@@ -35,6 +35,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDepListKey(msg)
 	case ModeConfirmDelete:
 		return m.handleDeleteConfirmKey(msg)
+	case ModeConfirmClosedParentCreate:
+		return m.handleConfirmClosedParentCreateKey(msg)
 	default:
 		return m.handleBoardKey(msg)
 	}
@@ -487,6 +489,30 @@ func (m model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) handleConfirmClosedParentCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.confirmClosedParentCreate == nil {
+		m.mode = ModeBoard
+		return m, nil
+	}
+
+	key := msg.String()
+	switch key {
+	case "esc", "n":
+		m.confirmClosedParentCreate = nil
+		m.mode = ModeBoard
+		m.setToast("warning", "task creation canceled")
+		return m, nil
+	case "y", "enter":
+		parentID := m.confirmClosedParentCreate.ParentID
+		targetStatus := m.confirmClosedParentCreate.TargetStatus
+		m.confirmClosedParentCreate = nil
+		m.mode = ModeBoard
+		return m, reopenParentForCreateCmd(m.client, parentID, targetStatus)
+	}
+
+	return m, nil
+}
+
 func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
@@ -571,6 +597,15 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		issue := m.currentIssue()
 		if issue == nil {
 			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		if issue.Status == StatusClosed {
+			m.confirmClosedParentCreate = &ConfirmClosedParentCreate{
+				ParentID:     issue.ID,
+				ParentTitle:  issue.Title,
+				TargetStatus: StatusInProgress,
+			}
+			m.mode = ModeConfirmClosedParentCreate
 			return m, nil
 		}
 		m.form = newIssueFormCreateWithParent(m.issues, issue.ID)
@@ -926,6 +961,21 @@ func (m *model) activateEditForCurrentIssue() bool {
 	m.form = newIssueFormEdit(&clone, m.issues)
 	m.mode = ModeEdit
 	return true
+}
+
+func reopenParentForCreateCmd(client *BdClient, parentID string, targetStatus Status) tea.Cmd {
+	return func() tea.Msg {
+		id := strings.TrimSpace(parentID)
+		if id == "" {
+			return reopenParentForCreateMsg{err: fmt.Errorf("parent id is empty")}
+		}
+		if client == nil {
+			return reopenParentForCreateMsg{parentID: id, err: fmt.Errorf("bd client is not configured")}
+		}
+		status := targetStatus
+		err := client.UpdateIssue(UpdateParams{ID: id, Status: &status})
+		return reopenParentForCreateMsg{parentID: id, err: err}
+	}
 }
 
 func (m model) formatBeadsStartTaskCommand(issueID string) string {

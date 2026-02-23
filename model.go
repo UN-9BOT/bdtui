@@ -52,7 +52,8 @@ type model struct {
 
 	depList *DepListState
 
-	confirmDelete *ConfirmDelete
+	confirmDelete             *ConfirmDelete
+	confirmClosedParentCreate *ConfirmClosedParentCreate
 
 	toast      string
 	toastKind  string
@@ -168,6 +169,7 @@ func (m *model) clearTransientUI() {
 	m.tmuxPicker = nil
 	m.depList = nil
 	m.confirmDelete = nil
+	m.confirmClosedParentCreate = nil
 	m.form = nil
 	m.filterForm = nil
 }
@@ -695,5 +697,23 @@ func persistSortModeCmd(client *BdClient, mode SortMode) tea.Cmd {
 	return func() tea.Msg {
 		err := client.SetSortMode(mode)
 		return sortModePersistMsg{mode: mode, err: err}
+	}
+}
+
+func (m *model) setIssueStatusLocal(id string, status Status) {
+	if strings.TrimSpace(id) == "" {
+		return
+	}
+	for i := range m.issues {
+		if m.issues[i].ID != id {
+			continue
+		}
+		m.issues[i].Status = status
+		m.issues[i].Display = status
+		break
+	}
+	if issue := m.byID[id]; issue != nil {
+		issue.Status = status
+		issue.Display = status
 	}
 }

@@ -18,7 +18,7 @@ func defaultKeymap() Keymap {
 			"f: filters",
 			"c: clear search/filters",
 			"n: create issue",
-			"N: create issue with parent = selected issue",
+			"N: create issue with parent = selected issue (closed => confirm)",
 			"e: edit issue",
 			"Ctrl+X: open selected issue in $EDITOR and return to Edit",
 			"d: delete issue",

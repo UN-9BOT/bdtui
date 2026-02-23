@@ -105,18 +105,19 @@ func (f Filter) IsEmpty() bool {
 type Mode string
 
 const (
-	ModeBoard         Mode = "board"
-	ModeDetails       Mode = "details"
-	ModeHelp          Mode = "help"
-	ModeSearch        Mode = "search"
-	ModeFilter        Mode = "filter"
-	ModeCreate        Mode = "create"
-	ModeEdit          Mode = "edit"
-	ModePrompt        Mode = "prompt"
-	ModeParentPicker  Mode = "parent_picker"
-	ModeTmuxPicker    Mode = "tmux_picker"
-	ModeDepList       Mode = "dep_list"
-	ModeConfirmDelete Mode = "confirm_delete"
+	ModeBoard                     Mode = "board"
+	ModeDetails                   Mode = "details"
+	ModeHelp                      Mode = "help"
+	ModeSearch                    Mode = "search"
+	ModeFilter                    Mode = "filter"
+	ModeCreate                    Mode = "create"
+	ModeEdit                      Mode = "edit"
+	ModePrompt                    Mode = "prompt"
+	ModeParentPicker              Mode = "parent_picker"
+	ModeTmuxPicker                Mode = "tmux_picker"
+	ModeDepList                   Mode = "dep_list"
+	ModeConfirmDelete             Mode = "confirm_delete"
+	ModeConfirmClosedParentCreate Mode = "confirm_closed_parent_create"
 )
 
 type PromptAction string
@@ -203,6 +204,12 @@ type ConfirmDelete struct {
 	Selected int
 }
 
+type ConfirmClosedParentCreate struct {
+	ParentID     string
+	ParentTitle  string
+	TargetStatus Status
+}
+
 type DepListState struct {
 	IssueID string
 	Lines   []string
@@ -231,6 +238,11 @@ type deletePreviewMsg struct {
 	issueID string
 	text    string
 	err     error
+}
+
+type reopenParentForCreateMsg struct {
+	parentID string
+	err      error
 }
 
 type pluginMsg struct {

@@ -133,6 +133,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeConfirmDelete
 		return m, nil
 
+	case reopenParentForCreateMsg:
+		if msg.err != nil {
+			m.setToast("error", msg.err.Error())
+			m.mode = ModeBoard
+			return m, nil
+		}
+
+		m.setIssueStatusLocal(msg.parentID, StatusInProgress)
+		m.form = newIssueFormCreateWithParent(m.issues, msg.parentID)
+		m.mode = ModeCreate
+		m.setToast("success", "parent moved to in_progress")
+		return m, m.loadCmd("mutation")
+
 	case formEditorMsg:
 		if msg.err != nil {
 			m.setToast("error", msg.err.Error())

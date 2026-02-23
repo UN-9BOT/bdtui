@@ -424,6 +424,8 @@ func (m model) renderFooter() string {
 	if m.mode != ModeBoard {
 		if m.mode == ModeDetails {
 			left = "mode: details | j/k scroll | Ctrl+X ext edit | Esc close"
+		} else if m.mode == ModeConfirmClosedParentCreate {
+			left = "mode: confirm closed parent | y confirm | n/Esc cancel"
 		} else if m.mode == ModeCreate {
 			left = "mode: create | Enter save | Esc close if title is empty"
 		} else if m.mode == ModeEdit {
@@ -471,6 +473,8 @@ func (m model) renderModal() string {
 		return m.renderDepListModal()
 	case ModeConfirmDelete:
 		return m.renderDeleteModal()
+	case ModeConfirmClosedParentCreate:
+		return m.renderConfirmClosedParentCreateModal()
 	default:
 		return ""
 	}
@@ -1166,6 +1170,34 @@ func (m model) renderDeleteModal() string {
 		"1 force | 2 cascade",
 		"y/Enter confirm | n/Esc cancel",
 	)
+	return strings.Join(lines, "\n")
+}
+
+func (m model) renderConfirmClosedParentCreateModal() string {
+	if m.confirmClosedParentCreate == nil {
+		return "Create From Closed Parent\n\nloading..."
+	}
+
+	parentID := strings.TrimSpace(m.confirmClosedParentCreate.ParentID)
+	parentTitle := strings.TrimSpace(m.confirmClosedParentCreate.ParentTitle)
+	if parentTitle == "" {
+		parentTitle = "-"
+	}
+	targetStatus := strings.TrimSpace(string(m.confirmClosedParentCreate.TargetStatus))
+	if targetStatus == "" {
+		targetStatus = string(StatusInProgress)
+	}
+
+	lines := []string{
+		"Create From Closed Parent",
+		"",
+		"Cannot create issue with closed parent:",
+		fmt.Sprintf("%s %s", parentID, parentTitle),
+		"",
+		fmt.Sprintf("Move parent to %s and continue?", targetStatus),
+		"",
+		"y confirm | n/Esc cancel",
+	}
 	return strings.Join(lines, "\n")
 }
 
