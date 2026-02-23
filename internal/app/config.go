@@ -1,4 +1,4 @@
-package bdtui
+package app
 
 import (
 	"errors"

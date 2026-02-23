@@ -1,4 +1,4 @@
-package bdtui
+package beads
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-func findBeadsDir(explicit string) (beadsDir string, repoDir string, err error) {
+func FindBeadsDir(explicit string) (beadsDir string, repoDir string, err error) {
 	if explicit != "" {
 		abs, err := filepath.Abs(explicit)
 		if err != nil {

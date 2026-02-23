@@ -1,4 +1,4 @@
-package bdtui
+package clipboard
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"github.com/atotto/clipboard"
 )
 
-func copyToClipboard(value string) error {
+func Copy(value string) error {
 	if value == "" {
 		return fmt.Errorf("nothing to copy")
 	}

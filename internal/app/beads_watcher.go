@@ -1,8 +1,8 @@
-package bdtui
+package app
 
 import (
+	beadsadapter "bdtui/internal/adapters/beads"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -90,17 +90,9 @@ func beadsWatchRetryCmd(delay time.Duration) tea.Cmd {
 }
 
 func beadsWatchTargets(root string) []string {
-	return []string{
-		filepath.Join(root, "last-touched"),
-		filepath.Join(root, "issues.jsonl"),
-		root,
-	}
+	return beadsadapter.WatchTargets(root)
 }
 
 func isBeadsWatchEventRelevant(ev fsnotify.Event) bool {
-	if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
-		return false
-	}
-	base := strings.TrimSpace(filepath.Base(ev.Name))
-	return base == "last-touched" || base == "issues.jsonl"
+	return beadsadapter.IsWatchEventRelevant(ev)
 }
