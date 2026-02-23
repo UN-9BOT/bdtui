@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 )
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.mode != ModeBoard {
+	if m.Mode != ModeBoard {
 		return m, nil
 	}
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
@@ -73,7 +73,7 @@ func (m model) boardMouseTarget(x int, y int) (Status, int, bool) {
 		return "", 0, false
 	}
 
-	availableWidth := max(20, m.width-4)
+	availableWidth := max(20, m.Width-4)
 	panelWidth := (availableWidth - (len(statusOrder) - 1)) / len(statusOrder)
 	if panelWidth < 20 {
 		panelWidth = 20
@@ -97,6 +97,6 @@ func (m model) boardMouseTarget(x int, y int) (Status, int, bool) {
 	}
 
 	status := statusOrder[colIdx]
-	rowIdx := m.scrollOffset[status] + rowInViewport
+	rowIdx := m.ScrollOffset[status] + rowInViewport
 	return status, rowIdx, true
 }

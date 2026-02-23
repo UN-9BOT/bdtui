@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import "strings"
 
@@ -34,8 +34,8 @@ func clonePluginToggles(src PluginToggles) PluginToggles {
 }
 
 type PluginRegistry struct {
-	toggles PluginToggles
-	tmux    *TmuxPlugin
+	Toggles    PluginToggles
+	TmuxPlugin *TmuxPlugin
 }
 
 func newPluginRegistry(cfg Config) PluginRegistry {
@@ -45,15 +45,15 @@ func newPluginRegistry(cfg Config) PluginRegistry {
 	}
 
 	return PluginRegistry{
-		toggles: clonePluginToggles(toggles),
-		tmux:    newTmuxPlugin(toggles.enabled("tmux"), shellTmuxRunner{}),
+		Toggles:    clonePluginToggles(toggles),
+		TmuxPlugin: newTmuxPlugin(toggles.enabled("tmux"), shellTmuxRunner{}),
 	}
 }
 
 func (r PluginRegistry) Enabled(name string) bool {
-	return r.toggles.enabled(name)
+	return r.Toggles.enabled(name)
 }
 
 func (r PluginRegistry) Tmux() *TmuxPlugin {
-	return r.tmux
+	return r.TmuxPlugin
 }

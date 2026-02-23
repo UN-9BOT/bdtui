@@ -9,7 +9,7 @@ A Go/Bubble Tea TUI inspired by `bdui`, focused on:
 
 ```bash
 cd ../bdtui
-go build ./...
+make build
 ./bdtui
 ```
 
@@ -50,8 +50,8 @@ Commands:
 ```bash
 git clone <repo-url>
 cd bdtui
-go test ./...
-go build ./...
+make test
+make build
 ./bdtui
 ```
 

@@ -1,23 +1,20 @@
-package main
+package bdtui
 
 import (
 	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func main() {
-	cfg, err := parseConfig(os.Args[1:])
+func Run(args []string) error {
+	cfg, err := parseConfig(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("config error: %w", err)
 	}
 
 	m, err := newModel(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "init error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("init error: %w", err)
 	}
 
 	p := tea.NewProgram(
@@ -28,7 +25,7 @@ func main() {
 	)
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "runtime error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("runtime error: %w", err)
 	}
+	return nil
 }

@@ -1,4 +1,4 @@
-package main
+package bdtui
 
 import (
 	"strings"
@@ -236,7 +236,7 @@ type DepListState struct {
 }
 
 type loadedMsg struct {
-	issues []Issue
+	Issues []Issue
 	hash   string
 	err    error
 	source string
@@ -271,8 +271,8 @@ type pluginMsg struct {
 }
 
 type tmuxMarkCleanupMsg struct {
-	paneID string
-	token  int
+	PaneID string
+	Token  int
 }
 
 type beadsChangedMsg struct{}
@@ -286,6 +286,6 @@ type beadsWatchRetryMsg struct{}
 type tickMsg time.Time
 
 type sortModePersistMsg struct {
-	mode SortMode
+	Mode SortMode
 	err  error
 }
