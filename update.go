@@ -32,7 +32,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if !m.cfg.NoWatch {
 			cmds = append(cmds, tickCmd())
-			cmds = append(cmds, m.loadCmd("tick"))
 		}
 		if !m.toastUntil.IsZero() && m.now.After(m.toastUntil) {
 			m.toast = ""
@@ -50,12 +49,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if msg.source == "tick" && msg.hash == m.lastHash {
+		if (msg.source == "tick" || msg.source == "watch") && msg.hash == m.lastHash {
 			return m, nil
 		}
 
 		m.applyLoadedIssues(msg.issues, msg.hash)
-		if msg.source != "tick" {
+		if msg.source == "manual" || msg.source == "mutation" {
 			m.setToast("success", "data refreshed")
 		}
 		return m, nil
@@ -107,6 +106,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tmuxMark.paneID = ""
 		return m, nil
+
+	case tea.FocusMsg:
+		m.uiFocused = true
+		return m, nil
+
+	case tea.BlurMsg:
+		m.uiFocused = false
+		return m, nil
+
+	case beadsChangedMsg:
+		if m.cfg.NoWatch {
+			return m, nil
+		}
+		return m, tea.Batch(
+			m.loadCmd("watch"),
+			watchBeadsChangesCmd(m.beadsDir),
+		)
+
+	case beadsWatchErrMsg:
+		if msg.err != nil {
+			m.setToast("warning", "beads watch: "+msg.err.Error())
+		}
+		if m.cfg.NoWatch {
+			return m, nil
+		}
+		return m, beadsWatchRetryCmd(2 * time.Second)
+
+	case beadsWatchRetryMsg:
+		if m.cfg.NoWatch {
+			return m, nil
+		}
+		return m, watchBeadsChangesCmd(m.beadsDir)
+
+	case tea.KeyMsg:
+		return m.handleKey(msg)
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case depListMsg:
 		if msg.err != nil {
@@ -187,11 +224,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setToast("success", "fields updated from editor")
 		return m, nil
 
-	case tea.KeyMsg:
-		return m.handleKey(msg)
-
-	case tea.MouseMsg:
-		return m.handleMouse(msg)
 	}
 
 	return m, nil

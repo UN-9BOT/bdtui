@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+var ansiSGRRegexp = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func (m model) View() string {
 	if m.width <= 0 || m.height <= 0 {
@@ -27,7 +30,8 @@ func (m model) View() string {
 	base := strings.Join(parts, "\n")
 	modal := m.renderModal()
 	if modal == "" {
-		return m.styles.App.Render(base)
+		out := m.styles.App.Render(base)
+		return m.applyFocusDimming(out)
 	}
 
 	wrappedBase := m.styles.App.Render(base)
@@ -39,7 +43,15 @@ func (m model) View() string {
 		lipgloss.Center,
 		modalStyle.Render(modal),
 	)
-	return wrappedBase + "\n" + overlay
+	return m.applyFocusDimming(wrappedBase + "\n" + overlay)
+}
+
+func (m model) applyFocusDimming(out string) string {
+	if m.uiFocused {
+		return out
+	}
+	plain := ansiSGRRegexp.ReplaceAllString(out, "")
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(plain)
 }
 
 func (m model) renderTitle() string {

@@ -72,6 +72,7 @@ type model struct {
 		paneID string
 		token  int
 	}
+	uiFocused bool
 
 	now time.Time
 }
@@ -129,11 +130,12 @@ func newModel(cfg Config) (model, error) {
 			Status:   "any",
 			Priority: "any",
 		},
-		loading: true,
-		now:     time.Now(),
-		keymap:  defaultKeymap(),
-		styles:  newStyles(),
-		plugins: newPluginRegistry(cfg),
+		loading:   true,
+		now:       time.Now(),
+		keymap:    defaultKeymap(),
+		styles:    newStyles(),
+		plugins:   newPluginRegistry(cfg),
+		uiFocused: true,
 	}
 
 	if mode, err := m.client.GetSortMode(); err == nil {
@@ -147,6 +149,7 @@ func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadCmd("init")}
 	if !m.cfg.NoWatch {
 		cmds = append(cmds, tickCmd())
+		cmds = append(cmds, watchBeadsChangesCmd(m.beadsDir))
 	}
 	return tea.Batch(cmds...)
 }

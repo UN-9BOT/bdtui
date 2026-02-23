@@ -256,6 +256,14 @@ type tmuxMarkCleanupMsg struct {
 	token  int
 }
 
+type beadsChangedMsg struct{}
+
+type beadsWatchErrMsg struct {
+	err error
+}
+
+type beadsWatchRetryMsg struct{}
+
 type tickMsg time.Time
 
 type sortModePersistMsg struct {
