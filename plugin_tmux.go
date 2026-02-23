@@ -232,6 +232,19 @@ func (p *TmuxPlugin) BlinkPaneWindow(paneID string) error {
 		return errors.New("empty window id")
 	}
 
+	activePaneRaw, err := p.runner.Run("list-panes", "-t", windowID, "-F", "#{?pane_active,#{pane_id},}")
+	if err != nil {
+		return err
+	}
+	activePaneID := ""
+	for _, line := range strings.Split(activePaneRaw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			activePaneID = line
+			break
+		}
+	}
+
 	oldStyle, err := p.runner.Run("show-options", "-w", "-v", "-t", windowID, "window-active-style")
 	if err != nil {
 		return err
@@ -241,6 +254,10 @@ func (p *TmuxPlugin) BlinkPaneWindow(paneID string) error {
 		oldStyle = "default"
 	}
 
+	if _, err := p.runner.Run("select-pane", "-t", target); err != nil {
+		return err
+	}
+
 	steps := []string{"colour160", "default", "colour160", "default"}
 	for _, bg := range steps {
 		style := fmt.Sprintf("fg=default,bg=%s", bg)
@@ -248,6 +265,12 @@ func (p *TmuxPlugin) BlinkPaneWindow(paneID string) error {
 			return err
 		}
 		p.sleepFn(90 * time.Millisecond)
+	}
+
+	if activePaneID != "" && activePaneID != target {
+		if _, err := p.runner.Run("select-pane", "-t", activePaneID); err != nil {
+			return err
+		}
 	}
 
 	_, err = p.runner.Run("set-option", "-w", "-t", windowID, "window-active-style", oldStyle)
