@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,7 +11,8 @@ import (
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
-		m.setToast("warning", "Ctrl+C is disabled, use q")
+		m.clearSearchAndFilters()
+		m.setToast("success", "search and filters cleared")
 		return m, nil
 	}
 
@@ -126,24 +128,47 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.filterForm == nil {
+		m.filterForm = newFilterForm(m.filter)
+	}
+
 	key := msg.String()
 	switch key {
 	case "esc":
-		m.searchQuery = strings.TrimSpace(m.searchPrev)
-		m.searchInput.SetValue(m.searchQuery)
-		m.searchInput.CursorEnd()
+		m.applyFilterForm()
+		m.searchExpanded = false
+		m.searchInput.Blur()
 		m.mode = ModeBoard
-		m.computeColumns()
-		m.normalizeSelectionBounds()
 		return m, nil
 	case "enter":
-		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
-		m.searchPrev = m.searchQuery
+		m.applyFilterForm()
+		m.searchExpanded = false
+		m.searchInput.Blur()
 		m.mode = ModeBoard
-		m.computeColumns()
-		m.normalizeSelectionBounds()
-		m.setToast("success", "search updated")
 		return m, nil
+	case "ctrl+f":
+		m.searchExpanded = true
+		return m, nil
+	case "up":
+		if m.searchExpanded {
+			m.shiftSearchFilterField(-1)
+			return m, nil
+		}
+	case "down":
+		if m.searchExpanded {
+			m.shiftSearchFilterField(1)
+			return m, nil
+		}
+	case "tab", "ctrl+i":
+		if m.searchExpanded {
+			m.cycleSearchFilterValue(1)
+			return m, nil
+		}
+	case "shift+tab":
+		if m.searchExpanded {
+			m.cycleSearchFilterValue(-1)
+			return m, nil
+		}
 	}
 
 	var cmd tea.Cmd
@@ -155,6 +180,181 @@ func (m model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.normalizeSelectionBounds()
 	}
 	return m, cmd
+}
+
+func (m *model) clearSearchAndFilters() {
+	m.searchQuery = ""
+	m.searchInput.SetValue("")
+	m.searchInput.CursorStart()
+	m.searchExpanded = false
+	m.filter = Filter{
+		Status:   "any",
+		Priority: "any",
+		Type:     "any",
+	}
+	if m.filterForm != nil {
+		m.filterForm = newFilterForm(m.filter)
+	}
+	m.computeColumns()
+	m.normalizeSelectionBounds()
+}
+
+func (m *model) applyFilterForm() {
+	if m.filterForm == nil {
+		m.filterForm = newFilterForm(m.filter)
+	}
+	m.filter = m.filterForm.toFilter()
+	if m.filter.Status == "" {
+		m.filter.Status = "any"
+	}
+	if m.filter.Priority == "" {
+		m.filter.Priority = "any"
+	}
+	if m.filter.Type == "" {
+		m.filter.Type = "any"
+	}
+	m.computeColumns()
+	m.normalizeSelectionBounds()
+}
+
+func (m *model) shiftSearchFilterField(delta int) {
+	if m.filterForm == nil {
+		m.filterForm = newFilterForm(m.filter)
+	}
+	fields := m.filterForm.fields()
+	if len(fields) == 0 {
+		return
+	}
+	m.filterForm.Cursor += delta
+	if m.filterForm.Cursor < 0 {
+		m.filterForm.Cursor = len(fields) - 1
+	}
+	if m.filterForm.Cursor >= len(fields) {
+		m.filterForm.Cursor = 0
+	}
+}
+
+func (m *model) cycleSearchFilterValue(delta int) {
+	if m.filterForm == nil {
+		m.filterForm = newFilterForm(m.filter)
+	}
+	field := m.filterForm.currentField()
+	options := m.searchFilterOptions(field)
+	if len(options) == 0 {
+		return
+	}
+
+	current := m.searchFilterFieldValue(field)
+	idx := 0
+	for i, option := range options {
+		if strings.EqualFold(option, current) {
+			idx = i
+			break
+		}
+	}
+	idx += delta
+	if idx < 0 {
+		idx = len(options) - 1
+	}
+	if idx >= len(options) {
+		idx = 0
+	}
+
+	m.setSearchFilterFieldValue(field, options[idx])
+	m.applyFilterForm()
+}
+
+func (m model) searchFilterFieldValue(field string) string {
+	if m.filterForm == nil {
+		return "any"
+	}
+	switch field {
+	case "assignee":
+		return m.filterForm.Assignee
+	case "label":
+		return m.filterForm.Label
+	case "status":
+		return m.filterForm.Status
+	case "priority":
+		return m.filterForm.Priority
+	case "type":
+		return m.filterForm.Type
+	default:
+		return "any"
+	}
+}
+
+func (m *model) setSearchFilterFieldValue(field string, value string) {
+	if m.filterForm == nil {
+		return
+	}
+	switch field {
+	case "assignee":
+		m.filterForm.Assignee = value
+		m.filterForm.Input.SetValue(value)
+	case "label":
+		m.filterForm.Label = value
+		m.filterForm.Input.SetValue(value)
+	case "status":
+		m.filterForm.Status = value
+	case "priority":
+		m.filterForm.Priority = value
+	case "type":
+		m.filterForm.Type = value
+	}
+}
+
+func (m model) searchFilterOptions(field string) []string {
+	switch field {
+	case "assignee":
+		out := []string{"any"}
+		seen := map[string]bool{}
+		for _, issue := range m.issues {
+			value := strings.TrimSpace(issue.Assignee)
+			if value == "" {
+				continue
+			}
+			key := strings.ToLower(value)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, value)
+		}
+		sort.Slice(out[1:], func(i, j int) bool {
+			return strings.ToLower(out[i+1]) < strings.ToLower(out[j+1])
+		})
+		return out
+	case "label":
+		out := []string{"any"}
+		seen := map[string]bool{}
+		for _, issue := range m.issues {
+			for _, raw := range issue.Labels {
+				value := strings.TrimSpace(raw)
+				if value == "" {
+					continue
+				}
+				key := strings.ToLower(value)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				out = append(out, value)
+			}
+		}
+		sort.Slice(out[1:], func(i, j int) bool {
+			return strings.ToLower(out[i+1]) < strings.ToLower(out[j+1])
+		})
+		return out
+	case "status":
+		return []string{"any", "open", "in_progress", "blocked", "closed"}
+	case "priority":
+		return []string{"any", "0", "1", "2", "3", "4"}
+	case "type":
+		return []string{"any", "task", "epic", "bug", "feature", "chore", "decision"}
+	default:
+		return nil
+	}
 }
 
 func (m model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -175,6 +375,9 @@ func (m model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.filter.Priority == "" {
 			m.filter.Priority = "any"
+		}
+		if m.filter.Type == "" {
+			m.filter.Type = "any"
 		}
 		m.computeColumns()
 		m.normalizeSelectionBounds()
@@ -203,6 +406,7 @@ func (m model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterForm.Label = ""
 		m.filterForm.Status = "any"
 		m.filterForm.Priority = "any"
+		m.filterForm.Type = "any"
 		m.filterForm.loadInput()
 		return m, nil
 	}
@@ -574,22 +778,23 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailsIssueID = issue.ID
 		return m, nil
 	case "/":
-		m.searchPrev = m.searchQuery
 		m.searchInput.SetValue(m.searchQuery)
 		m.searchInput.CursorEnd()
 		m.searchInput.Focus()
+		m.searchExpanded = false
+		m.filterForm = newFilterForm(m.filter)
 		m.mode = ModeSearch
 		return m, nil
 	case "f":
+		m.searchInput.SetValue(m.searchQuery)
+		m.searchInput.CursorEnd()
+		m.searchInput.Focus()
+		m.searchExpanded = false
 		m.filterForm = newFilterForm(m.filter)
-		m.mode = ModeFilter
+		m.mode = ModeSearch
 		return m, nil
 	case "c":
-		m.searchQuery = ""
-		m.searchInput.SetValue("")
-		m.filter = Filter{Status: "any", Priority: "any"}
-		m.computeColumns()
-		m.normalizeSelectionBounds()
+		m.clearSearchAndFilters()
 		m.setToast("success", "search and filters cleared")
 		return m, nil
 	case "r":

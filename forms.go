@@ -399,11 +399,20 @@ func newFilterForm(base Filter) *FilterForm {
 	in.CharLimit = 200
 	in.Focus()
 
+	if base.Assignee == "" {
+		base.Assignee = "any"
+	}
+	if base.Label == "" {
+		base.Label = "any"
+	}
 	if base.Status == "" {
 		base.Status = "any"
 	}
 	if base.Priority == "" {
 		base.Priority = "any"
+	}
+	if base.Type == "" {
+		base.Type = "any"
 	}
 
 	f := &FilterForm{
@@ -412,6 +421,7 @@ func newFilterForm(base Filter) *FilterForm {
 		Label:    base.Label,
 		Status:   base.Status,
 		Priority: base.Priority,
+		Type:     base.Type,
 		Input:    in,
 	}
 	f.loadInput()
@@ -419,7 +429,7 @@ func newFilterForm(base Filter) *FilterForm {
 }
 
 func (f *FilterForm) fields() []string {
-	return []string{"assignee", "label", "status", "priority"}
+	return []string{"assignee", "label", "status", "priority", "type"}
 }
 
 func (f *FilterForm) currentField() string {
@@ -518,16 +528,42 @@ func (f *FilterForm) cycleEnum(delta int) {
 			idx = 0
 		}
 		f.Priority = opts[idx]
+	case "type":
+		opts := []string{"any", "task", "epic", "bug", "feature", "chore", "decision"}
+		idx := 0
+		for i, v := range opts {
+			if v == f.Type {
+				idx = i
+				break
+			}
+		}
+		idx += delta
+		if idx < 0 {
+			idx = len(opts) - 1
+		}
+		if idx >= len(opts) {
+			idx = 0
+		}
+		f.Type = opts[idx]
 	}
 }
 
 func (f *FilterForm) toFilter() Filter {
 	f.saveInput()
+	assignee := strings.TrimSpace(f.Assignee)
+	if strings.EqualFold(assignee, "any") {
+		assignee = ""
+	}
+	label := strings.TrimSpace(f.Label)
+	if strings.EqualFold(label, "any") {
+		label = ""
+	}
 	return Filter{
-		Assignee: strings.TrimSpace(f.Assignee),
-		Label:    strings.TrimSpace(f.Label),
+		Assignee: assignee,
+		Label:    label,
 		Status:   strings.TrimSpace(f.Status),
 		Priority: strings.TrimSpace(f.Priority),
+		Type:     strings.TrimSpace(f.Type),
 	}
 }
 

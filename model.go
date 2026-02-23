@@ -38,9 +38,10 @@ type model struct {
 	mode           Mode
 	leader         bool
 
-	searchQuery string
-	searchPrev  string
-	searchInput textinput.Model
+	searchQuery    string
+	searchPrev     string
+	searchInput    textinput.Model
+	searchExpanded bool
 
 	filter     Filter
 	filterForm *FilterForm
@@ -129,6 +130,7 @@ func newModel(cfg Config) (model, error) {
 		filter: Filter{
 			Status:   "any",
 			Priority: "any",
+			Type:     "any",
 		},
 		loading:   true,
 		now:       time.Now(),
@@ -214,10 +216,10 @@ func (m *model) computeColumns() {
 	}
 
 	for _, issue := range m.issues {
-		if !m.matchesSearch(issue) {
+		if !m.matchesFilter(issue) {
 			continue
 		}
-		if !m.matchesFilter(issue) {
+		if !m.matchesSearch(issue) {
 			continue
 		}
 		next[issue.Display] = append(next[issue.Display], issue)
@@ -380,6 +382,10 @@ func (m model) matchesFilter(issue Issue) bool {
 		}
 	}
 
+	if m.filter.Type != "" && m.filter.Type != "any" && !strings.EqualFold(issue.IssueType, m.filter.Type) {
+		return false
+	}
+
 	return true
 }
 
@@ -472,6 +478,7 @@ func (m model) boardInnerHeight() int {
 	h -= 1 // title
 	h -= 1 // footer
 	h -= m.inspectorOuterHeight()
+	h -= m.inlineSearchBlockHeight()
 
 	// Golden Rule: account for borders
 	h -= 2
@@ -489,12 +496,12 @@ func (m model) inspectorInnerWidth() int {
 
 func (m model) inspectorInnerHeight() int {
 	const (
-		collapsedInner = 3
-		maxPercentNum  = 2 // 2/5 = 40%
-		maxPercentDen  = 5
-		minOuter       = 5
-		minBoardInner  = 6
-		layoutChrome   = 4 // title + footer + board border
+		collapsedInner   = 3
+		maxPercentNum    = 2 // 2/5 = 40%
+		maxPercentDen    = 5
+		minOuter         = 5
+		minBoardInner    = 6
+		baseLayoutChrome = 4 // title + footer + board border
 	)
 	if !m.showDetails {
 		return collapsedInner
@@ -505,6 +512,7 @@ func (m model) inspectorInnerHeight() int {
 		targetOuter = minOuter
 	}
 
+	layoutChrome := baseLayoutChrome + m.inlineSearchBlockHeight()
 	maxOuter := m.height - (layoutChrome + minBoardInner)
 	if maxOuter < minOuter {
 		maxOuter = minOuter
@@ -518,6 +526,27 @@ func (m model) inspectorInnerHeight() int {
 		return collapsedInner
 	}
 	return inner
+}
+
+func (m model) inlineSearchBlockHeight() int {
+	return 1 + m.inlineFiltersBlockHeight()
+}
+
+func (m model) inlineFiltersBlockHeight() int {
+	if !m.inlineFiltersVisible() {
+		return 0
+	}
+	if m.mode == ModeSearch && m.searchExpanded {
+		return 6 // header + 5 filter keys
+	}
+	return 1
+}
+
+func (m model) inlineFiltersVisible() bool {
+	if m.mode == ModeSearch && m.searchExpanded {
+		return true
+	}
+	return m.mode != ModeSearch && !m.filter.IsEmpty()
 }
 
 func (m model) detailsViewportHeight() int {

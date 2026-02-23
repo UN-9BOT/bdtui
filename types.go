@@ -58,6 +58,7 @@ type Filter struct {
 	Label    string
 	Status   string
 	Priority string
+	Type     string
 }
 
 type SortMode string
@@ -99,7 +100,24 @@ func parseSortMode(raw string) (SortMode, bool) {
 }
 
 func (f Filter) IsEmpty() bool {
-	return f.Assignee == "" && f.Label == "" && f.Status == "any" && f.Priority == "any"
+	status := strings.TrimSpace(strings.ToLower(f.Status))
+	if status == "" {
+		status = "any"
+	}
+	priority := strings.TrimSpace(strings.ToLower(f.Priority))
+	if priority == "" {
+		priority = "any"
+	}
+	issueType := strings.TrimSpace(strings.ToLower(f.Type))
+	if issueType == "" {
+		issueType = "any"
+	}
+
+	return strings.TrimSpace(f.Assignee) == "" &&
+		strings.TrimSpace(f.Label) == "" &&
+		status == "any" &&
+		priority == "any" &&
+		issueType == "any"
 }
 
 type Mode string
@@ -187,6 +205,7 @@ type FilterForm struct {
 	Label    string
 	Status   string
 	Priority string
+	Type     string
 	Input    textinput.Model
 }
 

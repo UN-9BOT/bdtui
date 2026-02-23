@@ -23,9 +23,10 @@ func (m model) View() string {
 	title := m.renderTitle()
 	board := m.renderBoard()
 	inspector := m.renderInspector()
+	searchBlock := m.renderInlineSearchBlock()
 	footer := m.renderFooter()
 
-	parts := []string{title, board, inspector, footer}
+	parts := []string{title, board, inspector, searchBlock, footer}
 
 	base := strings.Join(parts, "\n")
 	modal := m.renderModal()
@@ -55,21 +56,188 @@ func (m model) applyFocusDimming(out string) string {
 }
 
 func (m model) renderTitle() string {
-	filterHint := ""
-	if !m.filter.IsEmpty() {
-		filterHint = fmt.Sprintf(" | filter: a=%s l=%s s=%s p=%s", defaultString(m.filter.Assignee, "-"), defaultString(m.filter.Label, "-"), defaultString(m.filter.Status, "any"), defaultString(m.filter.Priority, "any"))
-	}
-	searchHint := ""
-	if strings.TrimSpace(m.searchQuery) != "" {
-		searchHint = " | search: " + m.searchQuery
-	}
 	leaderHint := ""
 	if m.leader {
 		leaderHint = " | leader: g ..."
 	}
 
-	line := truncate(buildTitle(m)+searchHint+filterHint+leaderHint, max(10, m.width-4))
+	line := truncate(buildTitle(m)+leaderHint, max(10, m.width-4))
 	return m.styles.Title.Render(line)
+}
+
+func (m model) renderInlineSearchBlock() string {
+	maxWidth := max(10, m.width-4)
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+
+	queryValue := strings.TrimSpace(m.searchQuery)
+	if m.mode == ModeSearch {
+		raw := m.searchInput.Value()
+		queryValue = injectCursorMarker(raw, m.searchInput.Position())
+		if strings.TrimSpace(raw) == "" {
+			queryValue = "|"
+		}
+	} else if queryValue == "" {
+		queryValue = "-"
+	}
+
+	searchLine := truncate(labelStyle.Render("search: ")+queryValue, maxWidth)
+	lines := []string{searchLine}
+
+	if m.inlineFiltersVisible() {
+		if m.mode == ModeSearch && m.searchExpanded {
+			lines = append(lines, m.renderInlineFiltersExpandedLines(maxWidth)...)
+		} else {
+			lines = append(lines, truncate(m.renderInlineFiltersSummaryLine(), maxWidth))
+		}
+	}
+
+	if m.mode != ModeSearch {
+		for i := range lines {
+			lines[i] = m.styles.Dim.Render(lines[i])
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (m model) renderInlineFiltersSummaryLine() string {
+	type field struct {
+		name  string
+		key   string
+		value string
+	}
+
+	fields := []field{
+		{name: "assignee", key: "assignee", value: "any"},
+		{name: "label", key: "label", value: "any"},
+		{name: "status", key: "status", value: "any"},
+		{name: "priority", key: "priority", value: "any"},
+		{name: "type", key: "type", value: "any"},
+	}
+
+	if m.mode == ModeSearch && m.filterForm != nil {
+		fields[0].value = defaultString(strings.TrimSpace(m.filterForm.Assignee), "any")
+		fields[1].value = defaultString(strings.TrimSpace(m.filterForm.Label), "any")
+		fields[2].value = defaultString(strings.TrimSpace(m.filterForm.Status), "any")
+		fields[3].value = defaultString(strings.TrimSpace(m.filterForm.Priority), "any")
+		fields[4].value = defaultString(strings.TrimSpace(m.filterForm.Type), "any")
+	} else {
+		fields[0].value = defaultString(strings.TrimSpace(m.filter.Assignee), "any")
+		fields[1].value = defaultString(strings.TrimSpace(m.filter.Label), "any")
+		fields[2].value = defaultString(strings.TrimSpace(m.filter.Status), "any")
+		fields[3].value = defaultString(strings.TrimSpace(m.filter.Priority), "any")
+		fields[4].value = defaultString(strings.TrimSpace(m.filter.Type), "any")
+	}
+
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true)
+	activeField := ""
+	if m.mode == ModeSearch && m.searchExpanded && m.filterForm != nil {
+		activeField = m.filterForm.currentField()
+	}
+
+	parts := make([]string, 0, len(fields))
+	for _, entry := range fields {
+		segment := fmt.Sprintf("%s=%s", entry.key, entry.value)
+		if entry.name == activeField {
+			parts = append(parts, m.styles.Selected.Render(segment))
+			continue
+		}
+		parts = append(parts, segment)
+	}
+
+	return keyStyle.Render("filters: ") + strings.Join(parts, " ")
+}
+
+func (m model) renderInlineFiltersExpandedLines(maxWidth int) []string {
+	type field struct {
+		name string
+		key  string
+	}
+
+	fields := []field{
+		{name: "assignee", key: "assignee"},
+		{name: "label", key: "label"},
+		{name: "status", key: "status"},
+		{name: "priority", key: "priority"},
+		{name: "type", key: "type"},
+	}
+
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true)
+	activeField := ""
+	if m.filterForm != nil {
+		activeField = m.filterForm.currentField()
+	}
+
+	lines := []string{truncate(keyStyle.Render("filters:"), maxWidth)}
+	for _, field := range fields {
+		options, current := m.inlineFilterOptionsAndCurrent(field.name)
+		values := m.renderInlineFilterValues(field.name, options, current)
+		mark := " "
+		if field.name == activeField {
+			mark = "▶"
+		}
+		line := fmt.Sprintf("%s %s: %s", mark, field.key, values)
+		lines = append(lines, truncate(line, maxWidth))
+	}
+	return lines
+}
+
+func (m model) inlineFilterOptionsAndCurrent(field string) ([]string, string) {
+	options := m.searchFilterOptions(field)
+	current := "any"
+
+	if m.mode == ModeSearch && m.filterForm != nil {
+		switch field {
+		case "assignee":
+			current = defaultString(strings.TrimSpace(m.filterForm.Assignee), "any")
+		case "label":
+			current = defaultString(strings.TrimSpace(m.filterForm.Label), "any")
+		case "status":
+			current = defaultString(strings.TrimSpace(m.filterForm.Status), "any")
+		case "priority":
+			current = defaultString(strings.TrimSpace(m.filterForm.Priority), "any")
+		case "type":
+			current = defaultString(strings.TrimSpace(m.filterForm.Type), "any")
+		}
+	} else {
+		switch field {
+		case "assignee":
+			current = defaultString(strings.TrimSpace(m.filter.Assignee), "any")
+		case "label":
+			current = defaultString(strings.TrimSpace(m.filter.Label), "any")
+		case "status":
+			current = defaultString(strings.TrimSpace(m.filter.Status), "any")
+		case "priority":
+			current = defaultString(strings.TrimSpace(m.filter.Priority), "any")
+		case "type":
+			current = defaultString(strings.TrimSpace(m.filter.Type), "any")
+		}
+	}
+
+	hasCurrent := false
+	for _, option := range options {
+		if strings.EqualFold(option, current) {
+			hasCurrent = true
+			break
+		}
+	}
+	if !hasCurrent {
+		options = append(options, current)
+	}
+	return options, current
+}
+
+func (m model) renderInlineFilterValues(field string, values []string, current string) string {
+	switch field {
+	case "status":
+		return renderEnumValuesStyled(values, current, m.styles.Selected, enumStyleStatus)
+	case "priority":
+		return renderEnumValuesStyled(values, current, m.styles.Selected, enumStylePriority)
+	case "type":
+		return renderEnumValuesStyled(values, current, m.styles.Selected, enumStyleIssueType)
+	default:
+		return renderEnumValues(values, current, m.styles.Selected)
+	}
 }
 
 func (m model) renderBoard() string {
@@ -436,6 +604,8 @@ func (m model) renderFooter() string {
 	if m.mode != ModeBoard {
 		if m.mode == ModeDetails {
 			left = "mode: details | j/k scroll | Ctrl+X ext edit | Esc close"
+		} else if m.mode == ModeSearch {
+			left = "mode: search | type search query | Ctrl+F filters | ↑/↓ field | Tab/Shift+Tab value | Enter/Esc apply+exit | Ctrl+C clear"
 		} else if m.mode == ModeConfirmClosedParentCreate {
 			left = "mode: confirm closed parent | y confirm | n/Esc cancel"
 		} else if m.mode == ModeCreate {
@@ -469,10 +639,6 @@ func (m model) renderModal() string {
 	switch m.mode {
 	case ModeHelp:
 		return m.renderHelpModal()
-	case ModeSearch:
-		return m.renderSearchModal()
-	case ModeFilter:
-		return m.renderFilterModal()
 	case ModeCreate, ModeEdit:
 		return m.renderFormModal()
 	case ModePrompt:
