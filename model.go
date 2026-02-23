@@ -67,6 +67,7 @@ type model struct {
 
 	plugins                  PluginRegistry
 	openFormInEditorOverride func(model) (tea.Cmd, error)
+	resumeDetailsAfterEditor bool
 	tmuxMark                 struct {
 		paneID string
 		token  int

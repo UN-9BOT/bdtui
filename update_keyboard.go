@@ -111,8 +111,12 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.activateEditForCurrentIssue() {
 			return m, nil
 		}
+		m.resumeDetailsAfterEditor = true
 		cmd, err := m.openFormInEditor()
 		if err != nil {
+			m.resumeDetailsAfterEditor = false
+			m.mode = ModeDetails
+			m.form = nil
 			m.setToast("error", err.Error())
 			return m, nil
 		}
@@ -263,6 +267,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+x":
 		m.form.saveInputToField()
+		m.resumeDetailsAfterEditor = false
 		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.setToast("error", err.Error())
@@ -620,6 +625,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.activateEditForCurrentIssue() {
 			return m, nil
 		}
+		m.resumeDetailsAfterEditor = false
 		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.setToast("error", err.Error())

@@ -148,10 +148,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case formEditorMsg:
 		if msg.err != nil {
+			if m.resumeDetailsAfterEditor {
+				m.resumeDetailsAfterEditor = false
+				m.mode = ModeDetails
+				m.form = nil
+			}
 			m.setToast("error", msg.err.Error())
 			return m, nil
 		}
 		if m.form == nil {
+			m.resumeDetailsAfterEditor = false
 			return m, nil
 		}
 
@@ -166,6 +172,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.form.Labels = strings.TrimSpace(msg.payload.Labels)
 		m.form.Parent = strings.TrimSpace(msg.payload.Parent)
 		m.form.loadInputFromField()
+		if m.resumeDetailsAfterEditor {
+			issueID := strings.TrimSpace(m.form.IssueID)
+			m.resumeDetailsAfterEditor = false
+			next, cmd := m.submitForm()
+			updated := next.(model)
+			updated.mode = ModeDetails
+			updated.showDetails = true
+			if issueID != "" {
+				updated.detailsIssueID = issueID
+			}
+			return updated, cmd
+		}
 		m.setToast("success", "fields updated from editor")
 		return m, nil
 
