@@ -113,19 +113,31 @@ func (m model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
 	case "esc":
-		m.mode = ModeBoard
-		return m, nil
-	case "enter":
-		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
+		m.searchQuery = strings.TrimSpace(m.searchPrev)
+		m.searchInput.SetValue(m.searchQuery)
+		m.searchInput.CursorEnd()
 		m.mode = ModeBoard
 		m.computeColumns()
 		m.normalizeSelectionBounds()
-		m.setToast("success", "search applied")
+		return m, nil
+	case "enter":
+		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
+		m.searchPrev = m.searchQuery
+		m.mode = ModeBoard
+		m.computeColumns()
+		m.normalizeSelectionBounds()
+		m.setToast("success", "search updated")
 		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
+	nextQuery := strings.TrimSpace(m.searchInput.Value())
+	if nextQuery != m.searchQuery {
+		m.searchQuery = nextQuery
+		m.computeColumns()
+		m.normalizeSelectionBounds()
+	}
 	return m, cmd
 }
 
@@ -521,6 +533,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailsIssueID = issue.ID
 		return m, nil
 	case "/":
+		m.searchPrev = m.searchQuery
 		m.searchInput.SetValue(m.searchQuery)
 		m.searchInput.CursorEnd()
 		m.searchInput.Focus()

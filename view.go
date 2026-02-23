@@ -757,10 +757,10 @@ func (m model) renderSearchModal() string {
 	return strings.Join([]string{
 		"Search",
 		"",
-		"Searches by id/title/description/assignee/labels",
+		"Searches by id/title/description/assignee/labels (interactive)",
 		m.searchInput.View(),
 		"",
-		"Enter: apply | Esc: cancel",
+		"Type to filter | Enter: done | Esc: cancel",
 	}, "\n")
 }
 

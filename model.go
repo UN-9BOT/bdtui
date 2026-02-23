@@ -39,6 +39,7 @@ type model struct {
 	leader         bool
 
 	searchQuery string
+	searchPrev  string
 	searchInput textinput.Model
 
 	filter     Filter
