@@ -46,10 +46,11 @@ type Model struct {
 	Filter     Filter
 	FilterForm *FilterForm
 
-	Form         *IssueForm
-	Prompt       *PromptState
-	ParentPicker *ParentPickerState
-	TmuxPicker   *TmuxPickerState
+	Form            *IssueForm
+	CreateBlockerID string
+	Prompt          *PromptState
+	ParentPicker    *ParentPickerState
+	TmuxPicker      *TmuxPickerState
 
 	DepList *DepListState
 
@@ -179,6 +180,7 @@ func (m *model) clearTransientUI() {
 	m.ConfirmDelete = nil
 	m.ConfirmClosedParentCreate = nil
 	m.Form = nil
+	m.CreateBlockerID = ""
 	m.FilterForm = nil
 }
 
