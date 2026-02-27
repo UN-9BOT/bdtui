@@ -867,6 +867,10 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
+		if len(issue.Children) == 0 {
+			m.setToast("warning", "no children to toggle")
+			return m, nil
+		}
 		m.Collapsed[issue.ID] = !m.Collapsed[issue.ID]
 		m.computeColumns()
 		m.normalizeSelectionBounds()

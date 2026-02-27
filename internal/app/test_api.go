@@ -174,7 +174,7 @@ func RenderIssueRow(item Issue, maxTextWidth int, depth int) string {
 }
 
 func RenderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string {
-	return renderIssueRowSelectedPlain(item, maxTextWidth, depth)
+	return renderIssueRowSelectedPlain(item, maxTextWidth, depth, make(map[string]bool))
 }
 
 func RenderIssueRowGhostPlain(item Issue, maxTextWidth int, depth int) string {

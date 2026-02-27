@@ -449,7 +449,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
 			if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
-				row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+				row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed))
 			}
 			lines = append(lines, row)
 		}
@@ -1843,14 +1843,9 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[strin
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
-	
-	// Add collapse indicator if issue has children and is collapsed
-	var collapseIndicator string
-	if len(item.Children) > 0 && collapsed[item.ID] {
-		collapseIndicator = "▶ "
-	}
-	
-	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, item.Title, item.ID)
+	collapseIndicator := issueCollapseIndicator(item, collapsed)
+
+	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID)
 	epicStyle, isEpic := dashboardEpicAccentStyle(item.IssueType)
 
 	prefixStyle := lipgloss.NewStyle()
@@ -1875,34 +1870,34 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[strin
 		gapStyle.Render(gap) + idStyle.Render(id)
 }
 
-func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string {
+func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
+	collapseIndicator := issueCollapseIndicator(item, collapsed)
 
-	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1
+	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(collapseIndicator)
 	titleWidth := max(1, maxTextWidth-fixedWidth)
 	title := truncate(item.Title, titleWidth)
 
-	return prefix + priority + " " + issueType + " " + title
+	return prefix + priority + " " + issueType + " " + collapseIndicator + title
 }
 
 func renderIssueRowGhostPlain(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
-	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, item.Title, item.ID)
+	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, "", item.Title, item.ID)
 
 	return prefix + priority + " " + issueType + " " + title + gap + id
 }
 
-func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority string, issueType string, titleRaw string, idRaw string) (title string, id string, gap string) {
+func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority string, issueType string, collapseIndicator string, titleRaw string, idRaw string) (title string, id string, gap string) {
 	if maxTextWidth < 1 {
 		maxTextWidth = 1
 	}
 
-	// Account for collapse indicator (▶ = 1 width + 1 space)
-	fixedPrefixWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + 2
+	fixedPrefixWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(collapseIndicator)
 	maxIDWidth := maxTextWidth - fixedPrefixWidth - 2
 	if maxIDWidth < 1 {
 		maxIDWidth = 1
@@ -1915,13 +1910,23 @@ func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority str
 	}
 	title = truncate(titleRaw, titleWidth)
 
-	leftPlain := prefix + priority + " " + issueType + " ▶ " + title
+	leftPlain := prefix + priority + " " + issueType + " " + collapseIndicator + title
 	gapWidth := maxTextWidth - lipgloss.Width(leftPlain) - lipgloss.Width(id)
 	if gapWidth < 1 {
 		gapWidth = 1
 	}
 	gap = strings.Repeat(" ", gapWidth)
 	return title, id, gap
+}
+
+func issueCollapseIndicator(item Issue, collapsed map[string]bool) string {
+	if len(item.Children) == 0 {
+		return ""
+	}
+	if collapsed[item.ID] {
+		return "▶ "
+	}
+	return "▼ "
 }
 
 func treePrefix(depth int) string {
