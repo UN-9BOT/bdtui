@@ -289,6 +289,17 @@ func orderColumnAsTreeWithCollapsed(input []Issue, collapsed map[string]bool) ([
 	ordered := make([]Issue, 0, len(input))
 	visited := make(map[string]bool, len(input))
 
+	var markHidden func(id string)
+	markHidden = func(id string) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+		for _, childID := range childrenByParent[id] {
+			markHidden(childID)
+		}
+	}
+
 	var dfs func(id string, d int)
 	dfs = func(id string, d int) {
 		if visited[id] {
@@ -304,6 +315,10 @@ func orderColumnAsTreeWithCollapsed(input []Issue, collapsed map[string]bool) ([
 		if !collapsed[id] {
 			for _, childID := range childrenByParent[id] {
 				dfs(childID, d+1)
+			}
+		} else {
+			for _, childID := range childrenByParent[id] {
+				markHidden(childID)
 			}
 		}
 	}
