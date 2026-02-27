@@ -439,7 +439,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 		end := min(len(rows), offset+itemsPerPage)
 		for i := offset; i < end; i++ {
 			rowItem := rows[i]
-			row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth)
+			row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed)
 			if rowItem.ghost {
 				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
@@ -1839,10 +1839,17 @@ func dashboardDimmedRowStyle(issueType string, foreground lipgloss.Color, faint 
 	return style
 }
 
-func renderIssueRow(item Issue, maxTextWidth int, depth int) string {
+func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
+	
+	// Add collapse indicator if issue has children and is collapsed
+	var collapseIndicator string
+	if len(item.Children) > 0 && collapsed[item.ID] {
+		collapseIndicator = "▶ "
+	}
+	
 	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, item.Title, item.ID)
 	epicStyle, isEpic := dashboardEpicAccentStyle(item.IssueType)
 
@@ -1864,7 +1871,7 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int) string {
 	return prefixStyle.Render(prefix) +
 		priorityTokenStyle.Render(priority) +
 		" " + issueTypeTokenStyle.Render(issueType) +
-		" " + titleStyle.Render(title) +
+		" " + collapseIndicator + titleStyle.Render(title) +
 		gapStyle.Render(gap) + idStyle.Render(id)
 }
 
@@ -1894,7 +1901,8 @@ func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority str
 		maxTextWidth = 1
 	}
 
-	fixedPrefixWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1
+	// Account for collapse indicator (▶ = 1 width + 1 space)
+	fixedPrefixWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + 2
 	maxIDWidth := maxTextWidth - fixedPrefixWidth - 2
 	if maxIDWidth < 1 {
 		maxIDWidth = 1
@@ -1907,7 +1915,7 @@ func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority str
 	}
 	title = truncate(titleRaw, titleWidth)
 
-	leftPlain := prefix + priority + " " + issueType + " " + title
+	leftPlain := prefix + priority + " " + issueType + " ▶ " + title
 	gapWidth := maxTextWidth - lipgloss.Width(leftPlain) - lipgloss.Width(id)
 	if gapWidth < 1 {
 		gapWidth = 1

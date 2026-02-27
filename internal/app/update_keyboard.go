@@ -861,6 +861,21 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Prompt = newPrompt(ModePrompt, "Quick Assignee", "Enter assignee (empty = unassign)", issue.ID, PromptAssignee, issue.Assignee)
 		m.Mode = ModePrompt
 		return m, nil
+	case "t":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		m.Collapsed[issue.ID] = !m.Collapsed[issue.ID]
+		m.computeColumns()
+		m.normalizeSelectionBounds()
+		if m.Collapsed[issue.ID] {
+			m.setToast("success", issue.ID+" children hidden")
+		} else {
+			m.setToast("success", issue.ID+" children shown")
+		}
+		return m, nil
 	case "y":
 		issue := m.currentIssue()
 		if issue == nil {

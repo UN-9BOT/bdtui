@@ -29,6 +29,7 @@ func DefaultKeymap() Keymap {
 			"p/P: cycle priority forward/back",
 			"s/S: cycle status forward/back",
 			"a: quick assignee",
+			"t: toggle hide/show children",
 			"y: copy selected issue id",
 			"Y: paste selected issue id into tmux pane (picker marks pane)",
 			"Shift+L: quick labels",

@@ -28,6 +28,7 @@ type Model struct {
 	SelectedCol  int
 	SelectedIdx  map[Status]int
 	ScrollOffset map[Status]int
+	Collapsed    map[string]bool
 
 	ShowDetails    bool
 	DetailsScroll  int
@@ -123,6 +124,7 @@ func newModel(cfg Config) (model, error) {
 			StatusBlocked:    0,
 			StatusClosed:     0,
 		},
+		Collapsed: make(map[string]bool),
 
 		DetailsScroll:  0,
 		DetailsIssueID: "",
@@ -231,7 +233,7 @@ func (m *model) computeColumns() {
 
 	for _, status := range statusOrder {
 		sortIssuesByMode(next[status], m.SortMode)
-		ordered, depthMap := orderColumnAsTree(next[status])
+		ordered, depthMap := orderColumnAsTreeWithCollapsed(next[status], m.Collapsed)
 		next[status] = ordered
 		depths[status] = depthMap
 	}
@@ -241,6 +243,10 @@ func (m *model) computeColumns() {
 }
 
 func orderColumnAsTree(input []Issue) ([]Issue, map[string]int) {
+	return orderColumnAsTreeWithCollapsed(input, make(map[string]bool))
+}
+
+func orderColumnAsTreeWithCollapsed(input []Issue, collapsed map[string]bool) ([]Issue, map[string]int) {
 	depth := make(map[string]int, len(input))
 	if len(input) == 0 {
 		return input, depth
@@ -295,8 +301,10 @@ func orderColumnAsTree(input []Issue) ([]Issue, map[string]int) {
 		visited[id] = true
 		depth[id] = d
 		ordered = append(ordered, issue)
-		for _, childID := range childrenByParent[id] {
-			dfs(childID, d+1)
+		if !collapsed[id] {
+			for _, childID := range childrenByParent[id] {
+				dfs(childID, d+1)
+			}
 		}
 	}
 

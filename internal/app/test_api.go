@@ -170,7 +170,7 @@ func DashboardDimmedRowStyle(issueType string, foreground lipgloss.Color, faint 
 }
 
 func RenderIssueRow(item Issue, maxTextWidth int, depth int) string {
-	return renderIssueRow(item, maxTextWidth, depth)
+	return renderIssueRow(item, maxTextWidth, depth, make(map[string]bool))
 }
 
 func RenderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int) string {
