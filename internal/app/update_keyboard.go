@@ -1031,6 +1031,20 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 			empty := ""
 			return m.Client.UpdateIssue(UpdateParams{ID: id, Parent: &empty})
 		})
+	case "D":
+		if m.DimOverride == nil {
+			force := false
+			m.DimOverride = &force
+			m.setToast("info", "dim override: force bright (auto-dim disabled)")
+		} else if !*m.DimOverride {
+			force := true
+			m.DimOverride = &force
+			m.setToast("info", "dim override: force dim")
+		} else {
+			m.DimOverride = nil
+			m.setToast("info", "dim override: auto (cleared)")
+		}
+		return m, nil
 	case "d":
 		m.setToast("info", "loading dependencies...")
 		return m, depListCmd(m.Client, issue.ID)

@@ -48,7 +48,11 @@ func (m model) View() string {
 }
 
 func (m model) applyFocusDimming(out string) string {
-	if m.UIFocused {
+	focused := m.UIFocused
+	if m.DimOverride != nil {
+		focused = !*m.DimOverride
+	}
+	if focused {
 		return out
 	}
 	plain := ansiSGRRegexp.ReplaceAllString(out, "")

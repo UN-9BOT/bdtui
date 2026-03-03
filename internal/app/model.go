@@ -75,7 +75,8 @@ type Model struct {
 		PaneID string
 		Token  int
 	}
-	UIFocused bool
+	UIFocused    bool
+	DimOverride  *bool // nil=auto, true=force dim, false=force no dim
 
 	Now time.Time
 }

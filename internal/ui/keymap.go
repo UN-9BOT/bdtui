@@ -44,6 +44,7 @@ func DefaultKeymap() Keymap {
 			"g u: jump to parent",
 			"g P: clear parent",
 			"g d: show dependencies",
+			"g D: toggle dim override (auto → bright → dim → auto)",
 			"g o: toggle sort mode",
 		},
 		Form: []string{
