@@ -1,0 +1,27 @@
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":1,"issue_id":"bdtui-0z7","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":2,"issue_id":"bdtui-24k","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":3,"issue_id":"bdtui-56i","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":4,"issue_id":"bdtui-56i.1","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":5,"issue_id":"bdtui-56i.10","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":6,"issue_id":"bdtui-56i.12","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":7,"issue_id":"bdtui-56i.18","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":8,"issue_id":"bdtui-56i.18.1","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":9,"issue_id":"bdtui-56i.2","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":10,"issue_id":"bdtui-56i.3","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":11,"issue_id":"bdtui-56i.4","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":12,"issue_id":"bdtui-56i.5","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":13,"issue_id":"bdtui-56i.6","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":14,"issue_id":"bdtui-56i.7","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":15,"issue_id":"bdtui-56i.8","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":16,"issue_id":"bdtui-56i.9","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":17,"issue_id":"bdtui-57h","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":18,"issue_id":"bdtui-cmo","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":19,"issue_id":"bdtui-l7b","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":20,"issue_id":"bdtui-l7b.1","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":21,"issue_id":"bdtui-l7b.2","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":22,"issue_id":"bdtui-l7b.3","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":23,"issue_id":"bdtui-l7b.4","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":24,"issue_id":"bdtui-l7b.5","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T08:01:49Z","event_type":"created","id":25,"issue_id":"bdtui-y3v","new_value":"","old_value":""}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T18:15:57Z","event_type":"claimed","id":26,"issue_id":"bdtui-56i.5","new_value":"{\"assignee\":\"un_9bot\",\"status\":\"in_progress\"}","old_value":"{\"id\":\"bdtui-56i.5\",\"title\":\"добавить выключение диминга когда нет фокуса на bdui через горячую клавишу (предложи варианты горячих клавиш) через leader\",\"status\":\"open\",\"priority\":2,\"issue_type\":\"task\",\"owner\":\"un.9bot@gmail.com\",\"created_at\":\"2026-02-23T17:27:08Z\",\"created_by\":\"unbot\",\"updated_at\":\"2026-02-23T17:27:08Z\"}"}
+{"actor":"un_9bot","comment":null,"created_at":"2026-03-03T18:15:57Z","event_type":"status_changed","id":27,"issue_id":"bdtui-56i.5","new_value":"{\"status\":\"in_progress\"}","old_value":"{\"id\":\"bdtui-56i.5\",\"title\":\"добавить выключение диминга когда нет фокуса на bdui через горячую клавишу (предложи варианты горячих клавиш) через leader\",\"status\":\"in_progress\",\"priority\":2,\"issue_type\":\"task\",\"assignee\":\"un_9bot\",\"owner\":\"un.9bot@gmail.com\",\"created_at\":\"2026-02-23T17:27:08Z\",\"created_by\":\"unbot\",\"updated_at\":\"2026-03-03T15:15:58Z\"}"}
