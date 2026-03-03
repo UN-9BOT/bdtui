@@ -5,3 +5,7 @@
 .ralph-tui
 .idea/walkthrough.md
 .idea
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
