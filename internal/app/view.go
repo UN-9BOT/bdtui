@@ -493,13 +493,9 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 						Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 				}
 				if !grayBoard && !rowItem.ghost && selectedBlockedBy != nil && selectedBlockedBy[rowItem.issue.ID] {
-					row = dashboardBlockedByRowStyle(rowItem.issue.IssueType).Render(
-						renderIssueRowBlockedByPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed),
-					)
+					row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardBlockedByRowStyle(rowItem.issue.IssueType))
 				} else if !grayBoard && !rowItem.ghost && selectedBlocks != nil && selectedBlocks[rowItem.issue.ID] {
-					row = dashboardBlocksRowStyle(rowItem.issue.IssueType).Render(
-						renderIssueRowBlockedByPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed),
-					)
+					row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardBlocksRowStyle(rowItem.issue.IssueType))
 				}
 				if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
 					row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed))
@@ -1907,8 +1903,8 @@ func dashboardDimmedRowStyle(issueType string, foreground lipgloss.Color, faint 
 
 func dashboardBlockedByRowStyle(issueType string) lipgloss.Style {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("231")).
-		Background(lipgloss.Color("160")).
+		Foreground(lipgloss.Color("52")).
+		Background(lipgloss.Color("217")).
 		Bold(true)
 	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
 		style = style.Bold(true)
@@ -1918,8 +1914,8 @@ func dashboardBlockedByRowStyle(issueType string) lipgloss.Style {
 
 func dashboardBlocksRowStyle(issueType string) lipgloss.Style {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("16")).
-		Background(lipgloss.Color("220")).
+		Foreground(lipgloss.Color("94")).
+		Background(lipgloss.Color("229")).
 		Bold(true)
 	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
 		style = style.Bold(true)
@@ -1927,14 +1923,34 @@ func dashboardBlocksRowStyle(issueType string) lipgloss.Style {
 	return style
 }
 
-func renderIssueRowBlockedByPlain(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
+func renderIssueRowDependencyAccent(item Issue, maxTextWidth int, depth int, collapsed map[string]bool, accent lipgloss.Style) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
 	collapseIndicator := issueCollapseIndicator(item, collapsed)
 	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID)
+	epicStyle, isEpic := dashboardEpicAccentStyle(item.IssueType)
 
-	return prefix + priority + " " + issueType + " " + collapseIndicator + title + gap + id
+	prefixStyle := lipgloss.NewStyle()
+	priorityTokenStyle := accent
+	issueTypeTokenStyle := accent
+	titleStyle := lipgloss.NewStyle()
+	gapStyle := lipgloss.NewStyle()
+	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	if isEpic {
+		prefixStyle = prefixStyle.Inherit(epicStyle)
+		priorityTokenStyle = priorityTokenStyle.Inherit(epicStyle)
+		issueTypeTokenStyle = issueTypeTokenStyle.Inherit(epicStyle)
+		titleStyle = titleStyle.Inherit(epicStyle)
+		gapStyle = gapStyle.Inherit(epicStyle)
+		idStyle = idStyle.Inherit(epicStyle)
+	}
+
+	return prefixStyle.Render(prefix) +
+		priorityTokenStyle.Render(priority) +
+		" " + issueTypeTokenStyle.Render(issueType) +
+		" " + collapseIndicator + titleStyle.Render(title) +
+		gapStyle.Render(gap) + idStyle.Render(id)
 }
 
 func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {

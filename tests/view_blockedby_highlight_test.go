@@ -83,7 +83,7 @@ func TestRenderBoardHighlightsBlockedByRowsForSelectedIssue(t *testing.T) {
 	if blockerLine == "" {
 		t.Fatalf("expected blocker row in board output, got %q", out)
 	}
-	if !strings.Contains(blockerLine, "48;5;160m") {
+	if !strings.Contains(blockerLine, "48;5;217m") {
 		t.Fatalf("expected blocker row to be highlighted with blockedBy background, got %q", blockerLine)
 	}
 
@@ -91,7 +91,7 @@ func TestRenderBoardHighlightsBlockedByRowsForSelectedIssue(t *testing.T) {
 	if otherLine == "" {
 		t.Fatalf("expected non-blocker row in board output, got %q", out)
 	}
-	if strings.Contains(otherLine, "48;5;160m") {
+	if strings.Contains(otherLine, "48;5;217m") {
 		t.Fatalf("did not expect non-blocker row to use blockedBy highlight, got %q", otherLine)
 	}
 }
@@ -171,7 +171,7 @@ func TestRenderBoardHighlightsBlocksRowsForSelectedIssue(t *testing.T) {
 	if blockedLine == "" {
 		t.Fatalf("expected blocked row in board output, got %q", out)
 	}
-	if !strings.Contains(blockedLine, "48;5;220m") {
+	if !strings.Contains(blockedLine, "48;5;229m") {
 		t.Fatalf("expected blocks row to be highlighted with yellow background, got %q", blockedLine)
 	}
 
@@ -179,7 +179,7 @@ func TestRenderBoardHighlightsBlocksRowsForSelectedIssue(t *testing.T) {
 	if otherLine == "" {
 		t.Fatalf("expected non-blocks row in board output, got %q", out)
 	}
-	if strings.Contains(otherLine, "48;5;220m") {
+	if strings.Contains(otherLine, "48;5;229m") {
 		t.Fatalf("did not expect non-blocks row to use yellow highlight, got %q", otherLine)
 	}
 }
