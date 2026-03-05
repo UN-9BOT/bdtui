@@ -1000,9 +1000,30 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "B":
-		m.Prompt = newPrompt(ModePrompt, "Remove Blocker", "Enter blocker issue ID to remove", issue.ID, PromptDepRemove, "")
-		m.Mode = ModePrompt
-		return m, nil
+		blockers := make([]string, 0, len(issue.BlockedBy))
+		for _, blockerID := range issue.BlockedBy {
+			id := strings.TrimSpace(blockerID)
+			if id == "" {
+				continue
+			}
+			blockers = append(blockers, id)
+		}
+		if len(blockers) == 0 {
+			m.setToast("warning", "issue has no blockers")
+			return m, nil
+		}
+		if len(blockers) > 1 {
+			m.setToast("warning", "issue has multiple blockers")
+			return m, nil
+		}
+		if m.Client == nil {
+			m.setToast("error", "bd client is not configured")
+			return m, nil
+		}
+		blockerID := blockers[0]
+		return m, opCmd("blocker removed", func() error {
+			return m.Client.DepRemove(issue.ID, blockerID)
+		})
 	case "p":
 		m.ParentPicker = newParentPickerState(m.Issues, issue.ID, issue.Parent)
 		m.Mode = ModeParentPicker
