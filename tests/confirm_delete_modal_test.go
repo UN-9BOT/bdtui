@@ -29,6 +29,9 @@ func TestRenderDeleteModalShowsBasics(t *testing.T) {
 	if !strings.Contains(out, "line1") || !strings.Contains(out, "line2") {
 		t.Fatalf("expected preview lines, got %q", out)
 	}
+	if !strings.Contains(out, "bd delete bdtui-56i.23 --force") {
+		t.Fatalf("expected force command, got %q", out)
+	}
 }
 
 func TestRenderDeleteModalUsesColors(t *testing.T) {
@@ -57,5 +60,8 @@ func TestRenderDeleteModalUsesColors(t *testing.T) {
 	cascadeStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("2 cascade")
 	if !strings.Contains(out, cascadeStyled) {
 		t.Fatalf("expected styled cascade option, got %q", out)
+	}
+	if !strings.Contains(out, "bd delete bdtui-56i.23 --force --cascade") {
+		t.Fatalf("expected cascade command, got %q", out)
 	}
 }

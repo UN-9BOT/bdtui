@@ -14,6 +14,7 @@ const (
 	StatusInProgress Status = "in_progress"
 	StatusBlocked    Status = "blocked"
 	StatusClosed     Status = "closed"
+	StatusTombstone  Status = "tombstone"
 )
 
 var statusOrder = []Status{StatusOpen, StatusInProgress, StatusBlocked, StatusClosed}
@@ -28,6 +29,8 @@ func (s Status) Label() string {
 		return "Blocked"
 	case StatusClosed:
 		return "Closed"
+	case StatusTombstone:
+		return "Tombstone"
 	default:
 		return string(s)
 	}

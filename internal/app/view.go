@@ -513,6 +513,13 @@ func (m model) renderInspector() string {
 	assigneeText := truncate(assigneeRaw, assigneeWidth)
 	labelsText := truncate(labelsRaw, labelsWidth)
 
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	metaLine := truncate(
+		"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
+		inner,
+	)
+	metaLine = styleDetailMetaLine(metaLine, keyStyle)
+
 	sep := sepStyle.Render(" | ")
 	lines := []string{
 		labelStyle.Render(selectedPrefix) +
@@ -524,6 +531,7 @@ func (m model) renderInspector() string {
 			sep +
 			statusHeaderStyle(issue.Display).Render(statusText),
 		labelStyle.Render(titlePrefix) + titleStyle.Render(titleText),
+		metaLine,
 		labelStyle.Render(assigneePrefix) +
 			assigneeStyle.Render(assigneeText) +
 			labelStyle.Render(labelsPrefix) +
@@ -569,14 +577,7 @@ func detailLines(issue *Issue, inner int) []string {
 	}
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-
-	metaPlain := truncate(
-		"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
-		inner,
-	)
-	meta := styleDetailMetaLine(metaPlain, keyStyle)
-
-	lines := []string{meta}
+	lines := make([]string, 0, 1)
 	prefix := "Description: "
 	available := inner - len(prefix)
 	if available < 1 {
@@ -1337,6 +1338,7 @@ func (m model) renderDeleteModal() string {
 	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
 	previewTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	previewLineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	commandStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("221")).Bold(true)
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	confirmStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 	cancelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
@@ -1377,10 +1379,21 @@ func (m model) renderDeleteModal() string {
 	}
 	lines = append(lines,
 		"",
+		labelStyle.Render("Command:"),
+		commandStyle.Render(formatDeleteCommand(m.ConfirmDelete.IssueID, m.ConfirmDelete.Mode)),
+		"",
 		forceOption+" | "+cascadeOption,
 		confirmStyle.Render("y/Enter")+" "+hintStyle.Render("confirm")+" | "+cancelStyle.Render("n/Esc")+" "+hintStyle.Render("cancel"),
 	)
 	return strings.Join(lines, "\n")
+}
+
+func formatDeleteCommand(issueID string, mode DeleteMode) string {
+	cmd := fmt.Sprintf("bd delete %s --force", issueID)
+	if mode == DeleteModeCascade {
+		cmd += " --cascade"
+	}
+	return cmd
 }
 
 func (m model) renderConfirmClosedParentCreateModal() string {

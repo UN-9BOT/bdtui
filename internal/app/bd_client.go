@@ -115,9 +115,14 @@ func normalizeIssues(raw []rawIssue) []Issue {
 			continue
 		}
 
-		st, ok := statusFromString(asString(r.Status))
+		statusRaw := asString(r.Status)
+		st, ok := statusFromString(statusRaw)
 		if !ok {
-			st = StatusOpen
+			if statusRaw == string(StatusTombstone) {
+				st = StatusTombstone
+			} else {
+				st = StatusOpen
+			}
 		}
 
 		issue := Issue{

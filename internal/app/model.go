@@ -75,8 +75,8 @@ type Model struct {
 		PaneID string
 		Token  int
 	}
-	UIFocused    bool
-	DimOverride  *bool // nil=auto, true=force dim, false=force no dim
+	UIFocused   bool
+	DimOverride *bool // nil=auto, true=force dim, false=force no dim
 
 	Now time.Time
 }
@@ -223,6 +223,9 @@ func (m *model) computeColumns() {
 	}
 
 	for _, issue := range m.Issues {
+		if issue.Display == StatusTombstone {
+			continue
+		}
 		if !m.matchesFilter(issue) {
 			continue
 		}
@@ -524,7 +527,7 @@ func (m model) inspectorInnerWidth() int {
 
 func (m model) inspectorInnerHeight() int {
 	const (
-		collapsedInner   = 3
+		collapsedInner   = 4
 		maxPercentNum    = 2 // 2/5 = 40%
 		maxPercentDen    = 5
 		minOuter         = 5
@@ -581,7 +584,8 @@ func (m model) detailsViewportHeight() int {
 	if !m.ShowDetails {
 		return 0
 	}
-	h := m.inspectorInnerHeight() - 3
+	const summaryLines = 4
+	h := m.inspectorInnerHeight() - summaryLines
 	if h < 0 {
 		return 0
 	}
