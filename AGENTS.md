@@ -112,3 +112,6 @@ bd automatically syncs via Dolt:
 For more details, see README.md and docs/QUICKSTART.md.
 
 <!-- END BEADS INTEGRATION -->
+
+
+run make build

@@ -374,6 +374,25 @@ func (m model) buildColumnRows(status Status) ([]boardRow, map[string]int) {
 	return rows, issueRowIndex
 }
 
+func (m model) selectedBlockedBySet() map[string]bool {
+	issue := m.currentIssue()
+	if issue == nil || len(issue.BlockedBy) == 0 {
+		return nil
+	}
+	ids := make(map[string]bool, len(issue.BlockedBy))
+	for _, blockerID := range issue.BlockedBy {
+		id := strings.TrimSpace(blockerID)
+		if id == "" {
+			continue
+		}
+		ids[id] = true
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
@@ -388,6 +407,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 
 	col := m.Columns[status]
 	rows, issueRowIndex := m.buildColumnRows(status)
+	selectedBlockedBy := m.selectedBlockedBySet()
 	idx := m.SelectedIdx[status]
 	if idx < 0 {
 		idx = 0
@@ -441,22 +461,27 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 			offset = 0
 		}
 		end := min(len(rows), offset+itemsPerPage)
-		for i := offset; i < end; i++ {
-			rowItem := rows[i]
-			row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed)
-			if rowItem.ghost {
-				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
-					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+			for i := offset; i < end; i++ {
+				rowItem := rows[i]
+				row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed)
+				if rowItem.ghost {
+					row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
+						Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+				}
+				if grayBoard && !rowItem.ghost {
+					row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("243"), false).
+						Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+				}
+				if !grayBoard && !rowItem.ghost && selectedBlockedBy != nil && selectedBlockedBy[rowItem.issue.ID] {
+					row = dashboardBlockedByRowStyle(rowItem.issue.IssueType).Render(
+						renderIssueRowBlockedByPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed),
+					)
+				}
+				if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
+					row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed))
+				}
+				lines = append(lines, row)
 			}
-			if grayBoard && !rowItem.ghost {
-				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("243"), false).
-					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
-			}
-			if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
-				row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed))
-			}
-			lines = append(lines, row)
-		}
 	}
 
 	for len(lines) < innerHeight {
@@ -1854,6 +1879,27 @@ func dashboardDimmedRowStyle(issueType string, foreground lipgloss.Color, faint 
 		style = style.Bold(true)
 	}
 	return style
+}
+
+func dashboardBlockedByRowStyle(issueType string) lipgloss.Style {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("231")).
+		Background(lipgloss.Color("160")).
+		Bold(true)
+	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
+		style = style.Bold(true)
+	}
+	return style
+}
+
+func renderIssueRowBlockedByPlain(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
+	priority := renderPriorityLabel(item.Priority)
+	issueType := shortTypeDashboard(item.IssueType)
+	prefix := treePrefix(depth)
+	collapseIndicator := issueCollapseIndicator(item, collapsed)
+	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID)
+
+	return prefix + priority + " " + issueType + " " + collapseIndicator + title + gap + id
 }
 
 func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
