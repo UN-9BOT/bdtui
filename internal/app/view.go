@@ -393,6 +393,25 @@ func (m model) selectedBlockedBySet() map[string]bool {
 	return ids
 }
 
+func (m model) selectedBlocksSet() map[string]bool {
+	issue := m.currentIssue()
+	if issue == nil || len(issue.Blocks) == 0 {
+		return nil
+	}
+	ids := make(map[string]bool, len(issue.Blocks))
+	for _, blockedID := range issue.Blocks {
+		id := strings.TrimSpace(blockedID)
+		if id == "" {
+			continue
+		}
+		ids[id] = true
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
@@ -408,6 +427,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 	col := m.Columns[status]
 	rows, issueRowIndex := m.buildColumnRows(status)
 	selectedBlockedBy := m.selectedBlockedBySet()
+	selectedBlocks := m.selectedBlocksSet()
 	idx := m.SelectedIdx[status]
 	if idx < 0 {
 		idx = 0
@@ -474,6 +494,10 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 				}
 				if !grayBoard && !rowItem.ghost && selectedBlockedBy != nil && selectedBlockedBy[rowItem.issue.ID] {
 					row = dashboardBlockedByRowStyle(rowItem.issue.IssueType).Render(
+						renderIssueRowBlockedByPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed),
+					)
+				} else if !grayBoard && !rowItem.ghost && selectedBlocks != nil && selectedBlocks[rowItem.issue.ID] {
+					row = dashboardBlocksRowStyle(rowItem.issue.IssueType).Render(
 						renderIssueRowBlockedByPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed),
 					)
 				}
@@ -1885,6 +1909,17 @@ func dashboardBlockedByRowStyle(issueType string) lipgloss.Style {
 	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("231")).
 		Background(lipgloss.Color("160")).
+		Bold(true)
+	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
+		style = style.Bold(true)
+	}
+	return style
+}
+
+func dashboardBlocksRowStyle(issueType string) lipgloss.Style {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("16")).
+		Background(lipgloss.Color("220")).
 		Bold(true)
 	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
 		style = style.Bold(true)
