@@ -109,7 +109,7 @@ func TestDefaultKeymapDoesNotAdvertiseLeaderGb(t *testing.T) {
 	}
 }
 
-func TestHandleLeaderComboBWarnsWhenNoBlockers(t *testing.T) {
+func TestHandleLeaderComboBOpensBlockerPicker(t *testing.T) {
 	t.Parallel()
 
 	issue := Issue{
@@ -118,13 +118,19 @@ func TestHandleLeaderComboBWarnsWhenNoBlockers(t *testing.T) {
 		Status:  StatusOpen,
 		Display: StatusOpen,
 	}
+	other := Issue{
+		ID:      "bdtui-56i.22",
+		Title:   "candidate",
+		Status:  StatusOpen,
+		Display: StatusOpen,
+	}
 
 	m := model{
 		Mode:   ModeBoard,
-		Issues: []Issue{issue},
-		ByID:   map[string]*Issue{issue.ID: &issue},
+		Issues: []Issue{issue, other},
+		ByID:   map[string]*Issue{issue.ID: &issue, other.ID: &other},
 		Columns: map[Status][]Issue{
-			StatusOpen:       {issue},
+			StatusOpen:       {issue, other},
 			StatusInProgress: {},
 			StatusBlocked:    {},
 			StatusClosed:     {},
@@ -142,36 +148,37 @@ func TestHandleLeaderComboBWarnsWhenNoBlockers(t *testing.T) {
 	got := next.(model)
 
 	if cmd != nil {
-		t.Fatalf("expected nil cmd when no blockers")
+		t.Fatalf("expected nil cmd when opening blocker picker")
 	}
-	if got.Mode != ModeBoard {
-		t.Fatalf("expected mode %s, got %s", ModeBoard, got.Mode)
+	if got.Mode != ModeBlockerPicker {
+		t.Fatalf("expected mode %s, got %s", ModeBlockerPicker, got.Mode)
 	}
-	if got.Prompt != nil {
-		t.Fatalf("expected no prompt")
+	if got.BlockerPicker == nil {
+		t.Fatalf("expected blocker picker state")
 	}
-	if got.ToastKind != "warning" || got.Toast != "issue has no blockers" {
-		t.Fatalf("unexpected toast: kind=%q text=%q", got.ToastKind, got.Toast)
+	if got.BlockerPicker.TargetIssueID != issue.ID {
+		t.Fatalf("expected target %q, got %q", issue.ID, got.BlockerPicker.TargetIssueID)
+	}
+	if len(got.BlockerPicker.Columns[StatusOpen]) != 1 {
+		t.Fatalf("expected exactly one open candidate, got %d", len(got.BlockerPicker.Columns[StatusOpen]))
+	}
+	if got.BlockerPicker.Columns[StatusOpen][0].ID != other.ID {
+		t.Fatalf("expected candidate %q, got %q", other.ID, got.BlockerPicker.Columns[StatusOpen][0].ID)
 	}
 }
 
-func TestHandleLeaderComboBWarnsWhenMultipleBlockers(t *testing.T) {
+func TestBlockerPickerSpaceTogglesSelectedBlocker(t *testing.T) {
 	t.Parallel()
 
-	issue := Issue{
-		ID:        "bdtui-56i.21",
-		Title:     "selected",
-		Status:    StatusOpen,
-		Display:   StatusOpen,
-		BlockedBy: []string{"bdtui-1", "bdtui-2"},
-	}
+	issue := Issue{ID: "bdtui-56i.21", Title: "selected", Status: StatusOpen, Display: StatusOpen}
+	blocker := Issue{ID: "bdtui-56i.22", Title: "candidate", Status: StatusOpen, Display: StatusOpen}
 
 	m := model{
 		Mode:   ModeBoard,
-		Issues: []Issue{issue},
-		ByID:   map[string]*Issue{issue.ID: &issue},
+		Issues: []Issue{issue, blocker},
+		ByID:   map[string]*Issue{issue.ID: &issue, blocker.ID: &blocker},
 		Columns: map[Status][]Issue{
-			StatusOpen:       {issue},
+			StatusOpen:       {issue, blocker},
 			StatusInProgress: {},
 			StatusBlocked:    {},
 			StatusClosed:     {},
@@ -185,24 +192,26 @@ func TestHandleLeaderComboBWarnsWhenMultipleBlockers(t *testing.T) {
 		},
 	}
 
-	next, cmd := m.HandleLeaderCombo("B")
+	next, _ := m.HandleLeaderCombo("B")
 	got := next.(model)
+	if got.BlockerPicker == nil {
+		t.Fatalf("expected blocker picker state")
+	}
+	if got.BlockerPicker.Selected[blocker.ID] {
+		t.Fatalf("did not expect blocker selected before toggle")
+	}
 
-	if cmd != nil {
-		t.Fatalf("expected nil cmd when multiple blockers")
+	next, _ = got.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
+	got = next.(model)
+	if got.BlockerPicker == nil {
+		t.Fatalf("expected blocker picker state after toggle")
 	}
-	if got.Mode != ModeBoard {
-		t.Fatalf("expected mode %s, got %s", ModeBoard, got.Mode)
-	}
-	if got.Prompt != nil {
-		t.Fatalf("expected no prompt")
-	}
-	if got.ToastKind != "warning" || got.Toast != "issue has multiple blockers" {
-		t.Fatalf("unexpected toast: kind=%q text=%q", got.ToastKind, got.Toast)
+	if !got.BlockerPicker.Selected[blocker.ID] {
+		t.Fatalf("expected blocker %q selected after space toggle", blocker.ID)
 	}
 }
 
-func TestHandleLeaderComboBReturnsCommandForSingleBlocker(t *testing.T) {
+func TestBlockerPickerEnterAppliesAndCloses(t *testing.T) {
 	t.Parallel()
 
 	issue := Issue{
@@ -210,16 +219,17 @@ func TestHandleLeaderComboBReturnsCommandForSingleBlocker(t *testing.T) {
 		Title:     "selected",
 		Status:    StatusOpen,
 		Display:   StatusOpen,
-		BlockedBy: []string{"bdtui-1"},
+		BlockedBy: []string{"bdtui-56i.22"},
 	}
+	blocker := Issue{ID: "bdtui-56i.22", Title: "candidate", Status: StatusOpen, Display: StatusOpen}
 
 	m := model{
 		Mode:   ModeBoard,
 		Client: NewBdClient(t.TempDir()),
-		Issues: []Issue{issue},
-		ByID:   map[string]*Issue{issue.ID: &issue},
+		Issues: []Issue{issue, blocker},
+		ByID:   map[string]*Issue{issue.ID: &issue, blocker.ID: &blocker},
 		Columns: map[Status][]Issue{
-			StatusOpen:       {issue},
+			StatusOpen:       {issue, blocker},
 			StatusInProgress: {},
 			StatusBlocked:    {},
 			StatusClosed:     {},
@@ -233,16 +243,64 @@ func TestHandleLeaderComboBReturnsCommandForSingleBlocker(t *testing.T) {
 		},
 	}
 
-	next, cmd := m.HandleLeaderCombo("B")
+	next, _ := m.HandleLeaderCombo("B")
 	got := next.(model)
+	next, _ = got.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
+	got = next.(model)
 
+	next, cmd := got.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	got = next.(model)
 	if cmd == nil {
-		t.Fatalf("expected non-nil cmd for single blocker")
+		t.Fatalf("expected apply cmd on enter")
 	}
 	if got.Mode != ModeBoard {
 		t.Fatalf("expected mode %s, got %s", ModeBoard, got.Mode)
 	}
-	if got.Prompt != nil {
-		t.Fatalf("expected no prompt")
+	if got.BlockerPicker != nil {
+		t.Fatalf("expected blocker picker to close")
+	}
+}
+
+func TestBlockerPickerEscAppliesAndCloses(t *testing.T) {
+	t.Parallel()
+
+	issue := Issue{ID: "bdtui-56i.21", Title: "selected", Status: StatusOpen, Display: StatusOpen}
+	blocker := Issue{ID: "bdtui-56i.22", Title: "candidate", Status: StatusOpen, Display: StatusOpen}
+
+	m := model{
+		Mode:   ModeBoard,
+		Client: NewBdClient(t.TempDir()),
+		Issues: []Issue{issue, blocker},
+		ByID:   map[string]*Issue{issue.ID: &issue, blocker.ID: &blocker},
+		Columns: map[Status][]Issue{
+			StatusOpen:       {issue, blocker},
+			StatusInProgress: {},
+			StatusBlocked:    {},
+			StatusClosed:     {},
+		},
+		SelectedCol: 0,
+		SelectedIdx: map[Status]int{
+			StatusOpen:       0,
+			StatusInProgress: 0,
+			StatusBlocked:    0,
+			StatusClosed:     0,
+		},
+	}
+
+	next, _ := m.HandleLeaderCombo("B")
+	got := next.(model)
+	next, _ = got.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
+	got = next.(model)
+
+	next, cmd := got.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	got = next.(model)
+	if cmd == nil {
+		t.Fatalf("expected apply cmd on esc")
+	}
+	if got.Mode != ModeBoard {
+		t.Fatalf("expected mode %s, got %s", ModeBoard, got.Mode)
+	}
+	if got.BlockerPicker != nil {
+		t.Fatalf("expected blocker picker to close")
 	}
 }

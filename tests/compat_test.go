@@ -15,6 +15,7 @@ type IssueForm = b.IssueForm
 type ParentOption = b.ParentOption
 type ParentPickerState = b.ParentPickerState
 type TmuxPickerState = b.TmuxPickerState
+type BlockerPickerState = b.BlockerPickerState
 type FilterForm = b.FilterForm
 type DeleteMode = b.DeleteMode
 type ConfirmDelete = b.ConfirmDelete
@@ -47,6 +48,7 @@ const (
 	ModePrompt                    = b.ModePrompt
 	ModeParentPicker              = b.ModeParentPicker
 	ModeTmuxPicker                = b.ModeTmuxPicker
+	ModeBlockerPicker             = b.ModeBlockerPicker
 	ModeDepList                   = b.ModeDepList
 	ModeConfirmDelete             = b.ModeConfirmDelete
 	ModeConfirmClosedParentCreate = b.ModeConfirmClosedParentCreate

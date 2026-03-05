@@ -52,6 +52,7 @@ type Model struct {
 	Prompt          *PromptState
 	ParentPicker    *ParentPickerState
 	TmuxPicker      *TmuxPickerState
+	BlockerPicker   *BlockerPickerState
 
 	DepList *DepListState
 
@@ -179,6 +180,7 @@ func (m *model) clearTransientUI() {
 	m.Prompt = nil
 	m.ParentPicker = nil
 	m.TmuxPicker = nil
+	m.BlockerPicker = nil
 	m.DepList = nil
 	m.ConfirmDelete = nil
 	m.ConfirmClosedParentCreate = nil

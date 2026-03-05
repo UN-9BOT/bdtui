@@ -702,6 +702,8 @@ func (m model) renderModal() string {
 		return m.renderParentPickerModal()
 	case ModeTmuxPicker:
 		return m.renderTmuxPickerModal()
+	case ModeBlockerPicker:
+		return m.renderBlockerPickerModal()
 	case ModeDepList:
 		return m.renderDepListModal()
 	case ModeConfirmDelete:
@@ -1371,6 +1373,104 @@ func (m model) renderDepListModal() string {
 	lines = append(lines, m.DepList.Lines[start:end]...)
 	lines = append(lines, "", "j/k scroll | Esc close")
 	return strings.Join(lines, "\n")
+}
+
+func (m model) renderBlockerPickerModal() string {
+	if m.BlockerPicker == nil {
+		return "Blocker Picker\n\nloading..."
+	}
+
+	availableWidth := max(40, m.Width-12)
+	gap := 1
+	totalGap := gap * (len(statusOrder) - 1)
+	panelWidth := (availableWidth - totalGap) / len(statusOrder)
+	if panelWidth < 20 {
+		panelWidth = 20
+	}
+
+	innerHeight := max(10, min(20, m.Height-10))
+	cols := make([]string, 0, len(statusOrder))
+	for idx, status := range statusOrder {
+		cols = append(cols, m.renderBlockerPickerColumn(status, panelWidth, innerHeight, idx == m.BlockerPicker.SelectedCol))
+	}
+
+	targetID := defaultString(m.BlockerPicker.TargetIssueID, "-")
+	header := fmt.Sprintf("Blockers Picker: %s", targetID)
+	hint := "Space toggle | Enter/Esc apply+exit | h/l col | j/k move | 0/G first/last"
+	state := fmt.Sprintf("selected blockers: %d", len(m.BlockerPicker.Selected))
+
+	return strings.Join([]string{
+		header,
+		state,
+		"",
+		lipgloss.JoinHorizontal(lipgloss.Top, cols...),
+		"",
+		hint,
+	}, "\n")
+}
+
+func (m model) renderBlockerPickerColumn(status Status, width int, innerHeight int, active bool) string {
+	borderColor := columnBorderColor(status, active)
+	border := columnBorderStyle(active)
+	style := lipgloss.NewStyle().
+		Border(border).
+		BorderForeground(borderColor).
+		Width(width)
+
+	col := m.BlockerPicker.Columns[status]
+	idx := m.BlockerPicker.SelectedIdx[status]
+	if idx < 0 {
+		idx = 0
+	}
+	offset := m.BlockerPicker.ScrollOffset[status]
+	if offset < 0 {
+		offset = 0
+	}
+
+	maxTextWidth := max(1, width-4)
+	header := truncate(fmt.Sprintf("%s (%d)", status.Label(), len(col)), maxTextWidth)
+	headerLine := statusHeaderStyle(status).Render(header)
+	divider := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(strings.Repeat("─", maxTextWidth))
+	lines := []string{headerLine, divider}
+
+	itemsPerPage := max(1, innerHeight-3)
+	if len(col) == 0 {
+		lines = append(lines, m.Styles.Dim.Render(truncate("(empty)", maxTextWidth)))
+		} else {
+			if offset >= len(col) {
+				offset = len(col) - 1
+			}
+			end := min(len(col), offset+itemsPerPage)
+			for i := offset; i < end; i++ {
+				item := col[i]
+				rowPlain := renderBlockerPickerRowPlain(item, maxTextWidth, m.BlockerPicker.Selected[item.ID])
+				row := rowPlain
+				if i == idx && active {
+					row = m.Styles.Selected.Render(rowPlain)
+				}
+				lines = append(lines, row)
+			}
+		}
+
+	for len(lines) < innerHeight {
+		lines = append(lines, "")
+	}
+	if len(lines) > innerHeight {
+		lines = lines[:innerHeight]
+	}
+	return style.Render(strings.Join(lines, "\n"))
+}
+
+func renderBlockerPickerRowPlain(item Issue, maxTextWidth int, checked bool) string {
+	checkbox := "[ ]"
+	if checked {
+		checkbox = "[x]"
+	}
+	issueType := shortTypeDashboard(item.IssueType)
+	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, "", checkbox, issueType, "", item.Title, item.ID)
+	return checkbox + " " + issueType + " " + title + gap + id
 }
 
 func (m model) renderDeleteModal() string {

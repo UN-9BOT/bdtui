@@ -33,6 +33,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleParentPickerKey(msg)
 	case ModeTmuxPicker:
 		return m.handleTmuxPickerKey(msg)
+	case ModeBlockerPicker:
+		return m.handleBlockerPickerKey(msg)
 	case ModeDepList:
 		return m.handleDepListKey(msg)
 	case ModeConfirmDelete:
@@ -584,6 +586,254 @@ func (m model) handleDepListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) blockerPickerItemsPerPage() int {
+	innerHeight := 14
+	if m.Height > 0 {
+		innerHeight = max(10, min(20, m.Height-10))
+	}
+	return max(1, innerHeight-3)
+}
+
+func (m *model) ensureBlockerPickerSelectionVisible(status Status) {
+	if m.BlockerPicker == nil {
+		return
+	}
+	col := m.BlockerPicker.Columns[status]
+	if len(col) == 0 {
+		m.BlockerPicker.ScrollOffset[status] = 0
+		return
+	}
+	idx := m.BlockerPicker.SelectedIdx[status]
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(col) {
+		idx = len(col) - 1
+	}
+	m.BlockerPicker.SelectedIdx[status] = idx
+
+	itemsPerPage := m.blockerPickerItemsPerPage()
+	offset := m.BlockerPicker.ScrollOffset[status]
+	if offset > idx {
+		offset = idx
+	}
+	if idx >= offset+itemsPerPage {
+		offset = idx - itemsPerPage + 1
+	}
+	maxOffset := len(col) - itemsPerPage
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	m.BlockerPicker.ScrollOffset[status] = offset
+}
+
+func (m model) currentBlockerPickerIssue() *Issue {
+	if m.BlockerPicker == nil {
+		return nil
+	}
+	status := statusOrder[m.BlockerPicker.SelectedCol]
+	col := m.BlockerPicker.Columns[status]
+	if len(col) == 0 {
+		return nil
+	}
+	idx := m.BlockerPicker.SelectedIdx[status]
+	if idx < 0 || idx >= len(col) {
+		return nil
+	}
+	issue := col[idx]
+	return &issue
+}
+
+func (m model) handleBlockerPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.BlockerPicker == nil {
+		m.Mode = ModeBoard
+		return m, nil
+	}
+
+	key := msg.String()
+	status := statusOrder[m.BlockerPicker.SelectedCol]
+
+	switch key {
+	case "esc", "enter":
+		return m.applyBlockerPickerAndClose()
+	case "left", "h":
+		m.BlockerPicker.SelectedCol--
+		if m.BlockerPicker.SelectedCol < 0 {
+			m.BlockerPicker.SelectedCol = len(statusOrder) - 1
+		}
+		m.ensureBlockerPickerSelectionVisible(statusOrder[m.BlockerPicker.SelectedCol])
+		return m, nil
+	case "right", "l":
+		m.BlockerPicker.SelectedCol = (m.BlockerPicker.SelectedCol + 1) % len(statusOrder)
+		m.ensureBlockerPickerSelectionVisible(statusOrder[m.BlockerPicker.SelectedCol])
+		return m, nil
+	case "up", "k":
+		m.BlockerPicker.SelectedIdx[status]--
+		m.ensureBlockerPickerSelectionVisible(status)
+		return m, nil
+	case "down", "j":
+		m.BlockerPicker.SelectedIdx[status]++
+		m.ensureBlockerPickerSelectionVisible(status)
+		return m, nil
+	case "0":
+		m.BlockerPicker.SelectedIdx[status] = 0
+		m.ensureBlockerPickerSelectionVisible(status)
+		return m, nil
+	case "G":
+		col := m.BlockerPicker.Columns[status]
+		if len(col) > 0 {
+			m.BlockerPicker.SelectedIdx[status] = len(col) - 1
+			m.ensureBlockerPickerSelectionVisible(status)
+		}
+		return m, nil
+	case " ":
+		current := m.currentBlockerPickerIssue()
+		if current == nil {
+			m.setToast("warning", "no blocker candidate selected")
+			return m, nil
+		}
+		id := strings.TrimSpace(current.ID)
+		if id == "" {
+			m.setToast("warning", "invalid blocker candidate")
+			return m, nil
+		}
+		if m.BlockerPicker.Selected[id] {
+			delete(m.BlockerPicker.Selected, id)
+		} else {
+			m.BlockerPicker.Selected[id] = true
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m model) applyBlockerPickerAndClose() (tea.Model, tea.Cmd) {
+	if m.BlockerPicker == nil {
+		m.Mode = ModeBoard
+		return m, nil
+	}
+	targetID := strings.TrimSpace(m.BlockerPicker.TargetIssueID)
+	original := m.BlockerPicker.Original
+	selected := m.BlockerPicker.Selected
+	m.BlockerPicker = nil
+	m.Mode = ModeBoard
+
+	if targetID == "" {
+		m.setToast("error", "blocker picker target is empty")
+		return m, nil
+	}
+	if m.Client == nil {
+		m.setToast("error", "bd client is not configured")
+		return m, nil
+	}
+
+	toRemove := make([]string, 0, len(original))
+	for blockerID := range original {
+		if !selected[blockerID] {
+			toRemove = append(toRemove, blockerID)
+		}
+	}
+	toAdd := make([]string, 0, len(selected))
+	for blockerID := range selected {
+		if !original[blockerID] {
+			toAdd = append(toAdd, blockerID)
+		}
+	}
+	if len(toRemove) == 0 && len(toAdd) == 0 {
+		return m, nil
+	}
+	sort.Strings(toRemove)
+	sort.Strings(toAdd)
+
+	return m, opCmd("blockers updated", func() error {
+		for _, blockerID := range toRemove {
+			if err := m.Client.DepRemove(targetID, blockerID); err != nil {
+				return err
+			}
+		}
+		for _, blockerID := range toAdd {
+			if err := m.Client.DepAdd(targetID, blockerID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func buildBlockerPickerColumns(issues []Issue, targetIssueID string, sortMode SortMode) map[Status][]Issue {
+	target := strings.TrimSpace(targetIssueID)
+	cols := map[Status][]Issue{
+		StatusOpen:       {},
+		StatusInProgress: {},
+		StatusBlocked:    {},
+		StatusClosed:     {},
+	}
+	for _, issue := range issues {
+		if issue.Display == StatusTombstone {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(issue.ID), target) {
+			continue
+		}
+		cols[issue.Display] = append(cols[issue.Display], issue)
+	}
+	for _, st := range statusOrder {
+		sortIssuesByMode(cols[st], sortMode)
+	}
+	return cols
+}
+
+func newBlockerPickerState(issues []Issue, targetIssueID string, selectedBlockers []string, sortMode SortMode) *BlockerPickerState {
+	selected := make(map[string]bool, len(selectedBlockers))
+	for _, blockerID := range selectedBlockers {
+		id := strings.TrimSpace(blockerID)
+		if id == "" {
+			continue
+		}
+		selected[id] = true
+	}
+	original := make(map[string]bool, len(selected))
+	for id := range selected {
+		original[id] = true
+	}
+
+	state := &BlockerPickerState{
+		TargetIssueID: strings.TrimSpace(targetIssueID),
+		Columns:       buildBlockerPickerColumns(issues, targetIssueID, sortMode),
+		SelectedCol:   0,
+		SelectedIdx: map[Status]int{
+			StatusOpen:       0,
+			StatusInProgress: 0,
+			StatusBlocked:    0,
+			StatusClosed:     0,
+		},
+		ScrollOffset: map[Status]int{
+			StatusOpen:       0,
+			StatusInProgress: 0,
+			StatusBlocked:    0,
+			StatusClosed:     0,
+		},
+		Original: original,
+		Selected: selected,
+	}
+
+	for colIdx, st := range statusOrder {
+		if len(state.Columns[st]) == 0 {
+			continue
+		}
+		state.SelectedCol = colIdx
+		break
+	}
+	return state
+}
+
 func (m model) handleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.TmuxPicker == nil {
 		m.Mode = ModeBoard
@@ -1000,30 +1250,9 @@ func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "B":
-		blockers := make([]string, 0, len(issue.BlockedBy))
-		for _, blockerID := range issue.BlockedBy {
-			id := strings.TrimSpace(blockerID)
-			if id == "" {
-				continue
-			}
-			blockers = append(blockers, id)
-		}
-		if len(blockers) == 0 {
-			m.setToast("warning", "issue has no blockers")
-			return m, nil
-		}
-		if len(blockers) > 1 {
-			m.setToast("warning", "issue has multiple blockers")
-			return m, nil
-		}
-		if m.Client == nil {
-			m.setToast("error", "bd client is not configured")
-			return m, nil
-		}
-		blockerID := blockers[0]
-		return m, opCmd("blocker removed", func() error {
-			return m.Client.DepRemove(issue.ID, blockerID)
-		})
+		m.BlockerPicker = newBlockerPickerState(m.Issues, issue.ID, issue.BlockedBy, m.SortMode)
+		m.Mode = ModeBlockerPicker
+		return m, nil
 	case "p":
 		m.ParentPicker = newParentPickerState(m.Issues, issue.ID, issue.Parent)
 		m.Mode = ModeParentPicker

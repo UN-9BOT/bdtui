@@ -39,7 +39,7 @@ func DefaultKeymap() Keymap {
 			"q: quit",
 		},
 		Leader: []string{
-			"g B: remove single blocker from selected issue",
+			"g B: blocker picker (Space toggle, Enter/Esc apply)",
 			"g p: set parent (interactive picker)",
 			"g u: jump to parent",
 			"g P: clear parent",

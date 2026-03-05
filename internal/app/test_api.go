@@ -319,6 +319,10 @@ func (m Model) RenderDeleteModal() string {
 	return m.renderDeleteModal()
 }
 
+func (m Model) RenderBlockerPickerModal() string {
+	return m.renderBlockerPickerModal()
+}
+
 func (m Model) RenderConfirmClosedParentCreateModal() string {
 	return m.renderConfirmClosedParentCreateModal()
 }

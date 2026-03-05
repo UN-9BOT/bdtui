@@ -136,6 +136,7 @@ const (
 	ModePrompt                    Mode = "prompt"
 	ModeParentPicker              Mode = "parent_picker"
 	ModeTmuxPicker                Mode = "tmux_picker"
+	ModeBlockerPicker             Mode = "blocker_picker"
 	ModeDepList                   Mode = "dep_list"
 	ModeConfirmDelete             Mode = "confirm_delete"
 	ModeConfirmClosedParentCreate Mode = "confirm_closed_parent_create"
@@ -200,6 +201,16 @@ type TmuxPickerState struct {
 	MarkedPaneID   string
 	CleanupAt      time.Time
 	CleanupPending bool
+}
+
+type BlockerPickerState struct {
+	TargetIssueID string
+	Columns       map[Status][]Issue
+	SelectedCol   int
+	SelectedIdx   map[Status]int
+	ScrollOffset  map[Status]int
+	Original      map[string]bool
+	Selected      map[string]bool
 }
 
 type FilterForm struct {
