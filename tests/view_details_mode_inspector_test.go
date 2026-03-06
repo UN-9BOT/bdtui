@@ -90,8 +90,8 @@ func TestRenderInspectorUsesCompactPreviewOnBoardAndExpandedPreviewInDetails(t *
 		Display:     StatusOpen,
 		Priority:    2,
 		IssueType:   "task",
-		Description: "\n\n  1\n2\n3\n4\n5\n6",
-		Notes:       "\n  a\nb\nc\nd\ne\nf",
+		Description: "- one\n- two\n- three\n- four\n- five\n- six",
+		Notes:       "- alpha\n- beta\n- gamma\n- delta\n- omega\n- zeta",
 	}
 
 	m := model{
@@ -117,22 +117,25 @@ func TestRenderInspectorUsesCompactPreviewOnBoardAndExpandedPreviewInDetails(t *
 	}
 
 	collapsed := ansiSGRRegexp.ReplaceAllString(m.RenderInspector(), "")
-	if !strings.Contains(collapsed, "Description: 1 2 3 4 5 6") {
+	if !strings.Contains(collapsed, "Description: - one - two - three - four - five - six") {
 		t.Fatalf("expected compact board preview, got %q", collapsed)
 	}
-	if strings.Contains(collapsed, "\n             2") {
+	if strings.Contains(collapsed, "\n             • one") {
 		t.Fatalf("expected board preview to stay single-line, got %q", collapsed)
 	}
 
 	m.Mode = ModeDetails
 	expanded := ansiSGRRegexp.ReplaceAllString(m.RenderInspector(), "")
-	if !strings.Contains(expanded, "Description: 1") {
+	if !strings.Contains(expanded, "Description:") || !strings.Contains(expanded, "• one") {
 		t.Fatalf("expected expanded details preview to keep source lines, got %q", expanded)
 	}
-	if !strings.Contains(expanded, "│             5") {
-		t.Fatalf("expected expanded details preview to show fifth description line, got %q", expanded)
+	if !strings.Contains(expanded, "• four") {
+		t.Fatalf("expected expanded details preview to show markdown list item, got %q", expanded)
 	}
-	if !strings.Contains(expanded, "│       e") {
-		t.Fatalf("expected expanded details preview to show fifth notes line, got %q", expanded)
+	if !strings.Contains(expanded, "• alpha") || !strings.Contains(expanded, "• delta") {
+		t.Fatalf("expected expanded details preview to show markdown notes list item, got %q", expanded)
+	}
+	if strings.Contains(expanded, "Description: - one") || strings.Contains(expanded, "Notes: - alpha") {
+		t.Fatalf("expected expanded preview to avoid raw markdown markers, got %q", expanded)
 	}
 }

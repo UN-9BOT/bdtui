@@ -96,25 +96,28 @@ func TestDetailLinesShowsDashWhenPreviewIsEmptyAfterLeadingTrim(t *testing.T) {
 
 func TestDetailLinesExpandedShowsFiveLinePreviewForDescriptionAndNotes(t *testing.T) {
 	issue := &Issue{
-		Description: "\n\n  1\n2\n3\n4\n5\n6",
-		Notes:       "\n  a\nb\nc\nd\ne\nf",
+		Description: "- one\n- two\n- three\n- four\n- five\n- six",
+		Notes:       "- alpha\n- beta\n- gamma\n- delta\n- omega\n- zeta",
 	}
 
 	lines := detailLines(issue, 40, true)
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(lines[0], "Description: 1") {
+	if !strings.Contains(lines[0], "Description:") || !strings.Contains(lines[0], "• one") {
 		t.Fatalf("expected first expanded description line, got %q", lines[0])
 	}
-	if !strings.Contains(joined, "\n             5") {
-		t.Fatalf("expected fifth expanded description line, got %q", joined)
+	if !strings.Contains(joined, "• four") {
+		t.Fatalf("expected markdown-rendered description list item, got %q", joined)
 	}
-	if !strings.Contains(joined, "\n       e") {
-		t.Fatalf("expected fifth expanded notes line, got %q", joined)
+	if !strings.Contains(joined, "• alpha") || !strings.Contains(joined, "• delta") {
+		t.Fatalf("expected markdown-rendered notes list item, got %q", joined)
 	}
-	if strings.Contains(joined, "\n             ...") || strings.Contains(joined, "\n       ...") {
+	if strings.Contains(joined, "Description: - one") || strings.Contains(joined, "Notes: - alpha") {
+		t.Fatalf("expected markdown markers instead of raw list syntax, got %q", joined)
+	}
+	if strings.Contains(joined, "\n...") {
 		t.Fatalf("did not expect separate ellipsis line in expanded preview, got %q", joined)
 	}
-	if !strings.Contains(joined, "5 ...") || !strings.Contains(joined, "e ...") {
+	if !strings.Contains(joined, "• five") || !strings.Contains(joined, "• omega") || !strings.Contains(joined, "…") {
 		t.Fatalf("expected inline clipped hint on fifth line, got %q", joined)
 	}
 }
