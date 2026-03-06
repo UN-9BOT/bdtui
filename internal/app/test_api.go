@@ -117,8 +117,8 @@ func SortIssuesByMode(items []Issue, mode SortMode) {
 	sortIssuesByMode(items, mode)
 }
 
-func DetailLines(issue *Issue, inner int) []string {
-	return detailLines(issue, inner)
+func DetailLines(issue *Issue, inner int, expanded bool) []string {
+	return detailLines(issue, inner, expanded)
 }
 
 func FirstNDescriptionLines(description string, maxSourceLines int, width int) ([]string, bool) {

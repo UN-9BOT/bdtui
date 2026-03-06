@@ -16,7 +16,7 @@ func TestDetailLinesHighlightsMetaKeys(t *testing.T) {
 		Notes:       "note",
 	}
 
-	lines := detailLines(issue, 120)
+	lines := detailLines(issue, 120, false)
 	if len(lines) < 2 {
 		t.Fatalf("expected two detail lines, got %d", len(lines))
 	}
@@ -35,13 +35,13 @@ func TestDetailLinesHighlightsMetaKeys(t *testing.T) {
 	}
 }
 
-func TestDetailLinesShowsSingleLinePreviewForDescriptionAndNotes(t *testing.T) {
+func TestDetailLinesCollapsedShowsSingleLinePreviewForDescriptionAndNotes(t *testing.T) {
 	issue := &Issue{
 		Description: "\n  # Header\n\n- one\n- two\n\n`code`",
 		Notes:       "\n\n  first note line\nsecond note line",
 	}
 
-	lines := detailLines(issue, 80)
+	lines := detailLines(issue, 80, false)
 	if len(lines) < 2 {
 		t.Fatalf("expected compact detail lines, got %#v", lines)
 	}
@@ -72,7 +72,7 @@ func TestDetailLinesShowsEllipsisWhenPreviewClipped(t *testing.T) {
 		Notes:       "\n  abcdefghijklmnopqrst",
 	}
 
-	lines := detailLines(issue, 20)
+	lines := detailLines(issue, 20, false)
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "…") {
 		t.Fatalf("expected clipped preview hint, got %q", joined)
@@ -85,11 +85,33 @@ func TestDetailLinesShowsDashWhenPreviewIsEmptyAfterLeadingTrim(t *testing.T) {
 		Notes:       "\n\n",
 	}
 
-	lines := detailLines(issue, 40)
+	lines := detailLines(issue, 40, false)
 	if !strings.Contains(lines[0], "Description: -") {
 		t.Fatalf("expected empty description preview to render dash, got %q", lines[0])
 	}
 	if !strings.Contains(lines[1], "Notes: -") {
 		t.Fatalf("expected empty notes preview to render dash, got %q", lines[1])
+	}
+}
+
+func TestDetailLinesExpandedShowsFiveLinePreviewForDescriptionAndNotes(t *testing.T) {
+	issue := &Issue{
+		Description: "\n\n  1\n2\n3\n4\n5\n6",
+		Notes:       "\n  a\nb\nc\nd\ne\nf",
+	}
+
+	lines := detailLines(issue, 40, true)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(lines[0], "Description: 1") {
+		t.Fatalf("expected first expanded description line, got %q", lines[0])
+	}
+	if !strings.Contains(joined, "\n             5") {
+		t.Fatalf("expected fifth expanded description line, got %q", joined)
+	}
+	if !strings.Contains(joined, "\n       e") {
+		t.Fatalf("expected fifth expanded notes line, got %q", joined)
+	}
+	if !strings.Contains(joined, "...") {
+		t.Fatalf("expected clipped expanded preview hint, got %q", joined)
 	}
 }

@@ -557,7 +557,8 @@ func (m model) renderInspector() string {
 	}
 
 	if m.ShowDetails {
-		details := detailLines(issue, inner)
+		expanded := m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview
+		details := detailLines(issue, inner, expanded)
 		lines = append(lines, details...)
 		if m.Mode == ModeDescriptionPreview {
 			lines = highlightDetailsItem(lines, m.DetailsItem, m.Styles.Selected)
@@ -574,7 +575,7 @@ func (m model) renderInspector() string {
 	return containerStyle.Width(w).Render(strings.Join(lines, "\n"))
 }
 
-func detailLines(issue *Issue, inner int) []string {
+func detailLines(issue *Issue, inner int, expanded bool) []string {
 	if issue == nil || inner <= 0 {
 		return nil
 	}
@@ -582,11 +583,43 @@ func detailLines(issue *Issue, inner int) []string {
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	descPrefix := "Description: "
 	notesPrefix := "Notes: "
+	maxSourceLines := 1
+	if expanded {
+		maxSourceLines = 5
+	}
 
 	return []string{
-		keyStyle.Render(descPrefix) + singleLineDetailPreview(issue.Description, max(1, inner-lipgloss.Width(descPrefix))),
-		keyStyle.Render(notesPrefix) + singleLineDetailPreview(issue.Notes, max(1, inner-lipgloss.Width(notesPrefix))),
+		renderDetailPreviewLine(keyStyle, descPrefix, issue.Description, max(1, inner-lipgloss.Width(descPrefix)), maxSourceLines),
+		renderDetailPreviewLine(keyStyle, notesPrefix, issue.Notes, max(1, inner-lipgloss.Width(notesPrefix)), maxSourceLines),
 	}
+}
+
+func renderDetailPreviewLine(keyStyle lipgloss.Style, prefix string, text string, width int, maxSourceLines int) string {
+	trimmed := trimLeadingDetailPreviewText(text)
+	if maxSourceLines <= 1 {
+		return keyStyle.Render(prefix) + singleLineDetailPreview(trimmed, width)
+	}
+
+	lines, clipped := firstNDescriptionLines(trimmed, maxSourceLines, width)
+	first := keyStyle.Render(prefix) + lines[0]
+	if len(lines) == 1 && !clipped {
+		return first
+	}
+
+	parts := make([]string, 0, len(lines)+1)
+	parts = append(parts, first)
+	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	for _, line := range lines[1:] {
+		parts = append(parts, indent+line)
+	}
+	if clipped {
+		parts = append(parts, indent+lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("..."))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func trimLeadingDetailPreviewText(text string) string {
+	return strings.TrimLeftFunc(text, unicode.IsSpace)
 }
 
 func singleLineDetailPreview(text string, width int) string {
@@ -594,7 +627,7 @@ func singleLineDetailPreview(text string, width int) string {
 		width = 1
 	}
 
-	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	trimmed := trimLeadingDetailPreviewText(text)
 	if trimmed == "" {
 		return "-"
 	}
