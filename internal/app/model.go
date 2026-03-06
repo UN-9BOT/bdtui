@@ -610,11 +610,11 @@ func (m model) inspectorOuterHeight() int {
 }
 
 func detailsItemsCount() int {
-	return 4
+	return 5
 }
 
 func detailsDescriptionItem() int {
-	return detailsItemsCount() - 1
+	return detailsItemsCount() - 2
 }
 
 func (m model) descriptionPreviewMaxScroll(issue *Issue) int {

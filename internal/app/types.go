@@ -40,6 +40,7 @@ type Issue struct {
 	ID          string
 	Title       string
 	Description string
+	Notes       string
 	Status      Status
 	Display     Status
 	Priority    int

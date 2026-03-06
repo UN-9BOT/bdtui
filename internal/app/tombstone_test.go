@@ -26,6 +26,29 @@ func TestNormalizeIssuesPreservesTombstoneStatus(t *testing.T) {
 	}
 }
 
+func TestNormalizeIssuesParsesNotes(t *testing.T) {
+	t.Parallel()
+
+	issues := normalizeIssues([]rawIssue{
+		{
+			ID:          "bdtui-56i.29",
+			Title:       "details notes preview",
+			Description: "desc",
+			Notes:       "note line",
+			Status:      "open",
+			Priority:    2,
+			IssueType:   "task",
+		},
+	})
+
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+	if issues[0].Notes != "note line" {
+		t.Fatalf("expected notes to be parsed, got %q", issues[0].Notes)
+	}
+}
+
 func TestComputeColumnsSkipsTombstones(t *testing.T) {
 	t.Parallel()
 

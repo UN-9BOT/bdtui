@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -579,22 +580,31 @@ func detailLines(issue *Issue, inner int) []string {
 	}
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	lines := make([]string, 0, 1)
-	prefix := "Description: "
-	available := inner - len(prefix)
-	if available < 1 {
-		available = 1
+	descPrefix := "Description: "
+	notesPrefix := "Notes: "
+
+	return []string{
+		keyStyle.Render(descPrefix) + singleLineDetailPreview(issue.Description, max(1, inner-lipgloss.Width(descPrefix))),
+		keyStyle.Render(notesPrefix) + singleLineDetailPreview(issue.Notes, max(1, inner-lipgloss.Width(notesPrefix))),
 	}
-	descLines, clipped := firstNDescriptionLines(issue.Description, 5, available)
-	lines = append(lines, keyStyle.Render(prefix)+descLines[0])
-	indent := strings.Repeat(" ", len(prefix))
-	for _, line := range descLines[1:] {
-		lines = append(lines, indent+line)
+}
+
+func singleLineDetailPreview(text string, width int) string {
+	if width < 1 {
+		width = 1
 	}
-	if clipped {
-		lines = append(lines, indent+lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("..."))
+
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	if trimmed == "" {
+		return "-"
 	}
-	return lines
+
+	oneLine := strings.Join(strings.Fields(trimmed), " ")
+	if oneLine == "" {
+		return "-"
+	}
+
+	return truncate(oneLine, width)
 }
 
 func highlightDetailsItem(lines []string, item int, selected lipgloss.Style) []string {

@@ -34,6 +34,7 @@ type rawIssue struct {
 	ID           any             `json:"id"`
 	Title        any             `json:"title"`
 	Description  any             `json:"description"`
+	Notes        any             `json:"notes"`
 	Status       any             `json:"status"`
 	Priority     any             `json:"priority"`
 	IssueType    any             `json:"issue_type"`
@@ -129,6 +130,7 @@ func normalizeIssues(raw []rawIssue) []Issue {
 			ID:          id,
 			Title:       title,
 			Description: asString(r.Description),
+			Notes:       asString(r.Notes),
 			Status:      st,
 			Display:     st,
 			Priority:    clampPriority(asInt(r.Priority, 2)),
