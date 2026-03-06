@@ -16,14 +16,14 @@ func TestInspectorInnerHeightExpandedUsesFortyPercent(t *testing.T) {
 
 	m := model{Height: 40, ShowDetails: true}
 
-	if got := m.InspectorOuterHeight(); got != 16 {
-		t.Fatalf("expected expanded inspector outer height 16 (40%%), got %d", got)
+	if got := m.InspectorOuterHeight(); got != 17 {
+		t.Fatalf("expected expanded inspector outer height 17, got %d", got)
 	}
-	if got := m.InspectorInnerHeight(); got != 14 {
-		t.Fatalf("expected expanded inspector inner height 14, got %d", got)
+	if got := m.InspectorInnerHeight(); got != 15 {
+		t.Fatalf("expected expanded inspector inner height 15, got %d", got)
 	}
-	if got := m.DetailsViewportHeight(); got != 10 {
-		t.Fatalf("expected details viewport height 10, got %d", got)
+	if got := m.DetailsViewportHeight(); got != 12 {
+		t.Fatalf("expected details viewport height 12, got %d", got)
 	}
 }
 
