@@ -17,8 +17,6 @@ type formEditorPayload struct {
 	Status      string
 	Priority    int
 	IssueType   string
-	Assignee    string
-	Labels      string
 	Parent      string
 }
 
@@ -27,8 +25,6 @@ type formEditorFrontmatter struct {
 	Status    string `yaml:"status"`
 	Priority  int    `yaml:"priority"`
 	IssueType string `yaml:"type"`
-	Assignee  string `yaml:"assignee"`
-	Labels    string `yaml:"labels"`
 	Parent    string `yaml:"parent"`
 }
 
@@ -55,8 +51,6 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 		Status:      string(m.Form.Status),
 		Priority:    m.Form.Priority,
 		IssueType:   m.Form.IssueType,
-		Assignee:    m.Form.Assignee,
-		Labels:      m.Form.Labels,
 		Parent:      m.Form.Parent,
 	}
 
@@ -140,8 +134,6 @@ func marshalEditorContent(payload formEditorPayload) ([]byte, error) {
 		Status:    normalizeEditorScalar(payload.Status),
 		Priority:  payload.Priority,
 		IssueType: normalizeEditorScalar(payload.IssueType),
-		Assignee:  normalizeEditorScalar(payload.Assignee),
-		Labels:    normalizeEditorScalar(payload.Labels),
 		Parent:    normalizeEditorScalar(payload.Parent),
 	}
 
@@ -241,8 +233,6 @@ func parseEditorContent(raw []byte) (formEditorPayload, error) {
 		Status:      frontmatter.Status,
 		Priority:    frontmatter.Priority,
 		IssueType:   frontmatter.IssueType,
-		Assignee:    frontmatter.Assignee,
-		Labels:      frontmatter.Labels,
 		Parent:      frontmatter.Parent,
 	}, nil
 }

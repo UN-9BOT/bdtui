@@ -60,8 +60,6 @@ func assertFormModalHasGrayKeys(t *testing.T, out string) {
 		"status:",
 		"priority:",
 		"type:",
-		"assignee:",
-		"labels:",
 		"parent:",
 		"description:",
 	} {

@@ -120,18 +120,18 @@ func TestHandleDetailsKeyJKDoNotMoveItemFocus(t *testing.T) {
 	m := model{
 		Mode:        ModeDetails,
 		ShowDetails: true,
-		DetailsItem: 4,
+		DetailsItem: 3,
 	}
 
 	next, _ := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	got := next.(model)
-	if got.DetailsItem != 4 {
+	if got.DetailsItem != 3 {
 		t.Fatalf("expected details item to stay on description, got %d", got.DetailsItem)
 	}
 
 	next, _ = got.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	got = next.(model)
-	if got.DetailsItem != 4 {
+	if got.DetailsItem != 3 {
 		t.Fatalf("expected details item to stay on description, got %d", got.DetailsItem)
 	}
 }
@@ -142,7 +142,7 @@ func TestHandleDetailsKeyQDoesNothing(t *testing.T) {
 	m := model{
 		Mode:        ModeDetails,
 		ShowDetails: true,
-		DetailsItem: 4,
+		DetailsItem: 3,
 	}
 
 	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
@@ -190,8 +190,8 @@ func TestHandleBoardKeyEnterSetsDetailsFocusToDescription(t *testing.T) {
 	if got.Mode != ModeDetails {
 		t.Fatalf("expected mode=%s, got %s", ModeDetails, got.Mode)
 	}
-	if got.DetailsItem != 4 {
-		t.Fatalf("expected details item=4, got %d", got.DetailsItem)
+	if got.DetailsItem != 3 {
+		t.Fatalf("expected details item=3, got %d", got.DetailsItem)
 	}
 	if cmd != nil {
 		t.Fatalf("expected nil cmd")

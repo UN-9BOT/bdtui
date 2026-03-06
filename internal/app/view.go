@@ -116,25 +116,19 @@ func (m model) renderInlineFiltersSummaryLine() string {
 	}
 
 	fields := []field{
-		{name: "assignee", key: "assignee", value: "any"},
-		{name: "label", key: "label", value: "any"},
 		{name: "status", key: "status", value: "any"},
 		{name: "priority", key: "priority", value: "any"},
 		{name: "type", key: "type", value: "any"},
 	}
 
 	if m.Mode == ModeSearch && m.FilterForm != nil {
-		fields[0].value = defaultString(strings.TrimSpace(m.FilterForm.Assignee), "any")
-		fields[1].value = defaultString(strings.TrimSpace(m.FilterForm.Label), "any")
-		fields[2].value = defaultString(strings.TrimSpace(m.FilterForm.Status), "any")
-		fields[3].value = defaultString(strings.TrimSpace(m.FilterForm.Priority), "any")
-		fields[4].value = defaultString(strings.TrimSpace(m.FilterForm.Type), "any")
+		fields[0].value = defaultString(strings.TrimSpace(m.FilterForm.Status), "any")
+		fields[1].value = defaultString(strings.TrimSpace(m.FilterForm.Priority), "any")
+		fields[2].value = defaultString(strings.TrimSpace(m.FilterForm.Type), "any")
 	} else {
-		fields[0].value = defaultString(strings.TrimSpace(m.Filter.Assignee), "any")
-		fields[1].value = defaultString(strings.TrimSpace(m.Filter.Label), "any")
-		fields[2].value = defaultString(strings.TrimSpace(m.Filter.Status), "any")
-		fields[3].value = defaultString(strings.TrimSpace(m.Filter.Priority), "any")
-		fields[4].value = defaultString(strings.TrimSpace(m.Filter.Type), "any")
+		fields[0].value = defaultString(strings.TrimSpace(m.Filter.Status), "any")
+		fields[1].value = defaultString(strings.TrimSpace(m.Filter.Priority), "any")
+		fields[2].value = defaultString(strings.TrimSpace(m.Filter.Type), "any")
 	}
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true)
@@ -163,8 +157,6 @@ func (m model) renderInlineFiltersExpandedLines(maxWidth int) []string {
 	}
 
 	fields := []field{
-		{name: "assignee", key: "assignee"},
-		{name: "label", key: "label"},
 		{name: "status", key: "status"},
 		{name: "priority", key: "priority"},
 		{name: "type", key: "type"},
@@ -196,10 +188,6 @@ func (m model) inlineFilterOptionsAndCurrent(field string) ([]string, string) {
 
 	if m.Mode == ModeSearch && m.FilterForm != nil {
 		switch field {
-		case "assignee":
-			current = defaultString(strings.TrimSpace(m.FilterForm.Assignee), "any")
-		case "label":
-			current = defaultString(strings.TrimSpace(m.FilterForm.Label), "any")
 		case "status":
 			current = defaultString(strings.TrimSpace(m.FilterForm.Status), "any")
 		case "priority":
@@ -209,10 +197,6 @@ func (m model) inlineFilterOptionsAndCurrent(field string) ([]string, string) {
 		}
 	} else {
 		switch field {
-		case "assignee":
-			current = defaultString(strings.TrimSpace(m.Filter.Assignee), "any")
-		case "label":
-			current = defaultString(strings.TrimSpace(m.Filter.Label), "any")
 		case "status":
 			current = defaultString(strings.TrimSpace(m.Filter.Status), "any")
 		case "priority":
@@ -538,8 +522,6 @@ func (m model) renderInspector() string {
 	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
-	assigneeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	labelsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
 
 	selectedPrefix := "Selected: "
 	typeText := defaultString(issue.IssueType, "-")
@@ -551,16 +533,6 @@ func (m model) renderInspector() string {
 
 	titlePrefix := "Title: "
 	titleText := truncate(defaultString(issue.Title, "-"), max(1, inner-lipgloss.Width(titlePrefix)))
-
-	assigneePrefix := "Assignee: "
-	labelsPrefix := " | Labels: "
-	assigneeRaw := defaultString(issue.Assignee, "-")
-	labelsRaw := defaultString(strings.Join(issue.Labels, ", "), "-")
-	valueBudget := max(2, inner-lipgloss.Width(assigneePrefix)-lipgloss.Width(labelsPrefix))
-	assigneeWidth := max(1, min(valueBudget/3, valueBudget-1))
-	labelsWidth := max(1, valueBudget-assigneeWidth)
-	assigneeText := truncate(assigneeRaw, assigneeWidth)
-	labelsText := truncate(labelsRaw, labelsWidth)
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	metaLine := truncate(
@@ -581,10 +553,6 @@ func (m model) renderInspector() string {
 			statusHeaderStyle(issue.Display).Render(statusText),
 		labelStyle.Render(titlePrefix) + titleStyle.Render(titleText),
 		metaLine,
-		labelStyle.Render(assigneePrefix) +
-			assigneeStyle.Render(assigneeText) +
-			labelStyle.Render(labelsPrefix) +
-			labelsStyle.Render(labelsText),
 	}
 
 	if m.ShowDetails {
@@ -1008,7 +976,7 @@ func (m model) renderSearchModal() string {
 	return strings.Join([]string{
 		"Search",
 		"",
-		"Searches by id/title/description/assignee/labels (interactive)",
+		"Searches by id/title/description (interactive)",
 		m.SearchInput.View(),
 		"",
 		"Type to filter | Enter: done | Esc: cancel",
@@ -1028,31 +996,16 @@ func (m model) renderFilterModal() string {
 		return " "
 	}
 
-	assignee := m.FilterForm.Assignee
-	label := m.FilterForm.Label
-	if field == "assignee" || field == "label" {
-		if field == "assignee" {
-			assignee = m.FilterForm.Input.Value()
-		} else {
-			label = m.FilterForm.Input.Value()
-		}
-	}
-
 	lines := []string{
 		"Filters",
 		"",
-		fmt.Sprintf("%s assignee: %s", mark("assignee"), defaultString(assignee, "any")),
-		fmt.Sprintf("%s label:    %s", mark("label"), defaultString(label, "any")),
 		fmt.Sprintf("%s status:   %s", mark("status"), defaultString(m.FilterForm.Status, "any")),
 		fmt.Sprintf("%s priority: %s", mark("priority"), defaultString(m.FilterForm.Priority, "any")),
+		fmt.Sprintf("%s type:     %s", mark("type"), defaultString(m.FilterForm.Type, "any")),
 		"",
 	}
 
-	if field == "assignee" || field == "label" {
-		lines = append(lines, "edit: "+m.FilterForm.Input.View())
-	} else {
-		lines = append(lines, "use ↑/↓ to cycle enum")
-	}
+	lines = append(lines, "use ↑/↓ to cycle enum")
 
 	lines = append(lines, "", "Tab/Shift+Tab | Enter apply | c clear | Esc cancel")
 	return strings.Join(lines, "\n")
@@ -1098,10 +1051,6 @@ func (m model) renderFormModal() string {
 			return fmt.Sprintf("%d", m.Form.Priority)
 		case "type":
 			return m.Form.IssueType
-		case "assignee":
-			return inlineTextValue("assignee", m.Form.Assignee)
-		case "labels":
-			return inlineTextValue("labels", m.Form.Labels)
 		case "parent":
 			return m.Form.parentDisplay()
 		}

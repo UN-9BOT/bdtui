@@ -610,7 +610,7 @@ func (m model) inspectorOuterHeight() int {
 }
 
 func detailsItemsCount() int {
-	return 5
+	return 4
 }
 
 func detailsDescriptionItem() int {

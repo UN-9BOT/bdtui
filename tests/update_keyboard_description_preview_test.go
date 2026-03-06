@@ -21,7 +21,7 @@ func TestHandleDetailsKeyDOpensDescriptionPreview(t *testing.T) {
 	m := model{
 		Mode:        ModeDetails,
 		ShowDetails: true,
-		DetailsItem: 4,
+		DetailsItem: 3,
 		Issues:      []Issue{issue},
 		Columns: map[Status][]Issue{
 			StatusOpen:       {issue},
@@ -64,7 +64,7 @@ func TestHandleDetailsKeyEnterAndSpaceDoNothing(t *testing.T) {
 	m := model{
 		Mode:        ModeDetails,
 		ShowDetails: true,
-		DetailsItem: 4,
+		DetailsItem: 3,
 	}
 
 	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -98,7 +98,7 @@ func TestHandleKeyDescriptionPreviewEscReturnsToDetails(t *testing.T) {
 	m := model{
 		Mode:               ModeDescriptionPreview,
 		ShowDetails:        true,
-		DetailsItem:        4,
+		DetailsItem:        3,
 		DescriptionPreview: &DescriptionPreviewState{IssueID: "bdtui-56i.26", Scroll: 2},
 	}
 
@@ -129,7 +129,7 @@ func TestHandleKeyDescriptionPreviewCtrlXSetsResumeFlag(t *testing.T) {
 		Mode:               ModeDescriptionPreview,
 		ShowDetails:        true,
 		DetailsIssueID:     issue.ID,
-		DetailsItem:        4,
+		DetailsItem:        3,
 		DescriptionPreview: &DescriptionPreviewState{IssueID: issue.ID, Scroll: 3},
 		Issues:             []Issue{issue},
 		Columns: map[Status][]Issue{

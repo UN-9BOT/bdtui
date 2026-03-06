@@ -28,7 +28,6 @@ func TestRenderInlineSearchBlockShowsFiltersWhenUnfocusedAndActive(t *testing.T)
 	m.Mode = ModeBoard
 	m.SearchExpanded = false
 	m.Filter = Filter{
-		Assignee: "alice",
 		Status:   "open",
 		Priority: "2",
 		Type:     "task",
@@ -93,20 +92,12 @@ func TestRenderInlineSearchBlockExpandedShowsAllFilterValues(t *testing.T) {
 	m.Mode = ModeSearch
 	m.SearchExpanded = true
 	m.FilterForm = newFilterForm(Filter{
-		Assignee: "alice",
-		Label:    "alpha",
 		Status:   "open",
 		Priority: "2",
 		Type:     "task",
 	})
 
 	out := ansiSGRRegexp.ReplaceAllString(m.RenderInlineSearchBlock(), "")
-	if !strings.Contains(out, "assignee: any | alice") {
-		t.Fatalf("expected assignee values list, got %q", out)
-	}
-	if !strings.Contains(out, "label: any | alpha") {
-		t.Fatalf("expected label values list, got %q", out)
-	}
 	if !strings.Contains(out, "status: any | open | in_progress | blocked | closed") {
 		t.Fatalf("expected status values list, got %q", out)
 	}

@@ -246,8 +246,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Form.Priority = clampPriority(msg.payload.Priority)
 		m.Form.IssueType = strings.TrimSpace(msg.payload.IssueType)
-		m.Form.Assignee = strings.TrimSpace(msg.payload.Assignee)
-		m.Form.Labels = strings.TrimSpace(msg.payload.Labels)
 		m.Form.Parent = strings.TrimSpace(msg.payload.Parent)
 		m.Form.loadInputFromField()
 		if m.ResumeDescriptionAfterEditor {

@@ -113,24 +113,28 @@ func TestHandleSearchKeyCtrlFAndTabCycleFiltersLive(t *testing.T) {
 
 	next, _ = m.HandleSearchKey(tea.KeyMsg{Type: tea.KeyTab})
 	m = next.(model)
-	if m.Filter.Assignee != "alice" {
-		t.Fatalf("expected assignee filter alice after first tab, got %q", m.Filter.Assignee)
+	if m.Filter.Status != "open" {
+		t.Fatalf("expected status filter open after first tab, got %q", m.Filter.Status)
 	}
 	col := m.Columns[StatusOpen]
-	if len(col) != 1 || col[0].ID != "bdtui-1" {
-		t.Fatalf("expected only alice issue after assignee filter, got %+v", col)
+	if len(col) != 2 {
+		t.Fatalf("expected both open issues after status filter, got %+v", col)
 	}
 
 	next, _ = m.HandleSearchKey(tea.KeyMsg{Type: tea.KeyDown})
 	m = next.(model)
 	next, _ = m.HandleSearchKey(tea.KeyMsg{Type: tea.KeyTab})
 	m = next.(model)
-	if m.Filter.Label != "alpha" {
-		t.Fatalf("expected label filter alpha after tab, got %q", m.Filter.Label)
+	if m.Filter.Priority != "0" {
+		t.Fatalf("expected priority filter 0 after tab, got %q", m.Filter.Priority)
 	}
-	col = m.Columns[StatusOpen]
-	if len(col) != 1 || col[0].ID != "bdtui-1" {
-		t.Fatalf("expected only bdtui-1 after label filter, got %+v", col)
+
+	next, _ = m.HandleSearchKey(tea.KeyMsg{Type: tea.KeyDown})
+	m = next.(model)
+	next, _ = m.HandleSearchKey(tea.KeyMsg{Type: tea.KeyTab})
+	m = next.(model)
+	if m.Filter.Type != "task" {
+		t.Fatalf("expected type filter task after tab, got %q", m.Filter.Type)
 	}
 }
 
@@ -142,8 +146,6 @@ func TestHandleKeyCtrlCClearsSearchAndFiltersGlobally(t *testing.T) {
 	m.SearchQuery = "alpha"
 	m.SearchInput.SetValue("alpha")
 	m.Filter = Filter{
-		Assignee: "alice",
-		Label:    "alpha",
 		Status:   "open",
 		Priority: "2",
 		Type:     "task",
@@ -156,7 +158,7 @@ func TestHandleKeyCtrlCClearsSearchAndFiltersGlobally(t *testing.T) {
 	if m.SearchQuery != "" {
 		t.Fatalf("expected cleared search query, got %q", m.SearchQuery)
 	}
-	if m.Filter.Assignee != "" || m.Filter.Label != "" || m.Filter.Status != "any" || m.Filter.Priority != "any" || m.Filter.Type != "any" {
+	if m.Filter.Status != "any" || m.Filter.Priority != "any" || m.Filter.Type != "any" {
 		t.Fatalf("expected cleared filters, got %+v", m.Filter)
 	}
 	if m.Mode != ModeBoard {
@@ -185,6 +187,7 @@ func newSearchTestModel() model {
 				Assignee:  "alice",
 				Labels:    []string{"alpha"},
 				IssueType: "task",
+				Priority:  0,
 				Display:   StatusOpen,
 				Status:    StatusOpen,
 			},
@@ -194,6 +197,7 @@ func newSearchTestModel() model {
 				Assignee:  "bob",
 				Labels:    []string{"beta"},
 				IssueType: "bug",
+				Priority:  1,
 				Display:   StatusOpen,
 				Status:    StatusOpen,
 			},

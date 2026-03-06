@@ -74,9 +74,9 @@ func newIssueFormEdit(issue *Issue, issues []Issue) *IssueForm {
 
 func (f *IssueForm) fields() []string {
 	if f.Create {
-		return []string{"title", "status", "priority", "type", "assignee", "labels", "parent"}
+		return []string{"title", "status", "priority", "type", "parent"}
 	}
-	return []string{"title", "status", "priority", "type", "assignee", "labels", "parent"}
+	return []string{"title", "status", "priority", "type", "parent"}
 }
 
 func (f *IssueForm) currentField() string {
@@ -114,7 +114,7 @@ func (f *IssueForm) prevField() {
 
 func (f *IssueForm) isTextField(field string) bool {
 	switch field {
-	case "title", "assignee", "labels":
+	case "title":
 		return true
 	default:
 		return false
@@ -132,10 +132,6 @@ func (f *IssueForm) loadInputFromField() {
 	switch field {
 	case "title":
 		f.Input.SetValue(f.Title)
-	case "assignee":
-		f.Input.SetValue(f.Assignee)
-	case "labels":
-		f.Input.SetValue(f.Labels)
 	}
 	f.Input.CursorEnd()
 }
@@ -149,10 +145,6 @@ func (f *IssueForm) saveInputToField() {
 	switch field {
 	case "title":
 		f.Title = v
-	case "assignee":
-		f.Assignee = v
-	case "labels":
-		f.Labels = v
 	}
 }
 
@@ -429,7 +421,7 @@ func newFilterForm(base Filter) *FilterForm {
 }
 
 func (f *FilterForm) fields() []string {
-	return []string{"assignee", "label", "status", "priority", "type"}
+	return []string{"status", "priority", "type"}
 }
 
 func (f *FilterForm) currentField() string {
@@ -459,7 +451,7 @@ func (f *FilterForm) prevField() {
 }
 
 func (f *FilterForm) isTextField(field string) bool {
-	return field == "assignee" || field == "label"
+	return false
 }
 
 func (f *FilterForm) loadInput() {
@@ -469,25 +461,12 @@ func (f *FilterForm) loadInput() {
 		f.Input.SetValue("")
 		return
 	}
-	f.Input.Focus()
-	if field == "assignee" {
-		f.Input.SetValue(f.Assignee)
-	} else {
-		f.Input.SetValue(f.Label)
-	}
-	f.Input.CursorEnd()
 }
 
 func (f *FilterForm) saveInput() {
 	field := f.currentField()
 	if !f.isTextField(field) {
 		return
-	}
-	val := strings.TrimSpace(f.Input.Value())
-	if field == "assignee" {
-		f.Assignee = val
-	} else {
-		f.Label = val
 	}
 }
 
@@ -550,17 +529,9 @@ func (f *FilterForm) cycleEnum(delta int) {
 
 func (f *FilterForm) toFilter() Filter {
 	f.saveInput()
-	assignee := strings.TrimSpace(f.Assignee)
-	if strings.EqualFold(assignee, "any") {
-		assignee = ""
-	}
-	label := strings.TrimSpace(f.Label)
-	if strings.EqualFold(label, "any") {
-		label = ""
-	}
 	return Filter{
-		Assignee: assignee,
-		Label:    label,
+		Assignee: "",
+		Label:    "",
 		Status:   strings.TrimSpace(f.Status),
 		Priority: strings.TrimSpace(f.Priority),
 		Type:     strings.TrimSpace(f.Type),

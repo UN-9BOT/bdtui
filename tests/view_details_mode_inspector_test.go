@@ -55,7 +55,7 @@ func TestRenderInspectorDetailsModeDoesNotHighlightDescriptionCursor(t *testing.
 		Height:      30,
 		Mode:        ModeDetails,
 		ShowDetails: true,
-		DetailsItem: 4,
+		DetailsItem: 3,
 		Styles:      newStyles(),
 		Columns: map[Status][]Issue{
 			StatusOpen:       {issue},

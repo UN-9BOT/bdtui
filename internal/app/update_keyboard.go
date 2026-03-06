@@ -322,10 +322,6 @@ func (m model) searchFilterFieldValue(field string) string {
 		return "any"
 	}
 	switch field {
-	case "assignee":
-		return m.FilterForm.Assignee
-	case "label":
-		return m.FilterForm.Label
 	case "status":
 		return m.FilterForm.Status
 	case "priority":
@@ -342,12 +338,6 @@ func (m *model) setSearchFilterFieldValue(field string, value string) {
 		return
 	}
 	switch field {
-	case "assignee":
-		m.FilterForm.Assignee = value
-		m.FilterForm.Input.SetValue(value)
-	case "label":
-		m.FilterForm.Label = value
-		m.FilterForm.Input.SetValue(value)
 	case "status":
 		m.FilterForm.Status = value
 	case "priority":
@@ -359,46 +349,6 @@ func (m *model) setSearchFilterFieldValue(field string, value string) {
 
 func (m model) searchFilterOptions(field string) []string {
 	switch field {
-	case "assignee":
-		out := []string{"any"}
-		seen := map[string]bool{}
-		for _, issue := range m.Issues {
-			value := strings.TrimSpace(issue.Assignee)
-			if value == "" {
-				continue
-			}
-			key := strings.ToLower(value)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			out = append(out, value)
-		}
-		sort.Slice(out[1:], func(i, j int) bool {
-			return strings.ToLower(out[i+1]) < strings.ToLower(out[j+1])
-		})
-		return out
-	case "label":
-		out := []string{"any"}
-		seen := map[string]bool{}
-		for _, issue := range m.Issues {
-			for _, raw := range issue.Labels {
-				value := strings.TrimSpace(raw)
-				if value == "" {
-					continue
-				}
-				key := strings.ToLower(value)
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-				out = append(out, value)
-			}
-		}
-		sort.Slice(out[1:], func(i, j int) bool {
-			return strings.ToLower(out[i+1]) < strings.ToLower(out[j+1])
-		})
-		return out
 	case "status":
 		return []string{"any", "open", "in_progress", "blocked", "closed"}
 	case "priority":
@@ -455,8 +405,6 @@ func (m model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "c":
-		m.FilterForm.Assignee = ""
-		m.FilterForm.Label = ""
 		m.FilterForm.Status = "any"
 		m.FilterForm.Priority = "any"
 		m.FilterForm.Type = "any"
@@ -1159,15 +1107,6 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, cmd
-	case "a":
-		issue := m.currentIssue()
-		if issue == nil {
-			m.setToast("warning", "no issue selected")
-			return m, nil
-		}
-		m.Prompt = newPrompt(ModePrompt, "Quick Assignee", "Enter assignee (empty = unassign)", issue.ID, PromptAssignee, issue.Assignee)
-		m.Mode = ModePrompt
-		return m, nil
 	case "z":
 		issue := m.currentIssue()
 		if issue == nil {
@@ -1198,15 +1137,6 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setToast("success", "copied id: "+issue.ID)
-		return m, nil
-	case "L":
-		issue := m.currentIssue()
-		if issue == nil {
-			m.setToast("warning", "no issue selected")
-			return m, nil
-		}
-		m.Prompt = newPrompt(ModePrompt, "Quick Labels", "Enter labels separated by commas", issue.ID, PromptLabels, strings.Join(issue.Labels, ", "))
-		m.Mode = ModePrompt
 		return m, nil
 	case "p":
 		issue := m.currentIssue()
