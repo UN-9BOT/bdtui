@@ -42,13 +42,16 @@ func TestParseTmuxClientSessions(t *testing.T) {
 }
 
 func TestParseTmuxTargets(t *testing.T) {
-	raw := "dev\t$1\t%3\tbash\tmain\nwork\t$2\t%9\tcodex\tcodex pane\n"
+	raw := "dev\t$1\t%3\t@1\tbash\tmain\nwork\t$2\t%9\t@2\tcodex\tcodex pane\n"
 	targets := parseTmuxTargets(raw)
 	if len(targets) != 2 {
 		t.Fatalf("expected 2 targets, got %d", len(targets))
 	}
 	if targets[1].PaneID != "%9" {
 		t.Fatalf("unexpected pane id: %#v", targets[1])
+	}
+	if targets[1].WindowID != "@2" {
+		t.Fatalf("unexpected window id: %#v", targets[1])
 	}
 }
 
@@ -57,8 +60,8 @@ func TestTmuxPlugin_ListTargetsSortsCodexFirst(t *testing.T) {
 		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {
 			out: "$2:111\n",
 		},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_title}": {
-			out: "dev\t$1\t%1\tbash\tlocal\nwork\t$2\t%2\tcodex\tCodex Main\n",
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
+			out: "dev\t$1\t%1\t@1\tbash\tlocal\nwork\t$2\t%2\t@2\tcodex\tCodex Main\n",
 		},
 	}}
 
@@ -75,6 +78,76 @@ func TestTmuxPlugin_ListTargetsSortsCodexFirst(t *testing.T) {
 	}
 	if !targets[0].HasClient {
 		t.Fatalf("expected first target with active client")
+	}
+}
+
+func TestTmuxPlugin_ListTargetsRemovesCurrentPaneAndPrioritizesCurrentWindow(t *testing.T) {
+	t.Setenv("TMUX_PANE", "%2")
+
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {
+			out: "$9:100\n",
+		},
+		"display-message\x1f-p\x1f-t\x1f%2\x1f#{window_id}": {
+			out: "@1",
+		},
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
+			out: strings.Join([]string{
+				"work\t$1\t%2\t@1\tcodex\tbdtui",
+				"work\t$1\t%3\t@1\tbash\tlogs",
+				"dev\t$9\t%9\t@9\tcodex\tCodex Main",
+				"misc\t$3\t%4\t@2\tzsh\tshell",
+			}, "\n"),
+		},
+	}}
+
+	plugin := newTmuxPlugin(true, runner)
+	targets, err := plugin.ListTargets()
+	if err != nil {
+		t.Fatalf("ListTargets() error = %v", err)
+	}
+	if len(targets) != 3 {
+		t.Fatalf("expected 3 targets after filtering self, got %d", len(targets))
+	}
+	if targets[0].PaneID != "%3" {
+		t.Fatalf("expected same-window pane first, got %+v", targets)
+	}
+	for _, target := range targets {
+		if target.PaneID == "%2" {
+			t.Fatalf("expected current pane to be filtered out: %+v", targets)
+		}
+	}
+}
+
+func TestTmuxPlugin_ListTargetsKeepsOldSortingWhenCurrentWindowLookupFails(t *testing.T) {
+	t.Setenv("TMUX_PANE", "%2")
+
+	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
+		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {
+			out: "$2:111\n",
+		},
+		"display-message\x1f-p\x1f-t\x1f%2\x1f#{window_id}": {
+			err: fmt.Errorf("no current window"),
+		},
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
+			out: strings.Join([]string{
+				"dev\t$1\t%2\t@1\tcodex\tbdtui",
+				"work\t$2\t%7\t@7\tcodex\tCodex Main",
+				"misc\t$3\t%4\t@2\tzsh\tshell",
+			}, "\n"),
+		},
+	}}
+
+	plugin := newTmuxPlugin(true, runner)
+	targets, err := plugin.ListTargets()
+	if err != nil {
+		t.Fatalf("ListTargets() error = %v", err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 targets after filtering self, got %d", len(targets))
+	}
+	if targets[0].PaneID != "%7" {
+		t.Fatalf("expected codex ranking fallback after lookup failure, got %+v", targets)
 	}
 }
 

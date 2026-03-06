@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -14,9 +15,15 @@ type TmuxTarget struct {
 	SessionName string
 	SessionID   string
 	PaneID      string
+	WindowID    string
 	Command     string
 	Title       string
 	HasClient   bool
+}
+
+type tmuxCurrentContext struct {
+	PaneID   string
+	WindowID string
 }
 
 func (t TmuxTarget) Label() string {
@@ -108,30 +115,42 @@ func (p *TmuxPlugin) ListTargets() ([]TmuxTarget, error) {
 		return nil, err
 	}
 
-	panesRaw, err := p.runner.Run("list-panes", "-a", "-F", "#{session_name}\t#{session_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_title}")
+	panesRaw, err := p.runner.Run("list-panes", "-a", "-F", "#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}")
 	if err != nil {
 		return nil, err
 	}
 
 	clientSessions := parseTmuxClientSessions(clientsRaw)
 	targets := parseTmuxTargets(panesRaw)
+	current := p.currentContext()
+	filtered := make([]TmuxTarget, 0, len(targets))
 	for i := range targets {
 		targets[i].HasClient = clientSessions[targets[i].SessionID]
+		if current.PaneID != "" && targets[i].PaneID == current.PaneID {
+			continue
+		}
+		filtered = append(filtered, targets[i])
 	}
 
-	sort.SliceStable(targets, func(i, j int) bool {
-		ri := rankTmuxTarget(targets[i])
-		rj := rankTmuxTarget(targets[j])
+	sort.SliceStable(filtered, func(i, j int) bool {
+		inCurrentWindowI := current.WindowID != "" && filtered[i].WindowID == current.WindowID
+		inCurrentWindowJ := current.WindowID != "" && filtered[j].WindowID == current.WindowID
+		if inCurrentWindowI != inCurrentWindowJ {
+			return inCurrentWindowI
+		}
+
+		ri := rankTmuxTarget(filtered[i])
+		rj := rankTmuxTarget(filtered[j])
 		if ri != rj {
 			return ri > rj
 		}
-		if targets[i].SessionName != targets[j].SessionName {
-			return targets[i].SessionName < targets[j].SessionName
+		if filtered[i].SessionName != filtered[j].SessionName {
+			return filtered[i].SessionName < filtered[j].SessionName
 		}
-		return targets[i].PaneID < targets[j].PaneID
+		return filtered[i].PaneID < filtered[j].PaneID
 	})
 
-	return targets, nil
+	return filtered, nil
 }
 
 func (p *TmuxPlugin) SendTextToBuffer(text string) error {
@@ -311,7 +330,7 @@ func parseTmuxTargets(raw string) []TmuxTarget {
 			continue
 		}
 
-		parts := strings.SplitN(row, "\t", 5)
+		parts := strings.SplitN(row, "\t", 6)
 		if len(parts) < 5 {
 			continue
 		}
@@ -320,8 +339,14 @@ func parseTmuxTargets(raw string) []TmuxTarget {
 			SessionName: strings.TrimSpace(parts[0]),
 			SessionID:   strings.TrimSpace(parts[1]),
 			PaneID:      strings.TrimSpace(parts[2]),
-			Command:     strings.TrimSpace(parts[3]),
-			Title:       strings.TrimSpace(parts[4]),
+		}
+		if len(parts) >= 6 {
+			t.WindowID = strings.TrimSpace(parts[3])
+			t.Command = strings.TrimSpace(parts[4])
+			t.Title = strings.TrimSpace(parts[5])
+		} else {
+			t.Command = strings.TrimSpace(parts[3])
+			t.Title = strings.TrimSpace(parts[4])
 		}
 		if t.SessionName == "" || t.SessionID == "" || t.PaneID == "" {
 			continue
@@ -329,6 +354,27 @@ func parseTmuxTargets(raw string) []TmuxTarget {
 		out = append(out, t)
 	}
 	return out
+}
+
+func (p *TmuxPlugin) currentContext() tmuxCurrentContext {
+	if p == nil {
+		return tmuxCurrentContext{}
+	}
+
+	paneID := strings.TrimSpace(os.Getenv("TMUX_PANE"))
+	if paneID == "" {
+		return tmuxCurrentContext{}
+	}
+
+	windowID, err := p.runner.Run("display-message", "-p", "-t", paneID, "#{window_id}")
+	if err != nil {
+		return tmuxCurrentContext{PaneID: paneID}
+	}
+
+	return tmuxCurrentContext{
+		PaneID:   paneID,
+		WindowID: strings.TrimSpace(windowID),
+	}
 }
 
 func rankTmuxTarget(t TmuxTarget) int {
