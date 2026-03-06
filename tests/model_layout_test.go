@@ -54,7 +54,7 @@ func TestInspectorInnerHeightExpandedUsesFortyPercent(t *testing.T) {
 	}
 }
 
-func TestInspectorInnerHeightExpandedShrinksForShortDetails(t *testing.T) {
+func TestInspectorInnerHeightExpandedStaysFixedForShortDetails(t *testing.T) {
 	t.Parallel()
 
 	issue := Issue{
@@ -86,11 +86,11 @@ func TestInspectorInnerHeightExpandedShrinksForShortDetails(t *testing.T) {
 		},
 	}
 
-	if got := m.InspectorInnerHeight(); got != 5 {
-		t.Fatalf("expected short expanded inspector inner height 5, got %d", got)
+	if got := m.InspectorInnerHeight(); got != 15 {
+		t.Fatalf("expected short expanded inspector inner height 15, got %d", got)
 	}
-	if got := m.InspectorOuterHeight(); got != 7 {
-		t.Fatalf("expected short expanded inspector outer height 7, got %d", got)
+	if got := m.InspectorOuterHeight(); got != 17 {
+		t.Fatalf("expected short expanded inspector outer height 17, got %d", got)
 	}
 }
 
