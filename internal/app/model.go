@@ -541,7 +541,7 @@ func (m model) inspectorInnerWidth() int {
 func (m model) inspectorInnerHeight() int {
 	const (
 		collapsedInner   = 5
-		expandedInner    = 15
+		maxExpandedInner = 15
 		minOuter         = 5
 		minBoardInner    = 6
 		baseLayoutChrome = 4 // title + footer + board border
@@ -550,7 +550,8 @@ func (m model) inspectorInnerHeight() int {
 		return collapsedInner
 	}
 
-	targetOuter := expandedInner + 2
+	targetInner := m.expandedInspectorInnerHeight(collapsedInner, maxExpandedInner)
+	targetOuter := targetInner + 2
 	if targetOuter < minOuter {
 		targetOuter = minOuter
 	}
@@ -569,6 +570,26 @@ func (m model) inspectorInnerHeight() int {
 		return collapsedInner
 	}
 	return inner
+}
+
+func (m model) expandedInspectorInnerHeight(collapsedInner int, maxExpandedInner int) int {
+	issue := m.currentIssue()
+	if issue == nil {
+		return collapsedInner
+	}
+
+	detailCount := 0
+	for _, block := range detailLines(issue, m.inspectorInnerWidth(), true) {
+		detailCount += len(strings.Split(block, "\n"))
+	}
+	targetInner := 3 + detailCount
+	if targetInner < collapsedInner {
+		targetInner = collapsedInner
+	}
+	if targetInner > maxExpandedInner {
+		targetInner = maxExpandedInner
+	}
+	return targetInner
 }
 
 func (m model) inlineSearchBlockHeight() int {
