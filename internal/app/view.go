@@ -556,10 +556,10 @@ func (m model) renderInspector() string {
 		metaLine,
 	}
 
-	expanded := m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview
+	expanded := m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview || m.Mode == ModeNotesPreview
 	details := detailLines(issue, inner, expanded)
 	lines = append(lines, details...)
-	if m.Mode == ModeDescriptionPreview {
+	if m.Mode == ModeDescriptionPreview || m.Mode == ModeNotesPreview {
 		lines = highlightDetailsItem(lines, m.DetailsItem, m.Styles.Selected)
 	}
 
@@ -711,9 +711,11 @@ func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space focus details | y copy id | z toggle children | t + key tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.Mode != ModeBoard {
 		if m.Mode == ModeDetails {
-			left = "Mode: details | d open description | Ctrl+X ext edit | Esc close"
+			left = "Mode: details | d open description | n open notes | Ctrl+X ext edit | Esc close"
 		} else if m.Mode == ModeDescriptionPreview {
 			left = "Mode: description | j/k scroll | Ctrl+X ext edit | Esc close"
+		} else if m.Mode == ModeNotesPreview {
+			left = "Mode: notes | j/k scroll | Ctrl+X ext edit | Esc close"
 		} else if m.Mode == ModeSearch {
 			left = "Mode: search | type search query | Ctrl+F filters | ↑/↓ field | Tab/Shift+Tab value | Enter/Esc apply+exit | Ctrl+C clear"
 		} else if m.Mode == ModeConfirmClosedParentCreate {
@@ -762,6 +764,8 @@ func (m model) renderModal() string {
 	case ModeDepList:
 		return m.renderDepListModal()
 	case ModeDescriptionPreview:
+		return m.renderDescriptionPreviewModal()
+	case ModeNotesPreview:
 		return m.renderDescriptionPreviewModal()
 	case ModeConfirmDelete:
 		return m.renderDeleteModal()
@@ -1427,21 +1431,24 @@ func (m model) renderDescriptionPreviewModal() string {
 		return "Description\n\nno issue selected"
 	}
 
-	maxLines := 18
-	if m.Height > 24 {
-		maxLines = m.Height - 8
-	}
-	viewport := max(5, maxLines-3)
 	innerWidth := m.descriptionPreviewInnerWidth()
-	linesAll := renderDescriptionLines(issue.Description, innerWidth)
+	field := strings.TrimSpace(m.DescriptionPreview.Field)
+	if field == "" {
+		field = "description"
+	}
+	linesAll := renderDescriptionLines(previewContent(issue, field), innerWidth)
 
 	start := min(max(0, m.DescriptionPreview.Scroll), max(0, len(linesAll)-1))
-	end := min(len(linesAll), start+viewport)
+	end := min(len(linesAll), start+m.descriptionPreviewViewportHeight())
 	if end < start {
 		end = start
 	}
 
-	lines := []string{fmt.Sprintf("Description: %s", issue.ID), ""}
+	title := "Description"
+	if field == "notes" {
+		title = "Notes"
+	}
+	lines := []string{fmt.Sprintf("%s: %s", title, issue.ID), ""}
 	lines = append(lines, linesAll[start:end]...)
 	lines = append(lines, "", "j/k scroll | Ctrl+X ext edit | Esc close")
 	return strings.Join(lines, "\n")

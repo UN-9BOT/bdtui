@@ -50,6 +50,65 @@ func TestHandleDetailsKeyDOpensDescriptionPreview(t *testing.T) {
 	if got.DescriptionPreview.IssueID != issue.ID {
 		t.Fatalf("expected issue id=%q, got %q", issue.ID, got.DescriptionPreview.IssueID)
 	}
+	if got.DescriptionPreview.Field != "description" {
+		t.Fatalf("expected field=description, got %q", got.DescriptionPreview.Field)
+	}
+	if got.DescriptionPreview.Scroll != 0 {
+		t.Fatalf("expected scroll=0, got %d", got.DescriptionPreview.Scroll)
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd")
+	}
+}
+
+func TestHandleDetailsKeyNOpensNotesPreview(t *testing.T) {
+	t.Parallel()
+
+	issue := Issue{
+		ID:        "bdtui-56i.34",
+		Title:     "details with notes",
+		Status:    StatusOpen,
+		Display:   StatusOpen,
+		Priority:  2,
+		IssueType: "task",
+		Notes:     "- note 1\n- note 2",
+	}
+
+	m := model{
+		Mode:        ModeDetails,
+		ShowDetails: true,
+		DetailsItem: 4,
+		Issues:      []Issue{issue},
+		Columns: map[Status][]Issue{
+			StatusOpen:       {issue},
+			StatusInProgress: {},
+			StatusBlocked:    {},
+			StatusClosed:     {},
+		},
+		SelectedCol: 0,
+		SelectedIdx: map[Status]int{
+			StatusOpen:       0,
+			StatusInProgress: 0,
+			StatusBlocked:    0,
+			StatusClosed:     0,
+		},
+	}
+
+	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	got := next.(model)
+
+	if got.Mode != ModeNotesPreview {
+		t.Fatalf("expected mode=%s, got %s", ModeNotesPreview, got.Mode)
+	}
+	if got.DescriptionPreview == nil {
+		t.Fatalf("expected notes preview state")
+	}
+	if got.DescriptionPreview.IssueID != issue.ID {
+		t.Fatalf("expected issue id=%q, got %q", issue.ID, got.DescriptionPreview.IssueID)
+	}
+	if got.DescriptionPreview.Field != "notes" {
+		t.Fatalf("expected field=notes, got %q", got.DescriptionPreview.Field)
+	}
 	if got.DescriptionPreview.Scroll != 0 {
 		t.Fatalf("expected scroll=0, got %d", got.DescriptionPreview.Scroll)
 	}
@@ -100,6 +159,27 @@ func TestHandleKeyDescriptionPreviewEscReturnsToDetails(t *testing.T) {
 		ShowDetails:        true,
 		DetailsItem:        3,
 		DescriptionPreview: &DescriptionPreviewState{IssueID: "bdtui-56i.26", Scroll: 2},
+	}
+
+	next, cmd := m.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	got := next.(model)
+
+	if got.Mode != ModeDetails {
+		t.Fatalf("expected mode=%s, got %s", ModeDetails, got.Mode)
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd")
+	}
+}
+
+func TestHandleKeyNotesPreviewEscReturnsToDetails(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		Mode:               ModeNotesPreview,
+		ShowDetails:        true,
+		DetailsItem:        4,
+		DescriptionPreview: &DescriptionPreviewState{IssueID: "bdtui-56i.34", Scroll: 2, Field: "notes"},
 	}
 
 	next, cmd := m.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})

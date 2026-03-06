@@ -616,7 +616,21 @@ func detailsDescriptionItem() int {
 	return detailsItemsCount() - 2
 }
 
-func (m model) descriptionPreviewMaxScroll(issue *Issue) int {
+func detailsNotesItem() int {
+	return detailsItemsCount() - 1
+}
+
+func previewContent(issue *Issue, field string) string {
+	if issue == nil {
+		return ""
+	}
+	if field == "notes" {
+		return issue.Notes
+	}
+	return issue.Description
+}
+
+func (m model) previewMaxScroll(issue *Issue) int {
 	if issue == nil {
 		return 0
 	}
@@ -627,7 +641,7 @@ func (m model) descriptionPreviewMaxScroll(issue *Issue) int {
 	if height <= 0 {
 		return 0
 	}
-	lines := renderDescriptionLines(issue.Description, m.descriptionPreviewInnerWidth())
+	lines := renderDescriptionLines(previewContent(issue, m.DescriptionPreview.Field), m.descriptionPreviewInnerWidth())
 	maxOffset := len(lines) - height
 	if maxOffset < 0 {
 		return 0
@@ -681,7 +695,10 @@ func (m *model) clampDetailsScroll() {
 		if m.DescriptionPreview.Scroll < 0 {
 			m.DescriptionPreview.Scroll = 0
 		}
-		maxOffset := m.descriptionPreviewMaxScroll(issue)
+		if strings.TrimSpace(m.DescriptionPreview.Field) == "" {
+			m.DescriptionPreview.Field = "description"
+		}
+		maxOffset := m.previewMaxScroll(issue)
 		if m.DescriptionPreview.Scroll > maxOffset {
 			m.DescriptionPreview.Scroll = maxOffset
 		}

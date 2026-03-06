@@ -106,6 +106,9 @@ func TestRenderFooterDetailsMentionsCtrlX(t *testing.T) {
 	if !strings.Contains(out, "d open description") {
 		t.Fatalf("expected details footer to mention d open description, got %q", out)
 	}
+	if !strings.Contains(out, "n open notes") {
+		t.Fatalf("expected details footer to mention n open notes, got %q", out)
+	}
 	if !strings.Contains(out, "Ctrl+X ext edit") {
 		t.Fatalf("expected details footer to mention Ctrl+X, got %q", out)
 	}

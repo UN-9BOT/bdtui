@@ -125,7 +125,7 @@ func TestUpdateFormEditorMsg_FromDescriptionPreviewReturnsToDescriptionPreviewAn
 		ShowDetails:                  true,
 		DetailsIssueID:               issue.ID,
 		DetailsItem:                  3,
-		DescriptionPreview:           &DescriptionPreviewState{IssueID: issue.ID, Scroll: 2},
+		DescriptionPreview:           &DescriptionPreviewState{IssueID: issue.ID, Scroll: 2, Field: "description"},
 		ResumeDescriptionAfterEditor: true,
 		ResumeDescriptionScroll:      2,
 		Form:                         newIssueFormEdit(&clone, []Issue{issue}),
@@ -148,6 +148,9 @@ func TestUpdateFormEditorMsg_FromDescriptionPreviewReturnsToDescriptionPreviewAn
 	}
 	if got.DescriptionPreview == nil {
 		t.Fatalf("expected description preview state")
+	}
+	if got.DescriptionPreview.Field != "description" {
+		t.Fatalf("expected description preview field, got %q", got.DescriptionPreview.Field)
 	}
 	if got.DescriptionPreview.Scroll != 2 {
 		t.Fatalf("expected description preview scroll=2, got %d", got.DescriptionPreview.Scroll)
@@ -182,7 +185,7 @@ func TestUpdateFormEditorMsg_FromDescriptionPreviewErrorReturnsToDescriptionPrev
 		ShowDetails:                  true,
 		DetailsIssueID:               issue.ID,
 		DetailsItem:                  3,
-		DescriptionPreview:           &DescriptionPreviewState{IssueID: issue.ID, Scroll: 3},
+		DescriptionPreview:           &DescriptionPreviewState{IssueID: issue.ID, Scroll: 3, Field: "description"},
 		ResumeDescriptionAfterEditor: true,
 		ResumeDescriptionScroll:      3,
 		Form:                         newIssueFormEdit(&clone, []Issue{issue}),
@@ -196,6 +199,9 @@ func TestUpdateFormEditorMsg_FromDescriptionPreviewErrorReturnsToDescriptionPrev
 	}
 	if got.DescriptionPreview == nil {
 		t.Fatalf("expected description preview state")
+	}
+	if got.DescriptionPreview.Field != "description" {
+		t.Fatalf("expected description preview field, got %q", got.DescriptionPreview.Field)
 	}
 	if got.DescriptionPreview.Scroll != 3 {
 		t.Fatalf("expected description preview scroll=3, got %d", got.DescriptionPreview.Scroll)

@@ -214,11 +214,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ResumeDescriptionScroll = 0
 				m.Form = nil
 				m.ShowDetails = true
-				m.Mode = ModeDescriptionPreview
-				m.DetailsItem = detailsDescriptionItem()
+				previewField := "description"
+				if m.DescriptionPreview != nil && strings.TrimSpace(m.DescriptionPreview.Field) != "" {
+					previewField = m.DescriptionPreview.Field
+				}
+				if previewField == "notes" {
+					m.Mode = ModeNotesPreview
+					m.DetailsItem = detailsNotesItem()
+				} else {
+					m.Mode = ModeDescriptionPreview
+					m.DetailsItem = detailsDescriptionItem()
+				}
 				if strings.TrimSpace(issueID) != "" {
 					m.DetailsIssueID = issueID
-					m.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll}
+					m.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll, Field: previewField}
 				}
 			}
 			if m.ResumeDetailsAfterEditor {
@@ -251,16 +260,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ResumeDescriptionAfterEditor {
 			issueID := strings.TrimSpace(m.Form.IssueID)
 			scroll := m.ResumeDescriptionScroll
+			previewField := "description"
+			if m.DescriptionPreview != nil && strings.TrimSpace(m.DescriptionPreview.Field) != "" {
+				previewField = m.DescriptionPreview.Field
+			}
 			m.ResumeDescriptionAfterEditor = false
 			m.ResumeDescriptionScroll = 0
 			next, cmd := m.submitForm()
 			updated := next.(model)
-			updated.Mode = ModeDescriptionPreview
+			if previewField == "notes" {
+				updated.Mode = ModeNotesPreview
+				updated.DetailsItem = detailsNotesItem()
+			} else {
+				updated.Mode = ModeDescriptionPreview
+				updated.DetailsItem = detailsDescriptionItem()
+			}
 			updated.ShowDetails = true
-			updated.DetailsItem = detailsDescriptionItem()
 			if issueID != "" {
 				updated.DetailsIssueID = issueID
-				updated.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll}
+				updated.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll, Field: previewField}
 			}
 			return updated, cmd
 		}

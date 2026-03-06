@@ -130,6 +130,7 @@ const (
 	ModeBoard                     Mode = "board"
 	ModeDetails                   Mode = "details"
 	ModeDescriptionPreview        Mode = "description_preview"
+	ModeNotesPreview              Mode = "notes_preview"
 	ModeHelp                      Mode = "help"
 	ModeSearch                    Mode = "search"
 	ModeFilter                    Mode = "filter"
@@ -254,6 +255,7 @@ type DepListState struct {
 type DescriptionPreviewState struct {
 	IssueID string
 	Scroll  int
+	Field   string
 }
 
 type loadedMsg struct {

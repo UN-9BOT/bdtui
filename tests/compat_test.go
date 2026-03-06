@@ -42,6 +42,7 @@ const (
 	ModeBoard                     = b.ModeBoard
 	ModeDetails                   = b.ModeDetails
 	ModeDescriptionPreview        = b.ModeDescriptionPreview
+	ModeNotesPreview              = b.ModeNotesPreview
 	ModeHelp                      = b.ModeHelp
 	ModeSearch                    = b.ModeSearch
 	ModeFilter                    = b.ModeFilter

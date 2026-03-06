@@ -23,6 +23,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDetailsKey(msg)
 	case ModeDescriptionPreview:
 		return m.handleDescriptionPreviewKey(msg)
+	case ModeNotesPreview:
+		return m.handleDescriptionPreviewKey(msg)
 	case ModeSearch:
 		return m.handleSearchKey(msg)
 	case ModeFilter:
@@ -112,8 +114,22 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.DescriptionPreview = &DescriptionPreviewState{
 			IssueID: issue.ID,
 			Scroll:  0,
+			Field:   "description",
 		}
 		m.Mode = ModeDescriptionPreview
+		return m, nil
+	case "n":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		m.DescriptionPreview = &DescriptionPreviewState{
+			IssueID: issue.ID,
+			Scroll:  0,
+			Field:   "notes",
+		}
+		m.Mode = ModeNotesPreview
 		return m, nil
 	case "ctrl+x":
 		if !m.activateEditForCurrentIssue() {
@@ -151,7 +167,7 @@ func (m model) handleDescriptionPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 				issue = found
 			}
 		}
-		maxOffset := m.descriptionPreviewMaxScroll(issue)
+		maxOffset := m.previewMaxScroll(issue)
 		if m.DescriptionPreview.Scroll < maxOffset {
 			m.DescriptionPreview.Scroll++
 		}
@@ -170,7 +186,11 @@ func (m model) handleDescriptionPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.ResumeDescriptionAfterEditor = false
-			m.Mode = ModeDescriptionPreview
+			if m.DescriptionPreview.Field == "notes" {
+				m.Mode = ModeNotesPreview
+			} else {
+				m.Mode = ModeDescriptionPreview
+			}
 			m.Form = nil
 			m.setToast("error", err.Error())
 			return m, nil
