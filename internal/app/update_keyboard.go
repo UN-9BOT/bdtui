@@ -21,6 +21,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHelpKey(msg)
 	case ModeDetails:
 		return m.handleDetailsKey(msg)
+	case ModeDescriptionPreview:
+		return m.handleDescriptionPreviewKey(msg)
 	case ModeSearch:
 		return m.handleSearchKey(msg)
 	case ModeFilter:
@@ -93,23 +95,40 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
 		return m, tea.Quit
-	case "esc", "enter", " ":
+	case "esc":
 		m.ShowDetails = false
 		m.Mode = ModeBoard
 		m.DetailsScroll = 0
 		m.DetailsIssueID = ""
+		m.DetailsItem = 0
+		m.DescriptionPreview = nil
+		m.ResumeDescriptionAfterEditor = false
+		m.ResumeDescriptionScroll = 0
 		return m, nil
 	case "j", "down":
-		issue := m.currentIssue()
-		maxOffset := m.detailsMaxScroll(issue)
-		if m.DetailsScroll < maxOffset {
-			m.DetailsScroll++
+		if m.DetailsItem < detailsItemsCount()-1 {
+			m.DetailsItem++
 		}
 		return m, nil
 	case "k", "up":
-		if m.DetailsScroll > 0 {
-			m.DetailsScroll--
+		if m.DetailsItem > 0 {
+			m.DetailsItem--
 		}
+		return m, nil
+	case "enter", " ":
+		if m.DetailsItem != detailsItemsCount()-1 {
+			return m, nil
+		}
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		m.DescriptionPreview = &DescriptionPreviewState{
+			IssueID: issue.ID,
+			Scroll:  0,
+		}
+		m.Mode = ModeDescriptionPreview
 		return m, nil
 	case "ctrl+x":
 		if !m.activateEditForCurrentIssue() {
@@ -120,6 +139,53 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			m.ResumeDetailsAfterEditor = false
 			m.Mode = ModeDetails
+			m.Form = nil
+			m.setToast("error", err.Error())
+			return m, nil
+		}
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m model) handleDescriptionPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.DescriptionPreview == nil {
+		m.Mode = ModeDetails
+		return m, nil
+	}
+
+	key := msg.String()
+	switch key {
+	case "esc", "q":
+		m.Mode = ModeDetails
+		return m, nil
+	case "j", "down":
+		issue := m.currentIssue()
+		if id := strings.TrimSpace(m.DescriptionPreview.IssueID); id != "" && m.ByID != nil {
+			if found, ok := m.ByID[id]; ok && found != nil {
+				issue = found
+			}
+		}
+		maxOffset := m.descriptionPreviewMaxScroll(issue)
+		if m.DescriptionPreview.Scroll < maxOffset {
+			m.DescriptionPreview.Scroll++
+		}
+		return m, nil
+	case "k", "up":
+		if m.DescriptionPreview.Scroll > 0 {
+			m.DescriptionPreview.Scroll--
+		}
+		return m, nil
+	case "ctrl+x":
+		if !m.activateEditForCurrentIssue() {
+			return m, nil
+		}
+		m.ResumeDescriptionAfterEditor = true
+		m.ResumeDescriptionScroll = m.DescriptionPreview.Scroll
+		cmd, err := m.openFormInEditor()
+		if err != nil {
+			m.ResumeDescriptionAfterEditor = false
+			m.Mode = ModeDescriptionPreview
 			m.Form = nil
 			m.setToast("error", err.Error())
 			return m, nil
@@ -475,6 +541,7 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+x":
 		m.Form.saveInputToField()
 		m.ResumeDetailsAfterEditor = false
+		m.ResumeDescriptionAfterEditor = false
 		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.setToast("error", err.Error())
@@ -1027,6 +1094,8 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Mode = ModeDetails
 		m.DetailsScroll = 0
 		m.DetailsIssueID = issue.ID
+		m.DetailsItem = 0
+		m.DescriptionPreview = nil
 		return m, nil
 	case "/":
 		m.SearchInput.SetValue(m.SearchQuery)
@@ -1096,6 +1165,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.ResumeDetailsAfterEditor = false
+		m.ResumeDescriptionAfterEditor = false
 		cmd, err := m.openFormInEditor()
 		if err != nil {
 			m.setToast("error", err.Error())

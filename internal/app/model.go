@@ -33,6 +33,7 @@ type Model struct {
 	ShowDetails    bool
 	DetailsScroll  int
 	DetailsIssueID string
+	DetailsItem    int
 	HelpScroll     int
 	HelpQuery      string
 	SortMode       SortMode
@@ -56,6 +57,8 @@ type Model struct {
 
 	DepList *DepListState
 
+	DescriptionPreview *DescriptionPreviewState
+
 	ConfirmDelete             *ConfirmDelete
 	ConfirmClosedParentCreate *ConfirmClosedParentCreate
 
@@ -69,10 +72,12 @@ type Model struct {
 	Keymap Keymap
 	Styles Styles
 
-	Plugins                  PluginRegistry
-	OpenFormInEditorOverride func(Model) (tea.Cmd, error)
-	ResumeDetailsAfterEditor bool
-	TmuxMark                 struct {
+	Plugins                      PluginRegistry
+	OpenFormInEditorOverride     func(Model) (tea.Cmd, error)
+	ResumeDetailsAfterEditor     bool
+	ResumeDescriptionAfterEditor bool
+	ResumeDescriptionScroll      int
+	TmuxMark                     struct {
 		PaneID string
 		Token  int
 	}
@@ -130,6 +135,7 @@ func newModel(cfg Config) (model, error) {
 
 		DetailsScroll:  0,
 		DetailsIssueID: "",
+		DetailsItem:    0,
 		SortMode:       SortModeStatusDateOnly,
 
 		Mode:        ModeBoard,
@@ -182,11 +188,14 @@ func (m *model) clearTransientUI() {
 	m.TmuxPicker = nil
 	m.BlockerPicker = nil
 	m.DepList = nil
+	m.DescriptionPreview = nil
 	m.ConfirmDelete = nil
 	m.ConfirmClosedParentCreate = nil
 	m.Form = nil
 	m.CreateBlockerID = ""
 	m.FilterForm = nil
+	m.ResumeDescriptionAfterEditor = false
+	m.ResumeDescriptionScroll = 0
 }
 
 func (m *model) applyLoadedIssues(issues []Issue, hash string) {
@@ -598,15 +607,22 @@ func (m model) inspectorOuterHeight() int {
 	return m.inspectorInnerHeight() + 2
 }
 
-func (m model) detailsMaxScroll(issue *Issue) int {
+func detailsItemsCount() int {
+	return 5
+}
+
+func (m model) descriptionPreviewMaxScroll(issue *Issue) int {
 	if issue == nil {
 		return 0
 	}
-	height := m.detailsViewportHeight()
+	if m.DescriptionPreview == nil {
+		return 0
+	}
+	height := m.descriptionPreviewViewportHeight()
 	if height <= 0 {
 		return 0
 	}
-	lines := detailLines(issue, m.inspectorInnerWidth())
+	lines := renderDescriptionLines(issue.Description, m.descriptionPreviewInnerWidth())
 	maxOffset := len(lines) - height
 	if maxOffset < 0 {
 		return 0
@@ -614,29 +630,56 @@ func (m model) detailsMaxScroll(issue *Issue) int {
 	return maxOffset
 }
 
+func (m model) descriptionPreviewInnerWidth() int {
+	return max(20, min(170, m.Width-14))
+}
+
+func (m model) descriptionPreviewViewportHeight() int {
+	maxLines := 18
+	if m.Height > 24 {
+		maxLines = m.Height - 8
+	}
+	return max(5, maxLines-3)
+}
+
 func (m *model) clampDetailsScroll() {
 	if !m.ShowDetails {
 		m.DetailsScroll = 0
 		m.DetailsIssueID = ""
+		m.DetailsItem = 0
+		m.DescriptionPreview = nil
 		return
 	}
 	issue := m.currentIssue()
 	if issue == nil {
 		m.DetailsScroll = 0
 		m.DetailsIssueID = ""
+		m.DetailsItem = 0
+		m.DescriptionPreview = nil
 		return
 	}
 	if m.DetailsIssueID != issue.ID {
 		m.DetailsIssueID = issue.ID
 		m.DetailsScroll = 0
-		return
+		m.DetailsItem = 0
 	}
-	maxOffset := m.detailsMaxScroll(issue)
-	if m.DetailsScroll > maxOffset {
-		m.DetailsScroll = maxOffset
+	if m.DetailsItem < 0 {
+		m.DetailsItem = 0
 	}
-	if m.DetailsScroll < 0 {
-		m.DetailsScroll = 0
+	if m.DetailsItem >= detailsItemsCount() {
+		m.DetailsItem = detailsItemsCount() - 1
+	}
+	if m.DescriptionPreview != nil {
+		if strings.TrimSpace(m.DescriptionPreview.IssueID) == "" {
+			m.DescriptionPreview.IssueID = issue.ID
+		}
+		if m.DescriptionPreview.Scroll < 0 {
+			m.DescriptionPreview.Scroll = 0
+		}
+		maxOffset := m.descriptionPreviewMaxScroll(issue)
+		if m.DescriptionPreview.Scroll > maxOffset {
+			m.DescriptionPreview.Scroll = maxOffset
+		}
 	}
 }
 

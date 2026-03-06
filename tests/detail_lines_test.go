@@ -31,7 +31,7 @@ func TestDetailLinesHighlightsMetaKeys(t *testing.T) {
 	}
 }
 
-func TestDetailLinesRendersMarkdownDescription(t *testing.T) {
+func TestDetailLinesShowsPlainDescriptionPreview(t *testing.T) {
 	issue := &Issue{
 		Description: "# Header\n\n- one\n- two\n\n`code`",
 	}
@@ -47,10 +47,22 @@ func TestDetailLinesRendersMarkdownDescription(t *testing.T) {
 	}
 
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "• one") || !strings.Contains(joined, "• two") {
-		t.Fatalf("expected markdown list rendering, got %q", joined)
+	if strings.Contains(joined, "• one") || strings.Contains(joined, "• two") {
+		t.Fatalf("expected plain preview in details, got %q", joined)
 	}
-	if strings.Contains(joined, "- one") || strings.Contains(joined, "- two") {
-		t.Fatalf("expected transformed markdown list markers, got %q", joined)
+	if !strings.Contains(joined, "- one") || !strings.Contains(joined, "- two") {
+		t.Fatalf("expected raw markdown markers in preview, got %q", joined)
+	}
+}
+
+func TestDetailLinesShowsEllipsisWhenPreviewClipped(t *testing.T) {
+	issue := &Issue{
+		Description: "1\n2\n3\n4\n5\n6",
+	}
+
+	lines := detailLines(issue, 80)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "...") {
+		t.Fatalf("expected clipped preview hint, got %q", joined)
 	}
 }

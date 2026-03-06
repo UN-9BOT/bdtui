@@ -103,7 +103,32 @@ func TestRenderFooterDetailsMentionsCtrlX(t *testing.T) {
 	}
 
 	out := m.RenderFooter()
+	if !strings.Contains(out, "open description") {
+		t.Fatalf("expected details footer to mention description open, got %q", out)
+	}
 	if !strings.Contains(out, "Ctrl+X ext edit") {
 		t.Fatalf("expected details footer to mention Ctrl+X, got %q", out)
+	}
+}
+
+func TestHandleDetailsKeyMovesItemFocus(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		Mode:        ModeDetails,
+		ShowDetails: true,
+		DetailsItem: 0,
+	}
+
+	next, _ := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := next.(model)
+	if got.DetailsItem != 1 {
+		t.Fatalf("expected details item=1, got %d", got.DetailsItem)
+	}
+
+	next, _ = got.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	got = next.(model)
+	if got.DetailsItem != 0 {
+		t.Fatalf("expected details item=0, got %d", got.DetailsItem)
 	}
 }

@@ -196,8 +196,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case formEditorMsg:
 		if msg.err != nil {
+			if m.ResumeDescriptionAfterEditor {
+				scroll := m.ResumeDescriptionScroll
+				issueID := ""
+				if m.Form != nil {
+					issueID = strings.TrimSpace(m.Form.IssueID)
+				}
+				if issueID == "" {
+					issueID = strings.TrimSpace(m.DetailsIssueID)
+				}
+				if issueID == "" {
+					if issue := m.currentIssue(); issue != nil {
+						issueID = issue.ID
+					}
+				}
+				m.ResumeDescriptionAfterEditor = false
+				m.ResumeDescriptionScroll = 0
+				m.Form = nil
+				m.ShowDetails = true
+				m.Mode = ModeDescriptionPreview
+				m.DetailsItem = detailsItemsCount() - 1
+				if strings.TrimSpace(issueID) != "" {
+					m.DetailsIssueID = issueID
+					m.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll}
+				}
+			}
 			if m.ResumeDetailsAfterEditor {
 				m.ResumeDetailsAfterEditor = false
+				m.ResumeDescriptionAfterEditor = false
+				m.ResumeDescriptionScroll = 0
 				m.Mode = ModeDetails
 				m.Form = nil
 			}
@@ -206,6 +233,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.Form == nil {
 			m.ResumeDetailsAfterEditor = false
+			m.ResumeDescriptionAfterEditor = false
+			m.ResumeDescriptionScroll = 0
 			return m, nil
 		}
 
@@ -220,9 +249,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Form.Labels = strings.TrimSpace(msg.payload.Labels)
 		m.Form.Parent = strings.TrimSpace(msg.payload.Parent)
 		m.Form.loadInputFromField()
+		if m.ResumeDescriptionAfterEditor {
+			issueID := strings.TrimSpace(m.Form.IssueID)
+			scroll := m.ResumeDescriptionScroll
+			m.ResumeDescriptionAfterEditor = false
+			m.ResumeDescriptionScroll = 0
+			next, cmd := m.submitForm()
+			updated := next.(model)
+			updated.Mode = ModeDescriptionPreview
+			updated.ShowDetails = true
+			updated.DetailsItem = detailsItemsCount() - 1
+			if issueID != "" {
+				updated.DetailsIssueID = issueID
+				updated.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll}
+			}
+			return updated, cmd
+		}
 		if m.ResumeDetailsAfterEditor {
 			issueID := strings.TrimSpace(m.Form.IssueID)
 			m.ResumeDetailsAfterEditor = false
+			m.ResumeDescriptionAfterEditor = false
+			m.ResumeDescriptionScroll = 0
 			next, cmd := m.submitForm()
 			updated := next.(model)
 			updated.Mode = ModeDetails

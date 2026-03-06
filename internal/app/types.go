@@ -128,6 +128,7 @@ type Mode string
 const (
 	ModeBoard                     Mode = "board"
 	ModeDetails                   Mode = "details"
+	ModeDescriptionPreview        Mode = "description_preview"
 	ModeHelp                      Mode = "help"
 	ModeSearch                    Mode = "search"
 	ModeFilter                    Mode = "filter"
@@ -246,6 +247,11 @@ type ConfirmClosedParentCreate struct {
 type DepListState struct {
 	IssueID string
 	Lines   []string
+	Scroll  int
+}
+
+type DescriptionPreviewState struct {
+	IssueID string
 	Scroll  int
 }
 

@@ -415,7 +415,7 @@ func (m model) selectedBlocksSet() map[string]bool {
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
-	grayBoard := m.Mode == ModeDetails
+	grayBoard := m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview
 	if grayBoard {
 		borderColor = lipgloss.Color("241")
 	}
@@ -481,27 +481,27 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 			offset = 0
 		}
 		end := min(len(rows), offset+itemsPerPage)
-			for i := offset; i < end; i++ {
-				rowItem := rows[i]
-				row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed)
-				if rowItem.ghost {
-					row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
-						Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
-				}
-				if grayBoard && !rowItem.ghost {
-					row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("243"), false).
-						Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
-				}
-				if !grayBoard && !rowItem.ghost && selectedBlockedBy != nil && selectedBlockedBy[rowItem.issue.ID] {
-					row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardBlockedByRowStyle(rowItem.issue.IssueType))
-				} else if !grayBoard && !rowItem.ghost && selectedBlocks != nil && selectedBlocks[rowItem.issue.ID] {
-					row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardBlocksRowStyle(rowItem.issue.IssueType))
-				}
-				if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
-					row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed))
-				}
-				lines = append(lines, row)
+		for i := offset; i < end; i++ {
+			rowItem := rows[i]
+			row := renderIssueRow(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed)
+			if rowItem.ghost {
+				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
+					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
 			}
+			if grayBoard && !rowItem.ghost {
+				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("243"), false).
+					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+			}
+			if !grayBoard && !rowItem.ghost && selectedBlockedBy != nil && selectedBlockedBy[rowItem.issue.ID] {
+				row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardBlockedByRowStyle(rowItem.issue.IssueType))
+			} else if !grayBoard && !rowItem.ghost && selectedBlocks != nil && selectedBlocks[rowItem.issue.ID] {
+				row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardBlocksRowStyle(rowItem.issue.IssueType))
+			}
+			if i == selectedRowIdx && active && !rowItem.ghost && !grayBoard {
+				row = m.Styles.Selected.Render(renderIssueRowSelectedPlain(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed))
+			}
+			lines = append(lines, row)
+		}
 	}
 
 	for len(lines) < innerHeight {
@@ -517,7 +517,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 
 func (m model) renderInspector() string {
 	containerStyle := m.Styles.Border
-	if m.Mode == ModeDetails {
+	if m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview {
 		containerStyle = m.Styles.Active
 	}
 
@@ -585,24 +585,9 @@ func (m model) renderInspector() string {
 
 	if m.ShowDetails {
 		details := detailLines(issue, inner)
-		height := m.detailsViewportHeight()
-		if height > 0 && len(details) > 0 {
-			maxOffset := len(details) - height
-			if maxOffset < 0 {
-				maxOffset = 0
-			}
-			start := m.DetailsScroll
-			if start < 0 {
-				start = 0
-			}
-			if start > maxOffset {
-				start = maxOffset
-			}
-			end := start + height
-			if end > len(details) {
-				end = len(details)
-			}
-			lines = append(lines, details[start:end]...)
+		lines = append(lines, details...)
+		if m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview {
+			lines = highlightDetailsItem(lines, m.DetailsItem, m.Styles.Selected)
 		}
 	}
 
@@ -628,14 +613,37 @@ func detailLines(issue *Issue, inner int) []string {
 	if available < 1 {
 		available = 1
 	}
-
-	descLines := renderDescriptionLines(issue.Description, available)
+	descLines, clipped := firstNDescriptionLines(issue.Description, 5, available)
 	lines = append(lines, keyStyle.Render(prefix)+descLines[0])
 	indent := strings.Repeat(" ", len(prefix))
 	for _, line := range descLines[1:] {
 		lines = append(lines, indent+line)
 	}
+	if clipped {
+		lines = append(lines, indent+lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("..."))
+	}
 	return lines
+}
+
+func highlightDetailsItem(lines []string, item int, selected lipgloss.Style) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+
+	index := item
+	if index < 0 {
+		index = 0
+	}
+	if index >= detailsItemsCount() {
+		index = detailsItemsCount() - 1
+	}
+	if index >= len(lines) {
+		index = len(lines) - 1
+	}
+
+	out := append([]string(nil), lines...)
+	out[index] = selected.Render(out[index])
+	return out
 }
 
 func styleDetailMetaLine(line string, keyStyle lipgloss.Style) string {
@@ -654,7 +662,9 @@ func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space focus details | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.Mode != ModeBoard {
 		if m.Mode == ModeDetails {
-			left = "Mode: details | j/k scroll | Ctrl+X ext edit | Esc close"
+			left = "Mode: details | j/k select item | Enter/Space open description | Ctrl+X ext edit | Esc close"
+		} else if m.Mode == ModeDescriptionPreview {
+			left = "Mode: description | j/k scroll | Ctrl+X ext edit | Esc close"
 		} else if m.Mode == ModeSearch {
 			left = "Mode: search | type search query | Ctrl+F filters | ↑/↓ field | Tab/Shift+Tab value | Enter/Esc apply+exit | Ctrl+C clear"
 		} else if m.Mode == ModeConfirmClosedParentCreate {
@@ -702,6 +712,8 @@ func (m model) renderModal() string {
 		return m.renderBlockerPickerModal()
 	case ModeDepList:
 		return m.renderDepListModal()
+	case ModeDescriptionPreview:
+		return m.renderDescriptionPreviewModal()
 	case ModeConfirmDelete:
 		return m.renderDeleteModal()
 	case ModeConfirmClosedParentCreate:
@@ -1371,6 +1383,40 @@ func (m model) renderDepListModal() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m model) renderDescriptionPreviewModal() string {
+	if m.DescriptionPreview == nil {
+		return "Description\n\nloading..."
+	}
+	issue := m.currentIssue()
+	if id := strings.TrimSpace(m.DescriptionPreview.IssueID); id != "" && m.ByID != nil {
+		if found, ok := m.ByID[id]; ok && found != nil {
+			issue = found
+		}
+	}
+	if issue == nil {
+		return "Description\n\nno issue selected"
+	}
+
+	maxLines := 18
+	if m.Height > 24 {
+		maxLines = m.Height - 8
+	}
+	viewport := max(5, maxLines-3)
+	innerWidth := m.descriptionPreviewInnerWidth()
+	linesAll := renderDescriptionLines(issue.Description, innerWidth)
+
+	start := min(max(0, m.DescriptionPreview.Scroll), max(0, len(linesAll)-1))
+	end := min(len(linesAll), start+viewport)
+	if end < start {
+		end = start
+	}
+
+	lines := []string{fmt.Sprintf("Description: %s", issue.ID), ""}
+	lines = append(lines, linesAll[start:end]...)
+	lines = append(lines, "", "j/k scroll | Ctrl+X ext edit | Esc close")
+	return strings.Join(lines, "\n")
+}
+
 func (m model) renderBlockerPickerModal() string {
 	if m.BlockerPicker == nil {
 		return "Blocker Picker\n\nloading..."
@@ -1434,21 +1480,21 @@ func (m model) renderBlockerPickerColumn(status Status, width int, innerHeight i
 	itemsPerPage := max(1, innerHeight-3)
 	if len(col) == 0 {
 		lines = append(lines, m.Styles.Dim.Render(truncate("(empty)", maxTextWidth)))
-		} else {
-			if offset >= len(col) {
-				offset = len(col) - 1
-			}
-			end := min(len(col), offset+itemsPerPage)
-			for i := offset; i < end; i++ {
-				item := col[i]
-				rowPlain := renderBlockerPickerRowPlain(item, maxTextWidth, m.BlockerPicker.Selected[item.ID])
-				row := rowPlain
-				if i == idx && active {
-					row = m.Styles.Selected.Render(rowPlain)
-				}
-				lines = append(lines, row)
-			}
+	} else {
+		if offset >= len(col) {
+			offset = len(col) - 1
 		}
+		end := min(len(col), offset+itemsPerPage)
+		for i := offset; i < end; i++ {
+			item := col[i]
+			rowPlain := renderBlockerPickerRowPlain(item, maxTextWidth, m.BlockerPicker.Selected[item.ID])
+			row := rowPlain
+			if i == idx && active {
+				row = m.Styles.Selected.Render(rowPlain)
+			}
+			lines = append(lines, row)
+		}
+	}
 
 	for len(lines) < innerHeight {
 		lines = append(lines, "")

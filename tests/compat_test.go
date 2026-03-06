@@ -21,6 +21,7 @@ type DeleteMode = b.DeleteMode
 type ConfirmDelete = b.ConfirmDelete
 type ConfirmClosedParentCreate = b.ConfirmClosedParentCreate
 type DepListState = b.DepListState
+type DescriptionPreviewState = b.DescriptionPreviewState
 type PluginRegistry = b.PluginRegistry
 type PluginToggles = b.PluginToggles
 type TmuxTarget = b.TmuxTarget
@@ -40,6 +41,7 @@ const (
 
 	ModeBoard                     = b.ModeBoard
 	ModeDetails                   = b.ModeDetails
+	ModeDescriptionPreview        = b.ModeDescriptionPreview
 	ModeHelp                      = b.ModeHelp
 	ModeSearch                    = b.ModeSearch
 	ModeFilter                    = b.ModeFilter
