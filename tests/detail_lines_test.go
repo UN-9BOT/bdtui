@@ -111,7 +111,10 @@ func TestDetailLinesExpandedShowsFiveLinePreviewForDescriptionAndNotes(t *testin
 	if !strings.Contains(joined, "\n       e") {
 		t.Fatalf("expected fifth expanded notes line, got %q", joined)
 	}
-	if !strings.Contains(joined, "...") {
-		t.Fatalf("expected clipped expanded preview hint, got %q", joined)
+	if strings.Contains(joined, "\n             ...") || strings.Contains(joined, "\n       ...") {
+		t.Fatalf("did not expect separate ellipsis line in expanded preview, got %q", joined)
+	}
+	if !strings.Contains(joined, "5 ...") || !strings.Contains(joined, "e ...") {
+		t.Fatalf("expected inline clipped hint on fifth line, got %q", joined)
 	}
 }

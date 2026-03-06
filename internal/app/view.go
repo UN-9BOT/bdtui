@@ -598,22 +598,58 @@ func renderDetailPreviewLine(keyStyle lipgloss.Style, prefix string, text string
 		return keyStyle.Render(prefix) + singleLineDetailPreview(trimmed, width)
 	}
 
-	lines, clipped := firstNDescriptionLines(trimmed, maxSourceLines, width)
+	lines, clipped := firstNDetailPreviewLines(trimmed, maxSourceLines, width)
 	first := keyStyle.Render(prefix) + lines[0]
 	if len(lines) == 1 && !clipped {
 		return first
 	}
 
-	parts := make([]string, 0, len(lines)+1)
+	if clipped {
+		last := lines[len(lines)-1]
+		if strings.TrimSpace(last) == "" {
+			lines[len(lines)-1] = "..."
+		} else {
+			lines[len(lines)-1] = truncate(last+" ...", width)
+		}
+	}
+
+	parts := make([]string, 0, len(lines))
 	parts = append(parts, first)
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	for _, line := range lines[1:] {
 		parts = append(parts, indent+line)
 	}
-	if clipped {
-		parts = append(parts, indent+lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("..."))
-	}
 	return strings.Join(parts, "\n")
+}
+
+func firstNDetailPreviewLines(text string, maxLines int, width int) ([]string, bool) {
+	if maxLines <= 0 {
+		maxLines = 5
+	}
+
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	if normalized == "" {
+		return []string{"-"}, false
+	}
+
+	visual := make([]string, 0, maxLines)
+	for _, rawLine := range strings.Split(normalized, "\n") {
+		segments := wrapPlainText(rawLine, width)
+		if len(segments) == 0 {
+			segments = []string{""}
+		}
+		visual = append(visual, segments...)
+	}
+	if len(visual) == 0 {
+		return []string{"-"}, false
+	}
+	if len(visual) == 1 && strings.TrimSpace(visual[0]) == "" {
+		return []string{"-"}, false
+	}
+	if len(visual) > maxLines {
+		return append([]string(nil), visual[:maxLines]...), true
+	}
+	return visual, false
 }
 
 func trimLeadingDetailPreviewText(text string) string {

@@ -541,7 +541,7 @@ func (m model) inspectorInnerWidth() int {
 func (m model) inspectorInnerHeight() int {
 	const (
 		collapsedInner   = 5
-		expandedInner    = 15
+		expandedInner    = 13
 		minOuter         = 5
 		minBoardInner    = 6
 		baseLayoutChrome = 4 // title + footer + board border
