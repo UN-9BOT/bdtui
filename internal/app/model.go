@@ -611,6 +611,10 @@ func detailsItemsCount() int {
 	return 5
 }
 
+func detailsDescriptionItem() int {
+	return detailsItemsCount() - 1
+}
+
 func (m model) descriptionPreviewMaxScroll(issue *Issue) int {
 	if issue == nil {
 		return 0
@@ -661,7 +665,7 @@ func (m *model) clampDetailsScroll() {
 	if m.DetailsIssueID != issue.ID {
 		m.DetailsIssueID = issue.ID
 		m.DetailsScroll = 0
-		m.DetailsItem = 0
+		m.DetailsItem = detailsDescriptionItem()
 	}
 	if m.DetailsItem < 0 {
 		m.DetailsItem = 0

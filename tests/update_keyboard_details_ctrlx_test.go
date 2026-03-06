@@ -103,32 +103,97 @@ func TestRenderFooterDetailsMentionsCtrlX(t *testing.T) {
 	}
 
 	out := m.RenderFooter()
-	if !strings.Contains(out, "open description") {
-		t.Fatalf("expected details footer to mention description open, got %q", out)
+	if !strings.Contains(out, "d open description") {
+		t.Fatalf("expected details footer to mention d open description, got %q", out)
 	}
 	if !strings.Contains(out, "Ctrl+X ext edit") {
 		t.Fatalf("expected details footer to mention Ctrl+X, got %q", out)
 	}
+	if strings.Contains(out, "j/k select item") || strings.Contains(out, "Enter/Space open description") {
+		t.Fatalf("expected details footer to omit removed details hotkeys, got %q", out)
+	}
 }
 
-func TestHandleDetailsKeyMovesItemFocus(t *testing.T) {
+func TestHandleDetailsKeyJKDoNotMoveItemFocus(t *testing.T) {
 	t.Parallel()
 
 	m := model{
 		Mode:        ModeDetails,
 		ShowDetails: true,
-		DetailsItem: 0,
+		DetailsItem: 4,
 	}
 
 	next, _ := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	got := next.(model)
-	if got.DetailsItem != 1 {
-		t.Fatalf("expected details item=1, got %d", got.DetailsItem)
+	if got.DetailsItem != 4 {
+		t.Fatalf("expected details item to stay on description, got %d", got.DetailsItem)
 	}
 
 	next, _ = got.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	got = next.(model)
-	if got.DetailsItem != 0 {
-		t.Fatalf("expected details item=0, got %d", got.DetailsItem)
+	if got.DetailsItem != 4 {
+		t.Fatalf("expected details item to stay on description, got %d", got.DetailsItem)
+	}
+}
+
+func TestHandleDetailsKeyQDoesNothing(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		Mode:        ModeDetails,
+		ShowDetails: true,
+		DetailsItem: 4,
+	}
+
+	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	got := next.(model)
+	if got.Mode != ModeDetails {
+		t.Fatalf("expected mode=%s, got %s", ModeDetails, got.Mode)
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd for q in details")
+	}
+}
+
+func TestHandleBoardKeyEnterSetsDetailsFocusToDescription(t *testing.T) {
+	t.Parallel()
+
+	issue := Issue{
+		ID:        "bdtui-56i.30",
+		Title:     "details focus on description",
+		Status:    StatusOpen,
+		Display:   StatusOpen,
+		Priority:  2,
+		IssueType: "task",
+	}
+
+	m := model{
+		Mode:   ModeBoard,
+		Issues: []Issue{issue},
+		Columns: map[Status][]Issue{
+			StatusOpen:       {issue},
+			StatusInProgress: {},
+			StatusBlocked:    {},
+			StatusClosed:     {},
+		},
+		SelectedCol: 0,
+		SelectedIdx: map[Status]int{
+			StatusOpen:       0,
+			StatusInProgress: 0,
+			StatusBlocked:    0,
+			StatusClosed:     0,
+		},
+	}
+
+	next, cmd := m.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(model)
+	if got.Mode != ModeDetails {
+		t.Fatalf("expected mode=%s, got %s", ModeDetails, got.Mode)
+	}
+	if got.DetailsItem != 4 {
+		t.Fatalf("expected details item=4, got %d", got.DetailsItem)
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd")
 	}
 }

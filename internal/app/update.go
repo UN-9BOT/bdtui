@@ -215,7 +215,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Form = nil
 				m.ShowDetails = true
 				m.Mode = ModeDescriptionPreview
-				m.DetailsItem = detailsItemsCount() - 1
+				m.DetailsItem = detailsDescriptionItem()
 				if strings.TrimSpace(issueID) != "" {
 					m.DetailsIssueID = issueID
 					m.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll}
@@ -226,6 +226,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ResumeDescriptionAfterEditor = false
 				m.ResumeDescriptionScroll = 0
 				m.Mode = ModeDetails
+				m.DetailsItem = detailsDescriptionItem()
 				m.Form = nil
 			}
 			m.setToast("error", msg.err.Error())
@@ -258,7 +259,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated := next.(model)
 			updated.Mode = ModeDescriptionPreview
 			updated.ShowDetails = true
-			updated.DetailsItem = detailsItemsCount() - 1
+			updated.DetailsItem = detailsDescriptionItem()
 			if issueID != "" {
 				updated.DetailsIssueID = issueID
 				updated.DescriptionPreview = &DescriptionPreviewState{IssueID: issueID, Scroll: scroll}
@@ -274,6 +275,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated := next.(model)
 			updated.Mode = ModeDetails
 			updated.ShowDetails = true
+			updated.DetailsItem = detailsDescriptionItem()
 			if issueID != "" {
 				updated.DetailsIssueID = issueID
 			}

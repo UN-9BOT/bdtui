@@ -586,7 +586,7 @@ func (m model) renderInspector() string {
 	if m.ShowDetails {
 		details := detailLines(issue, inner)
 		lines = append(lines, details...)
-		if m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview {
+		if m.Mode == ModeDescriptionPreview {
 			lines = highlightDetailsItem(lines, m.DetailsItem, m.Styles.Selected)
 		}
 	}
@@ -662,7 +662,7 @@ func (m model) renderFooter() string {
 	left := "j/k move | h/l col | Enter/Space focus details | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.Mode != ModeBoard {
 		if m.Mode == ModeDetails {
-			left = "Mode: details | j/k select item | Enter/Space open description | Ctrl+X ext edit | Esc close"
+			left = "Mode: details | d open description | Ctrl+X ext edit | Esc close"
 		} else if m.Mode == ModeDescriptionPreview {
 			left = "Mode: description | j/k scroll | Ctrl+X ext edit | Esc close"
 		} else if m.Mode == ModeSearch {

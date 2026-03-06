@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestHandleDetailsKeyEnterOnDescriptionOpensDescriptionPreview(t *testing.T) {
+func TestHandleDetailsKeyDOpensDescriptionPreview(t *testing.T) {
 	t.Parallel()
 
 	issue := Issue{
@@ -38,7 +38,7 @@ func TestHandleDetailsKeyEnterOnDescriptionOpensDescriptionPreview(t *testing.T)
 		},
 	}
 
-	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	got := next.(model)
 
 	if got.Mode != ModeDescriptionPreview {
@@ -55,6 +55,40 @@ func TestHandleDetailsKeyEnterOnDescriptionOpensDescriptionPreview(t *testing.T)
 	}
 	if cmd != nil {
 		t.Fatalf("expected nil cmd")
+	}
+}
+
+func TestHandleDetailsKeyEnterAndSpaceDoNothing(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		Mode:        ModeDetails,
+		ShowDetails: true,
+		DetailsItem: 4,
+	}
+
+	next, cmd := m.HandleDetailsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(model)
+	if got.Mode != ModeDetails {
+		t.Fatalf("expected mode=%s after enter, got %s", ModeDetails, got.Mode)
+	}
+	if got.DescriptionPreview != nil {
+		t.Fatalf("expected enter to keep description preview closed")
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd for enter")
+	}
+
+	next, cmd = got.HandleDetailsKey(tea.KeyMsg{Type: tea.KeySpace})
+	got = next.(model)
+	if got.Mode != ModeDetails {
+		t.Fatalf("expected mode=%s after space, got %s", ModeDetails, got.Mode)
+	}
+	if got.DescriptionPreview != nil {
+		t.Fatalf("expected space to keep description preview closed")
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd for space")
 	}
 }
 

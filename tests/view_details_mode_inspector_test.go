@@ -34,3 +34,46 @@ func TestRenderInspectorDetailsModeHighlightsBorder(t *testing.T) {
 		t.Fatalf("expected details mode inspector to use active border color, got %q", detailsInspector)
 	}
 }
+
+func TestRenderInspectorDetailsModeDoesNotHighlightDescriptionCursor(t *testing.T) {
+	prevProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prevProfile)
+
+	issue := Issue{
+		ID:          "bdtui-56i.30",
+		Title:       "details without cursor",
+		Status:      StatusOpen,
+		Display:     StatusOpen,
+		Priority:    2,
+		IssueType:   "task",
+		Description: "line 1\nline 2",
+	}
+
+	m := model{
+		Width:       100,
+		Height:      30,
+		Mode:        ModeDetails,
+		ShowDetails: true,
+		DetailsItem: 4,
+		Styles:      newStyles(),
+		Columns: map[Status][]Issue{
+			StatusOpen:       {issue},
+			StatusInProgress: {},
+			StatusBlocked:    {},
+			StatusClosed:     {},
+		},
+		SelectedCol: 0,
+		SelectedIdx: map[Status]int{
+			StatusOpen:       0,
+			StatusInProgress: 0,
+			StatusBlocked:    0,
+			StatusClosed:     0,
+		},
+	}
+
+	out := m.RenderInspector()
+	if strings.Contains(out, "48;5;31m") {
+		t.Fatalf("expected details inspector to render without selected-line cursor, got %q", out)
+	}
+}

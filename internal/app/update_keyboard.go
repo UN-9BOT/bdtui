@@ -93,8 +93,6 @@ func (m model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
-	case "q":
-		return m, tea.Quit
 	case "esc":
 		m.ShowDetails = false
 		m.Mode = ModeBoard
@@ -105,20 +103,7 @@ func (m model) handleDetailsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ResumeDescriptionAfterEditor = false
 		m.ResumeDescriptionScroll = 0
 		return m, nil
-	case "j", "down":
-		if m.DetailsItem < detailsItemsCount()-1 {
-			m.DetailsItem++
-		}
-		return m, nil
-	case "k", "up":
-		if m.DetailsItem > 0 {
-			m.DetailsItem--
-		}
-		return m, nil
-	case "enter", " ":
-		if m.DetailsItem != detailsItemsCount()-1 {
-			return m, nil
-		}
+	case "d":
 		issue := m.currentIssue()
 		if issue == nil {
 			m.setToast("warning", "no issue selected")
@@ -1094,7 +1079,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Mode = ModeDetails
 		m.DetailsScroll = 0
 		m.DetailsIssueID = issue.ID
-		m.DetailsItem = 0
+		m.DetailsItem = detailsDescriptionItem()
 		m.DescriptionPreview = nil
 		return m, nil
 	case "/":
