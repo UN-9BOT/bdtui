@@ -39,6 +39,7 @@ type Model struct {
 	SortMode       SortMode
 	Mode           Mode
 	Leader         bool
+	LeaderPrefix   string
 
 	SearchQuery    string
 	SearchPrev     string
@@ -183,6 +184,7 @@ func (m *model) setToast(kind, msg string) {
 
 func (m *model) clearTransientUI() {
 	m.Leader = false
+	m.LeaderPrefix = ""
 	m.Prompt = nil
 	m.ParentPicker = nil
 	m.TmuxPicker = nil

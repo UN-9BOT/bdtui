@@ -100,12 +100,27 @@ func TestDefaultKeymapDoesNotAdvertiseLeaderGb(t *testing.T) {
 	t.Parallel()
 
 	keymap := defaultKeymap()
+	global := strings.Join(keymap.Global, "\n")
 	leader := strings.Join(keymap.Leader, "\n")
 	if strings.Contains(leader, "g b") {
 		t.Fatalf("expected leader keymap to remove g b, got %q", leader)
 	}
 	if !strings.Contains(leader, "g B") {
 		t.Fatalf("expected leader keymap to keep g B, got %q", leader)
+	}
+	if strings.Contains(global, "Y:") {
+		t.Fatalf("expected global keymap to remove Y tmux shortcut, got %q", global)
+	}
+	if !strings.Contains(global, "z: toggle hide/show children") {
+		t.Fatalf("expected global keymap to advertise z toggle, got %q", global)
+	}
+	if !strings.Contains(global, "t: tmux leader combos") {
+		t.Fatalf("expected global keymap to advertise t leader, got %q", global)
+	}
+	for _, expected := range []string{"t s:", "t S:", "t a:", "t d:"} {
+		if !strings.Contains(leader, expected) {
+			t.Fatalf("expected leader keymap to include %q, got %q", expected, leader)
+		}
 	}
 }
 

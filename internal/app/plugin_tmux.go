@@ -105,6 +105,13 @@ func (p *TmuxPlugin) SetTarget(target TmuxTarget) {
 	p.target = &clone
 }
 
+func (p *TmuxPlugin) ClearTarget() {
+	if p == nil {
+		return
+	}
+	p.target = nil
+}
+
 func (p *TmuxPlugin) ListTargets() ([]TmuxTarget, error) {
 	if !p.Enabled() {
 		return nil, errors.New("tmux plugin disabled")

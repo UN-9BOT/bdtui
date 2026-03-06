@@ -62,7 +62,11 @@ func (m model) applyFocusDimming(out string) string {
 func (m model) renderTitle() string {
 	leaderHint := ""
 	if m.Leader {
-		leaderHint = " | Leader: g ..."
+		prefix := strings.TrimSpace(m.LeaderPrefix)
+		if prefix == "" {
+			prefix = "g"
+		}
+		leaderHint = " | Leader: " + prefix + " ..."
 	}
 
 	line := truncate(buildTitle(m)+leaderHint, max(10, m.Width-4))
@@ -659,7 +663,7 @@ func styleDetailMetaLine(line string, keyStyle lipgloss.Style) string {
 }
 
 func (m model) renderFooter() string {
-	left := "j/k move | h/l col | Enter/Space focus details | y copy id | Y paste to tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
+	left := "j/k move | h/l col | Enter/Space focus details | y copy id | z toggle children | t + key tmux | n new | e edit | Ctrl+X ext edit | d delete | g + key deps | ? help | q quit"
 	if m.Mode != ModeBoard {
 		if m.Mode == ModeDetails {
 			left = "Mode: details | d open description | Ctrl+X ext edit | Esc close"
@@ -1280,7 +1284,7 @@ func (m model) renderTmuxPickerModal() string {
 	}
 
 	lines := []string{
-		statusHeaderStyle(StatusInProgress).Render("Tmux Target Picker (Y)"),
+		statusHeaderStyle(StatusInProgress).Render("Tmux Target Picker"),
 		"",
 		m.Styles.Warning.Render("Choose target: ↑/↓ (or j/k), Enter select, Esc cancel"),
 		m.Styles.Dim.Render("current pane is marked in tmux, mark clears 5s after picker exit"),

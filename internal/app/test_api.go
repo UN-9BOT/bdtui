@@ -280,7 +280,11 @@ func (m Model) HandleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) HandleLeaderCombo(key string) (tea.Model, tea.Cmd) {
-	return m.handleLeaderCombo(key)
+	return m.handleLeaderCombo("g", key)
+}
+
+func (m Model) HandleTmuxLeaderCombo(key string) (tea.Model, tea.Cmd) {
+	return m.handleLeaderCombo("t", key)
 }
 
 func (m *Model) MarkTmuxPickerSelection() error {
@@ -305,6 +309,10 @@ func (m Model) RenderInspector() string {
 
 func (m Model) RenderFooter() string {
 	return m.renderFooter()
+}
+
+func (m Model) RenderModal() string {
+	return m.renderModal()
 }
 
 func (m Model) RenderHelpModal() string {

@@ -1040,7 +1040,9 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.Leader {
 		m.Leader = false
-		return m.handleLeaderCombo(key)
+		prefix := m.LeaderPrefix
+		m.LeaderPrefix = ""
+		return m.handleLeaderCombo(prefix, key)
 	}
 
 	switch key {
@@ -1166,7 +1168,7 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Prompt = newPrompt(ModePrompt, "Quick Assignee", "Enter assignee (empty = unassign)", issue.ID, PromptAssignee, issue.Assignee)
 		m.Mode = ModePrompt
 		return m, nil
-	case "t":
+	case "z":
 		issue := m.currentIssue()
 		if issue == nil {
 			m.setToast("warning", "no issue selected")
@@ -1197,8 +1199,6 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.setToast("success", "copied id: "+issue.ID)
 		return m, nil
-	case "Y":
-		return m.handleTmuxSendIssueID()
 	case "L":
 		issue := m.currentIssue()
 		if issue == nil {
@@ -1277,14 +1277,29 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, deletePreviewCmd(m.Client, issue.ID)
 	case "g":
 		m.Leader = true
+		m.LeaderPrefix = "g"
 		m.setToast("info", "Leader: g …")
+		return m, nil
+	case "t":
+		m.Leader = true
+		m.LeaderPrefix = "t"
+		m.setToast("info", "Leader: t …")
 		return m, nil
 	}
 
 	return m, nil
 }
 
-func (m model) handleLeaderCombo(key string) (tea.Model, tea.Cmd) {
+func (m model) handleLeaderCombo(prefix, key string) (tea.Model, tea.Cmd) {
+	switch prefix {
+	case "t":
+		return m.handleTmuxLeaderCombo(key)
+	default:
+		return m.handleDefaultLeaderCombo(key)
+	}
+}
+
+func (m model) handleDefaultLeaderCombo(key string) (tea.Model, tea.Cmd) {
 	if key == "o" {
 		m.SortMode = m.SortMode.Toggle()
 		m.computeColumns()
@@ -1489,7 +1504,23 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	})
 }
 
-func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
+func (m model) handleTmuxLeaderCombo(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "s":
+		return m.handleTmuxSendIssueID(false)
+	case "S":
+		return m.handleTmuxSendIssueID(true)
+	case "a":
+		return m.openTmuxPicker("")
+	case "d":
+		return m.handleTmuxDetach()
+	default:
+		m.setToast("warning", "unknown leader combo")
+		return m, nil
+	}
+}
+
+func (m model) handleTmuxSendIssueID(forcePicker bool) (tea.Model, tea.Cmd) {
 	issue := m.currentIssue()
 	if issue == nil {
 		m.setToast("warning", "no issue selected")
@@ -1502,28 +1533,8 @@ func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if tmuxPlugin.CurrentTarget() == nil {
-		targets, err := tmuxPlugin.ListTargets()
-		if err != nil {
-			m.setToast("error", err.Error())
-			return m, nil
-		}
-		if len(targets) == 0 {
-			m.setToast("warning", "no tmux targets available")
-			return m, nil
-		}
-		m.cancelTmuxMarkCleanup()
-		m.TmuxPicker = &TmuxPickerState{
-			IssueID: issue.ID,
-			Targets: targets,
-			Index:   0,
-		}
-		m.Mode = ModeTmuxPicker
-		if err := m.markTmuxPickerSelection(); err != nil {
-			m.setToast("warning", err.Error())
-			return m, nil
-		}
-		return m, m.blinkTmuxPaneCmd(m.currentTmuxPickerPaneID())
+	if forcePicker || tmuxPlugin.CurrentTarget() == nil {
+		return m.openTmuxPicker(issue.ID)
 	}
 
 	payload := m.formatBeadsStartTaskCommand(issue.ID)
@@ -1544,6 +1555,57 @@ func (m model) handleTmuxSendIssueID() (tea.Model, tea.Cmd) {
 		}
 		return pluginMsg{info: "tmux command pasted"}
 	}
+}
+
+func (m model) openTmuxPicker(issueID string) (tea.Model, tea.Cmd) {
+	tmuxPlugin := m.Plugins.Tmux()
+	if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
+		m.setToast("warning", "tmux plugin disabled (--plugins=tmux)")
+		return m, nil
+	}
+
+	targets, err := tmuxPlugin.ListTargets()
+	if err != nil {
+		m.setToast("error", err.Error())
+		return m, nil
+	}
+	if len(targets) == 0 {
+		m.setToast("warning", "no tmux targets available")
+		return m, nil
+	}
+
+	m.cancelTmuxMarkCleanup()
+	m.TmuxPicker = &TmuxPickerState{
+		IssueID: strings.TrimSpace(issueID),
+		Targets: targets,
+		Index:   0,
+	}
+	m.Mode = ModeTmuxPicker
+	if err := m.markTmuxPickerSelection(); err != nil {
+		m.setToast("warning", err.Error())
+		return m, nil
+	}
+	return m, m.blinkTmuxPaneCmd(m.currentTmuxPickerPaneID())
+}
+
+func (m model) handleTmuxDetach() (tea.Model, tea.Cmd) {
+	tmuxPlugin := m.Plugins.Tmux()
+	if tmuxPlugin == nil || !tmuxPlugin.Enabled() {
+		m.setToast("warning", "tmux plugin disabled (--plugins=tmux)")
+		return m, nil
+	}
+
+	target := tmuxPlugin.CurrentTarget()
+	if target == nil {
+		m.setToast("warning", "no tmux target attached")
+		return m, nil
+	}
+
+	m.cancelTmuxMarkCleanup()
+	m.TmuxPicker = nil
+	tmuxPlugin.ClearTarget()
+	m.setToast("success", "tmux target detached")
+	return m, nil
 }
 
 func (m *model) activateEditForCurrentIssue() bool {
