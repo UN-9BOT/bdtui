@@ -540,7 +540,7 @@ func (m model) inspectorInnerWidth() int {
 
 func (m model) inspectorInnerHeight() int {
 	const (
-		collapsedInner   = 4
+		collapsedInner   = 5
 		maxPercentNum    = 2 // 2/5 = 40%
 		maxPercentDen    = 5
 		minOuter         = 5

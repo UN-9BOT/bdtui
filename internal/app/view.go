@@ -556,13 +556,11 @@ func (m model) renderInspector() string {
 		metaLine,
 	}
 
-	if m.ShowDetails {
-		expanded := m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview
-		details := detailLines(issue, inner, expanded)
-		lines = append(lines, details...)
-		if m.Mode == ModeDescriptionPreview {
-			lines = highlightDetailsItem(lines, m.DetailsItem, m.Styles.Selected)
-		}
+	expanded := m.Mode == ModeDetails || m.Mode == ModeDescriptionPreview
+	details := detailLines(issue, inner, expanded)
+	lines = append(lines, details...)
+	if m.Mode == ModeDescriptionPreview {
+		lines = highlightDetailsItem(lines, m.DetailsItem, m.Styles.Selected)
 	}
 
 	for len(lines) < innerHeight {

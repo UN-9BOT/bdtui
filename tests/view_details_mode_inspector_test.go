@@ -96,9 +96,9 @@ func TestRenderInspectorUsesCompactPreviewOnBoardAndExpandedPreviewInDetails(t *
 
 	m := model{
 		Width:       100,
-		Height:      30,
+		Height:      40,
 		Mode:        ModeBoard,
-		ShowDetails: true,
+		ShowDetails: false,
 		DetailsItem: 3,
 		Styles:      newStyles(),
 		Columns: map[Status][]Issue{
