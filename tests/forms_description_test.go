@@ -1,6 +1,9 @@
 package bdtui_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestIssueFormDescriptionExcludedFromEditableFields(t *testing.T) {
 	t.Parallel()
@@ -48,5 +51,20 @@ func TestFirstNDescriptionLines(t *testing.T) {
 	}
 	if lines[0] != "1" || lines[4] != "5" {
 		t.Fatalf("unexpected lines: %#v", lines)
+	}
+}
+
+func TestFirstNDescriptionLinesKeepsPlainMarkdownText(t *testing.T) {
+	t.Parallel()
+
+	lines, clipped := firstNDescriptionLines("# H1\n- one\n`code`", 5, 40)
+	if clipped {
+		t.Fatalf("expected clipped=false")
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "\x1b[") {
+		t.Fatalf("expected plain text preview without ANSI markdown styling, got %#v", lines)
+	}
+	if lines[0] != "# H1" {
+		t.Fatalf("expected raw markdown in form preview, got %#v", lines)
 	}
 }

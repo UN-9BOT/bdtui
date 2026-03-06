@@ -629,11 +629,7 @@ func detailLines(issue *Issue, inner int) []string {
 		available = 1
 	}
 
-	descRaw := defaultString(issue.Description, "-")
-	descLines := wrapPlainText(descRaw, available)
-	if len(descLines) == 0 {
-		descLines = []string{"-"}
-	}
+	descLines := renderDescriptionLines(issue.Description, available)
 	lines = append(lines, keyStyle.Render(prefix)+descLines[0])
 	indent := strings.Repeat(" ", len(prefix))
 	for _, line := range descLines[1:] {

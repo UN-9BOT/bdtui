@@ -30,3 +30,27 @@ func TestDetailLinesHighlightsMetaKeys(t *testing.T) {
 		t.Fatalf("expected description line to contain styled key, got %q", lines[0])
 	}
 }
+
+func TestDetailLinesRendersMarkdownDescription(t *testing.T) {
+	issue := &Issue{
+		Description: "# Header\n\n- one\n- two\n\n`code`",
+	}
+
+	lines := detailLines(issue, 80)
+	if len(lines) < 2 {
+		t.Fatalf("expected multiline details, got %#v", lines)
+	}
+
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	if !strings.Contains(lines[0], keyStyle.Render("Description:")) {
+		t.Fatalf("expected styled Description prefix, got %q", lines[0])
+	}
+
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "• one") || !strings.Contains(joined, "• two") {
+		t.Fatalf("expected markdown list rendering, got %q", joined)
+	}
+	if strings.Contains(joined, "- one") || strings.Contains(joined, "- two") {
+		t.Fatalf("expected transformed markdown list markers, got %q", joined)
+	}
+}
