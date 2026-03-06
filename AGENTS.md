@@ -15,6 +15,7 @@ bd sync               # Sync with git
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+После реализации любой фичи обязательно запускай `make build`.
 
 **MANDATORY WORKFLOW:**
 
@@ -24,7 +25,20 @@ bd sync               # Sync with git
 4. **Clean up** - Clear stashes, prune remote branches
 5. **Verify** - All changes committed
 6. **Hand off** - Provide context for next session
-7. go build
+7. `make build`
+
+## Feature Workflow
+
+Для любого изменения обязательно создавай задачу в `bd` (beads) и веди работу через неё.
+
+Перед реализацией фичи обязательно:
+- Добавить бизнес-описание фичи в задачу
+- Согласовать план реализации
+- Согласовать DoD (Definition of Done)
+
+После реализации фичи обязательно:
+- Кратко описать, что добавлено и что изменено
+- Указать, были ли особенности/ограничения в реализации
 
 <!-- BEGIN BEADS INTEGRATION -->
 ## Issue Tracking with bd (beads)
@@ -112,6 +126,3 @@ bd automatically syncs via Dolt:
 For more details, see README.md and docs/QUICKSTART.md.
 
 <!-- END BEADS INTEGRATION -->
-
-
-run make build
