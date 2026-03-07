@@ -1583,6 +1583,7 @@ func (m model) renderDeleteModal() string {
 		previewLines = previewLines[:10]
 		previewLines = append(previewLines, "...")
 	}
+	cascadeTargets := m.deleteCascadeTargets()
 
 	lines := []string{
 		titleStyle.Render("Delete Issue"),
@@ -1598,6 +1599,22 @@ func (m model) renderDeleteModal() string {
 			continue
 		}
 		lines = append(lines, previewLineStyle.Render(previewLine))
+	}
+	if len(cascadeTargets) > 0 {
+		lines = append(lines, "")
+		lines = append(
+			lines,
+			previewTitleStyle.Render(
+				fmt.Sprintf("Cascade delete targets (%d):", len(cascadeTargets)),
+			),
+		)
+		for _, target := range cascadeTargets {
+			line := target.ID
+			if title := strings.TrimSpace(target.Title); title != "" {
+				line = fmt.Sprintf("%s: %s", target.ID, title)
+			}
+			lines = append(lines, previewLineStyle.Render(line))
+		}
 	}
 	lines = append(lines,
 		"",
@@ -1616,6 +1633,66 @@ func formatDeleteCommand(issueID string, mode DeleteMode) string {
 		cmd += " --cascade"
 	}
 	return cmd
+}
+
+func (m model) deleteCascadeTargets() []Issue {
+	if m.ConfirmDelete == nil || m.ConfirmDelete.Mode != DeleteModeCascade {
+		return nil
+	}
+
+	rootID := strings.TrimSpace(m.ConfirmDelete.IssueID)
+	if rootID == "" {
+		return nil
+	}
+
+	byID := m.deleteModalIssueIndex()
+	root := byID[rootID]
+	if root == nil {
+		return nil
+	}
+
+	visited := map[string]bool{rootID: true}
+	out := make([]Issue, 0, len(root.Children))
+
+	var walk func(issue *Issue)
+	walk = func(issue *Issue) {
+		if issue == nil {
+			return
+		}
+		for _, childID := range issue.Children {
+			childID = strings.TrimSpace(childID)
+			if childID == "" || visited[childID] {
+				continue
+			}
+			visited[childID] = true
+			child := byID[childID]
+			if child == nil {
+				continue
+			}
+			out = append(out, *child)
+			walk(child)
+		}
+	}
+
+	walk(root)
+	return out
+}
+
+func (m model) deleteModalIssueIndex() map[string]*Issue {
+	if len(m.Issues) == 0 && len(m.ByID) == 0 {
+		return nil
+	}
+
+	byID := make(map[string]*Issue, len(m.Issues)+len(m.ByID))
+	for i := range m.Issues {
+		byID[m.Issues[i].ID] = &m.Issues[i]
+	}
+	for id, issue := range m.ByID {
+		if issue != nil {
+			byID[id] = issue
+		}
+	}
+	return byID
 }
 
 func (m model) renderConfirmClosedParentCreateModal() string {

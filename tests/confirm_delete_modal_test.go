@@ -8,6 +8,14 @@ import (
 	"github.com/muesli/termenv"
 )
 
+func deleteModalIssueIndex(issues []Issue) map[string]*Issue {
+	byID := make(map[string]*Issue, len(issues))
+	for i := range issues {
+		byID[issues[i].ID] = &issues[i]
+	}
+	return byID
+}
+
 func TestRenderDeleteModalShowsBasics(t *testing.T) {
 	t.Parallel()
 
@@ -63,5 +71,89 @@ func TestRenderDeleteModalUsesColors(t *testing.T) {
 	}
 	if !strings.Contains(out, "bd delete bdtui-56i.23 --force --cascade") {
 		t.Fatalf("expected cascade command, got %q", out)
+	}
+}
+
+func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
+	t.Parallel()
+
+	issues := []Issue{
+		{
+			ID:       "bdtui-56i",
+			Title:    "Epic",
+			Children: []string{"bdtui-56i.33", "bdtui-56i.34"},
+		},
+		{
+			ID:       "bdtui-56i.33",
+			Title:    "Child task",
+			Parent:   "bdtui-56i",
+			Children: []string{"bdtui-56i.33.1"},
+		},
+		{
+			ID:     "bdtui-56i.34",
+			Title:  "Sibling task",
+			Parent: "bdtui-56i",
+		},
+		{
+			ID:     "bdtui-56i.33.1",
+			Title:  "Grandchild task",
+			Parent: "bdtui-56i.33",
+		},
+	}
+
+	m := model{
+		Issues: issues,
+		ByID:   deleteModalIssueIndex(issues),
+		ConfirmDelete: &ConfirmDelete{
+			IssueID: "bdtui-56i",
+			Mode:    DeleteModeCascade,
+			Preview: "preview",
+		},
+	}
+
+	out := m.RenderDeleteModal()
+	if !strings.Contains(out, "Cascade delete targets (3):") {
+		t.Fatalf("expected cascade targets section, got %q", out)
+	}
+	for _, expected := range []string{
+		"bdtui-56i.33: Child task",
+		"bdtui-56i.34: Sibling task",
+		"bdtui-56i.33.1: Grandchild task",
+	} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("expected cascade target %q, got %q", expected, out)
+		}
+	}
+}
+
+func TestRenderDeleteModalHidesCascadeTargetsOutsideCascadeMode(t *testing.T) {
+	t.Parallel()
+
+	issues := []Issue{
+		{
+			ID:       "bdtui-56i",
+			Title:    "Epic",
+			Children: []string{"bdtui-56i.33"},
+		},
+		{
+			ID:     "bdtui-56i.33",
+			Title:  "Child task",
+			Parent: "bdtui-56i",
+		},
+	}
+
+	m := model{
+		Issues: issues,
+		ByID:   deleteModalIssueIndex(issues),
+		ConfirmDelete: &ConfirmDelete{
+			IssueID: "bdtui-56i",
+			Mode:    DeleteModeForce,
+			Preview: "preview",
+		},
+	}
+
+	out := m.RenderDeleteModal()
+	if strings.Contains(out, "Cascade delete targets") {
+		t.Fatalf("expected no cascade targets section in force mode, got %q", out)
 	}
 }
