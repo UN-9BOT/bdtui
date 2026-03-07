@@ -71,9 +71,12 @@ func TestRenderDeleteModalUsesColors(t *testing.T) {
 		t.Fatalf("expected styled title, got %q", out)
 	}
 
-	cascadeStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("2 cascade")
+	cascadeStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("cascade")
 	if !strings.Contains(out, cascadeStyled) {
 		t.Fatalf("expected styled cascade option, got %q", out)
+	}
+	if !strings.Contains(out, "Tab switch mode") {
+		t.Fatalf("expected tab switch hint, got %q", out)
 	}
 	if !strings.Contains(out, "bd delete bdtui-56i.23 --force --cascade") {
 		t.Fatalf("expected cascade command, got %q", out)

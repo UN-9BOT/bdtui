@@ -1570,14 +1570,14 @@ func (m model) renderDeleteModal() string {
 	cascadeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	modeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 
-	forceOption := modeStyle.Render("1 force")
-	cascadeOption := modeStyle.Render("2 cascade")
+	forceOption := modeStyle.Render("force")
+	cascadeOption := modeStyle.Render("cascade")
 	modeLine := forceStyle.Render("force")
 	if m.ConfirmDelete.Mode == DeleteModeCascade {
-		cascadeOption = cascadeStyle.Render("2 cascade")
+		cascadeOption = cascadeStyle.Render("cascade")
 		modeLine = cascadeStyle.Render("cascade")
 	} else {
-		forceOption = forceStyle.Render("1 force")
+		forceOption = forceStyle.Render("force")
 	}
 
 	previewLines := strings.Split(m.ConfirmDelete.Preview, "\n")
@@ -1622,7 +1622,7 @@ func (m model) renderDeleteModal() string {
 		labelStyle.Render("Command:"),
 		commandStyle.Render(formatDeleteCommand(m.ConfirmDelete.IssueID, m.ConfirmDelete.Mode)),
 		"",
-		forceOption+" | "+cascadeOption,
+		forceOption+" | "+cascadeOption+" | "+hintStyle.Render("Tab switch mode"),
 		confirmStyle.Render("y/Enter")+" "+hintStyle.Render("confirm")+" | "+cancelStyle.Render("n/Esc")+" "+hintStyle.Render("cancel"),
 	)
 	return lipgloss.NewStyle().Width(innerWidth).Render(strings.Join(lines, "\n"))

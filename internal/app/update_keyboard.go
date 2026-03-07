@@ -944,13 +944,14 @@ func (m model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ConfirmDelete = nil
 		m.Mode = ModeBoard
 		return m, nil
-	case "1":
-		m.ConfirmDelete.Mode = DeleteModeForce
-		m.ConfirmDelete.Selected = 0
-		return m, nil
-	case "2":
-		m.ConfirmDelete.Mode = DeleteModeCascade
-		m.ConfirmDelete.Selected = 1
+	case "tab", "shift+tab":
+		if m.ConfirmDelete.Mode == DeleteModeCascade {
+			m.ConfirmDelete.Mode = DeleteModeForce
+			m.ConfirmDelete.Selected = 0
+		} else {
+			m.ConfirmDelete.Mode = DeleteModeCascade
+			m.ConfirmDelete.Selected = 1
+		}
 		return m, nil
 	case "y", "enter":
 		issueID := m.ConfirmDelete.IssueID
