@@ -93,15 +93,13 @@ func (c *BdClient) ListIssues() ([]Issue, string, error) {
 		return nil, "", err
 	}
 
-	hashSum := sha1.Sum([]byte(out))
-	hash := hex.EncodeToString(hashSum[:])
-
 	var raw []rawIssue
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
 		return nil, "", fmt.Errorf("parse bd list json: %w", err)
 	}
 
 	issues := normalizeIssues(raw)
+	hash := canonicalIssuesHash(issues)
 	return issues, hash, nil
 }
 
@@ -191,6 +189,10 @@ func normalizeIssues(raw []rawIssue) []Issue {
 		if issue.Status == StatusOpen && len(issue.BlockedBy) > 0 {
 			issue.Display = StatusBlocked
 		}
+		sort.Strings(issue.Labels)
+		sort.Strings(issue.Children)
+		sort.Strings(issue.BlockedBy)
+		sort.Strings(issue.Blocks)
 	}
 
 	sort.SliceStable(issues, func(i, j int) bool {
@@ -204,6 +206,15 @@ func normalizeIssues(raw []rawIssue) []Issue {
 	})
 
 	return issues
+}
+
+func canonicalIssuesHash(issues []Issue) string {
+	payload, err := json.Marshal(issues)
+	if err != nil {
+		payload = []byte(fmt.Sprintf("%#v", issues))
+	}
+	hashSum := sha1.Sum(payload)
+	return hex.EncodeToString(hashSum[:])
 }
 
 func (c *BdClient) CreateIssue(p CreateParams) (string, error) {

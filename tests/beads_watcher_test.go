@@ -12,17 +12,14 @@ func TestBeadsWatchTargets(t *testing.T) {
 
 	root := "/tmp/repo/.beads"
 	got := beadsWatchTargets(root)
-	if len(got) != 3 {
-		t.Fatalf("expected 3 targets, got %d", len(got))
+	if len(got) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(got))
 	}
-	if got[0] != filepath.Join(root, "last-touched") {
+	if got[0] != filepath.Join(root, "issues.jsonl") {
 		t.Fatalf("unexpected first target: %q", got[0])
 	}
-	if got[1] != filepath.Join(root, "issues.jsonl") {
+	if got[1] != root {
 		t.Fatalf("unexpected second target: %q", got[1])
-	}
-	if got[2] != root {
-		t.Fatalf("unexpected third target: %q", got[2])
 	}
 }
 
@@ -40,7 +37,7 @@ func TestIsBeadsWatchEventRelevant(t *testing.T) {
 				Name: "/repo/.beads/last-touched",
 				Op:   fsnotify.Write,
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "issues create",

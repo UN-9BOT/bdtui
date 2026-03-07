@@ -87,7 +87,7 @@ func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
 		{
 			ID:       "bdtui-56i",
 			Title:    "Epic",
-			Children: []string{"bdtui-56i.33", "bdtui-56i.34"},
+			Children: []string{"bdtui-56i.34", "bdtui-56i.33"},
 		},
 		{
 			ID:       "bdtui-56i.33",
@@ -127,12 +127,18 @@ func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
 	}
 	for _, pattern := range []string{
 		`bdtui-56i\.33\s+Child task`,
-		`bdtui-56i\.34\s+Sibling task`,
 		`bdtui-56i\.33\.1\s+Grandchild task`,
+		`bdtui-56i\.34\s+Sibling task`,
 	} {
 		if !regexp.MustCompile(pattern).MatchString(out) {
 			t.Fatalf("expected cascade target pattern %q, got %q", pattern, out)
 		}
+	}
+	idxChild := strings.Index(out, "bdtui-56i.33")
+	idxGrandchild := strings.Index(out, "bdtui-56i.33.1")
+	idxSibling := strings.Index(out, "bdtui-56i.34")
+	if !(idxChild >= 0 && idxGrandchild > idxChild && idxSibling > idxGrandchild) {
+		t.Fatalf("expected cascade targets sorted by id, got %q", out)
 	}
 }
 

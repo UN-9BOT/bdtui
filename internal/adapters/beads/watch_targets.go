@@ -9,7 +9,6 @@ import (
 
 func WatchTargets(root string) []string {
 	return []string{
-		filepath.Join(root, "last-touched"),
 		filepath.Join(root, "issues.jsonl"),
 		root,
 	}
@@ -20,5 +19,5 @@ func IsWatchEventRelevant(ev fsnotify.Event) bool {
 		return false
 	}
 	base := strings.TrimSpace(filepath.Base(ev.Name))
-	return base == "last-touched" || base == "issues.jsonl"
+	return base == "issues.jsonl"
 }

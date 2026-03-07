@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1675,6 +1676,9 @@ func (m model) deleteCascadeTargets() []Issue {
 	}
 
 	walk(root)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
