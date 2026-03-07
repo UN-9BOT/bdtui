@@ -1,6 +1,7 @@
 package bdtui_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -20,6 +21,7 @@ func TestRenderDeleteModalShowsBasics(t *testing.T) {
 	t.Parallel()
 
 	m := model{
+		Width: 90,
 		ConfirmDelete: &ConfirmDelete{
 			IssueID: "bdtui-56i.23",
 			Mode:    DeleteModeForce,
@@ -33,6 +35,9 @@ func TestRenderDeleteModalShowsBasics(t *testing.T) {
 	}
 	if !strings.Contains(out, "bdtui-56i.23") {
 		t.Fatalf("expected issue id, got %q", out)
+	}
+	if !strings.Contains(out, "title: -") {
+		t.Fatalf("expected empty title placeholder, got %q", out)
 	}
 	if !strings.Contains(out, "line1") || !strings.Contains(out, "line2") {
 		t.Fatalf("expected preview lines, got %q", out)
@@ -48,6 +53,7 @@ func TestRenderDeleteModalUsesColors(t *testing.T) {
 	defer lipgloss.SetColorProfile(prevProfile)
 
 	m := model{
+		Width: 120,
 		ConfirmDelete: &ConfirmDelete{
 			IssueID: "bdtui-56i.23",
 			Mode:    DeleteModeCascade,
@@ -102,6 +108,7 @@ func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
 	}
 
 	m := model{
+		Width:  120,
 		Issues: issues,
 		ByID:   deleteModalIssueIndex(issues),
 		ConfirmDelete: &ConfirmDelete{
@@ -112,16 +119,19 @@ func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
 	}
 
 	out := m.RenderDeleteModal()
+	if !strings.Contains(out, "title: Epic") {
+		t.Fatalf("expected root title line, got %q", out)
+	}
 	if !strings.Contains(out, "Cascade delete targets (3):") {
 		t.Fatalf("expected cascade targets section, got %q", out)
 	}
-	for _, expected := range []string{
-		"bdtui-56i.33: Child task",
-		"bdtui-56i.34: Sibling task",
-		"bdtui-56i.33.1: Grandchild task",
+	for _, pattern := range []string{
+		`bdtui-56i\.33\s+Child task`,
+		`bdtui-56i\.34\s+Sibling task`,
+		`bdtui-56i\.33\.1\s+Grandchild task`,
 	} {
-		if !strings.Contains(out, expected) {
-			t.Fatalf("expected cascade target %q, got %q", expected, out)
+		if !regexp.MustCompile(pattern).MatchString(out) {
+			t.Fatalf("expected cascade target pattern %q, got %q", pattern, out)
 		}
 	}
 }
@@ -143,6 +153,7 @@ func TestRenderDeleteModalHidesCascadeTargetsOutsideCascadeMode(t *testing.T) {
 	}
 
 	m := model{
+		Width:  120,
 		Issues: issues,
 		ByID:   deleteModalIssueIndex(issues),
 		ConfirmDelete: &ConfirmDelete{
@@ -155,5 +166,80 @@ func TestRenderDeleteModalHidesCascadeTargetsOutsideCascadeMode(t *testing.T) {
 	out := m.RenderDeleteModal()
 	if strings.Contains(out, "Cascade delete targets") {
 		t.Fatalf("expected no cascade targets section in force mode, got %q", out)
+	}
+}
+
+func TestRenderDeleteModalAddsTitlesToDependencyPreviewRows(t *testing.T) {
+	t.Parallel()
+
+	issues := []Issue{
+		{
+			ID:    "bdtui-l7b",
+			Title: "notes support in bdtui",
+		},
+		{
+			ID:     "bdtui-l7b.1",
+			Title:  "Dashboard indicator",
+			Parent: "bdtui-l7b",
+		},
+	}
+
+	m := model{
+		Width:  120,
+		Issues: issues,
+		ByID:   deleteModalIssueIndex(issues),
+		ConfirmDelete: &ConfirmDelete{
+			IssueID: "bdtui-l7b",
+			Mode:    DeleteModeForce,
+			Preview: strings.Join([]string{
+				"⚠️  DELETE PREVIEW",
+				"",
+				"Dependency links to remove: 1",
+				"  bdtui-l7b.1 -> bdtui-l7b (inbound)",
+			}, "\n"),
+		},
+	}
+
+	out := m.RenderDeleteModal()
+	if !strings.Contains(out, "title: notes support in bdtui") {
+		t.Fatalf("expected root title line, got %q", out)
+	}
+	if !regexp.MustCompile(`bdtui-l7b\.1 -> bdtui-l7b \(inbound\)\s+Dashboard indicator`).MatchString(out) {
+		t.Fatalf("expected dependency row title enrichment, got %q", out)
+	}
+}
+
+func TestRenderDeleteModalTruncatesDependencyRowWithoutTitleOnNarrowWidth(t *testing.T) {
+	t.Parallel()
+
+	issues := []Issue{
+		{
+			ID:    "bdtui-l7b",
+			Title: "notes support in bdtui",
+		},
+		{
+			ID:     "bdtui-l7b.1",
+			Parent: "bdtui-l7b",
+		},
+	}
+
+	row := "  bdtui-l7b.1 -> bdtui-l7b (inbound)"
+	m := model{
+		Width:  40,
+		Issues: issues,
+		ByID:   deleteModalIssueIndex(issues),
+		ConfirmDelete: &ConfirmDelete{
+			IssueID: "bdtui-l7b",
+			Mode:    DeleteModeForce,
+			Preview: row,
+		},
+	}
+
+	out := m.RenderDeleteModal()
+	if !strings.Contains(out, "bdtui-l7b.1 -> bdtui-l7b (i…") {
+		t.Fatalf("expected dependency row truncated in single line fallback, got %q", out)
+	}
+	if strings.Contains(out, "Dashboard indicator") {
+		t.Fatalf("expected no injected title when title missing, got %q", out)
 	}
 }

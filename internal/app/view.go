@@ -1555,6 +1555,7 @@ func (m model) renderDeleteModal() string {
 		return "Delete\n\nloading..."
 	}
 
+	innerWidth := m.deleteModalInnerWidth()
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
@@ -1584,11 +1585,13 @@ func (m model) renderDeleteModal() string {
 		previewLines = append(previewLines, "...")
 	}
 	cascadeTargets := m.deleteCascadeTargets()
+	rootTitle := m.deleteModalIssueTitle(m.ConfirmDelete.IssueID)
 
 	lines := []string{
 		titleStyle.Render("Delete Issue"),
 		"",
 		labelStyle.Render("issue: ") + idStyle.Render(m.ConfirmDelete.IssueID),
+		labelStyle.Render("title: ") + previewLineStyle.Render(defaultString(rootTitle, "-")),
 		labelStyle.Render("Mode: ") + modeLine,
 		"",
 		previewTitleStyle.Render("Preview:"),
@@ -1598,7 +1601,7 @@ func (m model) renderDeleteModal() string {
 			lines = append(lines, "")
 			continue
 		}
-		lines = append(lines, previewLineStyle.Render(previewLine))
+		lines = append(lines, previewLineStyle.Render(m.renderDeletePreviewLine(previewLine, innerWidth)))
 	}
 	if len(cascadeTargets) > 0 {
 		lines = append(lines, "")
@@ -1609,10 +1612,7 @@ func (m model) renderDeleteModal() string {
 			),
 		)
 		for _, target := range cascadeTargets {
-			line := target.ID
-			if title := strings.TrimSpace(target.Title); title != "" {
-				line = fmt.Sprintf("%s: %s", target.ID, title)
-			}
+			line := m.layoutDeleteModalMetaLine(target.ID, target.Title, innerWidth)
 			lines = append(lines, previewLineStyle.Render(line))
 		}
 	}
@@ -1624,7 +1624,7 @@ func (m model) renderDeleteModal() string {
 		forceOption+" | "+cascadeOption,
 		confirmStyle.Render("y/Enter")+" "+hintStyle.Render("confirm")+" | "+cancelStyle.Render("n/Esc")+" "+hintStyle.Render("cancel"),
 	)
-	return strings.Join(lines, "\n")
+	return lipgloss.NewStyle().Width(innerWidth).Render(strings.Join(lines, "\n"))
 }
 
 func formatDeleteCommand(issueID string, mode DeleteMode) string {
@@ -1678,6 +1678,21 @@ func (m model) deleteCascadeTargets() []Issue {
 	return out
 }
 
+func (m model) deleteModalInnerWidth() int {
+	available := m.Width - 12
+	if available < 30 {
+		available = 30
+	}
+	target := max(72, (m.Width*3)/5)
+	if target > available {
+		target = available
+	}
+	if target < 30 {
+		target = 30
+	}
+	return target
+}
+
 func (m model) deleteModalIssueIndex() map[string]*Issue {
 	if len(m.Issues) == 0 && len(m.ByID) == 0 {
 		return nil
@@ -1693,6 +1708,67 @@ func (m model) deleteModalIssueIndex() map[string]*Issue {
 		}
 	}
 	return byID
+}
+
+func (m model) deleteModalIssueTitle(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	issue := m.deleteModalIssueIndex()[id]
+	if issue == nil {
+		return ""
+	}
+	return strings.TrimSpace(issue.Title)
+}
+
+func (m model) renderDeletePreviewLine(line string, width int) string {
+	trimmed := strings.TrimRight(line, " ")
+	issueID, ok := parseDeletePreviewIssueID(trimmed)
+	if !ok {
+		return truncate(trimmed, width)
+	}
+	title := m.deleteModalIssueTitle(issueID)
+	if title == "" {
+		return truncate(trimmed, width)
+	}
+	return m.layoutDeleteModalMetaLine(trimmed, title, width)
+}
+
+func (m model) layoutDeleteModalMetaLine(left string, right string, width int) string {
+	left = strings.TrimRight(left, " ")
+	right = strings.TrimSpace(right)
+	if right == "" || width <= 0 {
+		return left
+	}
+
+	maxRightWidth := min(max(16, width/3), max(1, width-2))
+	rightText := truncate(right, maxRightWidth)
+	leftWidth := width - 1 - lipgloss.Width(rightText)
+	if leftWidth < 12 {
+		return truncate(left, width)
+	}
+
+	leftText := truncate(left, leftWidth)
+	gapWidth := width - lipgloss.Width(leftText) - lipgloss.Width(rightText)
+	if gapWidth < 1 {
+		return truncate(left, width)
+	}
+	return leftText + strings.Repeat(" ", gapWidth) + rightText
+}
+
+func parseDeletePreviewIssueID(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", false
+	}
+	if idx := strings.Index(trimmed, " -> "); idx > 0 {
+		id := strings.TrimSpace(trimmed[:idx])
+		if id != "" {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 func (m model) renderConfirmClosedParentCreateModal() string {
