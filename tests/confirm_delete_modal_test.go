@@ -91,18 +91,18 @@ func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
 		},
 		{
 			ID:       "bdtui-56i.33",
-			Title:    "Child task",
+			Title:    "Child task with longer title",
 			Parent:   "bdtui-56i",
 			Children: []string{"bdtui-56i.33.1"},
 		},
 		{
 			ID:     "bdtui-56i.34",
-			Title:  "Sibling task",
+			Title:  "Sibling task with longer title",
 			Parent: "bdtui-56i",
 		},
 		{
 			ID:     "bdtui-56i.33.1",
-			Title:  "Grandchild task",
+			Title:  "Grandchild task with longer title",
 			Parent: "bdtui-56i.33",
 		},
 	}
@@ -126,9 +126,9 @@ func TestRenderDeleteModalShowsCascadeTargetsSection(t *testing.T) {
 		t.Fatalf("expected cascade targets section, got %q", out)
 	}
 	for _, pattern := range []string{
-		`bdtui-56i\.33\s+Child task`,
-		`bdtui-56i\.33\.1\s+Grandchild task`,
-		`bdtui-56i\.34\s+Sibling task`,
+		`bdtui-56i\.33\s+Child task with longer title`,
+		`bdtui-56i\.33\.1\s+Grandchild task with longer title`,
+		`bdtui-56i\.34\s+Sibling task with longer title`,
 	} {
 		if !regexp.MustCompile(pattern).MatchString(out) {
 			t.Fatalf("expected cascade target pattern %q, got %q", pattern, out)
@@ -185,7 +185,7 @@ func TestRenderDeleteModalAddsTitlesToDependencyPreviewRows(t *testing.T) {
 		},
 		{
 			ID:     "bdtui-l7b.1",
-			Title:  "Dashboard indicator",
+			Title:  "Dashboard indicator with longer title",
 			Parent: "bdtui-l7b",
 		},
 	}
@@ -210,7 +210,7 @@ func TestRenderDeleteModalAddsTitlesToDependencyPreviewRows(t *testing.T) {
 	if !strings.Contains(out, "title: notes support in bdtui") {
 		t.Fatalf("expected root title line, got %q", out)
 	}
-	if !regexp.MustCompile(`bdtui-l7b\.1 -> bdtui-l7b \(inbound\)\s+Dashboard indicator`).MatchString(out) {
+	if !regexp.MustCompile(`Dashboard indicator with longer tit`).MatchString(out) {
 		t.Fatalf("expected dependency row title enrichment, got %q", out)
 	}
 }

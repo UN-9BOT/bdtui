@@ -1746,7 +1746,7 @@ func (m model) layoutDeleteModalMetaLine(left string, right string, width int) s
 		return left
 	}
 
-	maxRightWidth := min(max(16, width/3), max(1, width-2))
+	maxRightWidth := min(max(24, width/2), max(1, width-2))
 	rightText := truncate(right, maxRightWidth)
 	leftWidth := width - 1 - lipgloss.Width(rightText)
 	if leftWidth < 12 {
