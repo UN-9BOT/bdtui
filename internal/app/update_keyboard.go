@@ -480,15 +480,11 @@ func (m model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		if !m.Form.isTextField(m.Form.currentField()) {
 			m.Form.cycleEnum(1)
-		} else {
-			m.Form.nextField()
 		}
 		return m, nil
 	case "shift+tab":
 		if !m.Form.isTextField(m.Form.currentField()) {
 			m.Form.cycleEnum(-1)
-		} else {
-			m.Form.prevField()
 		}
 		return m, nil
 	case "ctrl+x":

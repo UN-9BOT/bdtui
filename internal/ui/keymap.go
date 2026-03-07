@@ -51,8 +51,8 @@ func DefaultKeymap() Keymap {
 			"t d: detach current tmux target",
 		},
 		Form: []string{
-			"Tab/Shift+Tab: next/previous field",
-			"↑/↓: cycle enum fields",
+			"↑/↓: next/previous field",
+			"Tab/Shift+Tab: cycle enum/select fields",
 			"Ctrl+X: open fields in $EDITOR",
 			"Enter: save",
 			"Esc: Create closes when title is empty, Edit saves",
