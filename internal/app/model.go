@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"bdtui/internal/logger"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -753,6 +755,9 @@ func (m model) selectedVisibleRowIndex(status Status) int {
 func (m model) loadCmd(source string) tea.Cmd {
 	return func() tea.Msg {
 		issues, hash, err := m.Client.ListIssues()
+		if err != nil {
+			logger.Error("load issues failed (source=%s): %v", source, err)
+		}
 		return loadedMsg{Issues: issues, hash: hash, err: err, source: source}
 	}
 }
@@ -760,6 +765,9 @@ func (m model) loadCmd(source string) tea.Cmd {
 func opCmd(info string, fn func() error) tea.Cmd {
 	return func() tea.Msg {
 		err := fn()
+		if err != nil {
+			logger.Error("operation failed (%s): %v", info, err)
+		}
 		return opMsg{info: info, err: err}
 	}
 }
@@ -767,6 +775,9 @@ func opCmd(info string, fn func() error) tea.Cmd {
 func pluginCmd(info string, fn func() error) tea.Cmd {
 	return func() tea.Msg {
 		err := fn()
+		if err != nil {
+			logger.Error("plugin failed (%s): %v", info, err)
+		}
 		return pluginMsg{info: info, err: err}
 	}
 }

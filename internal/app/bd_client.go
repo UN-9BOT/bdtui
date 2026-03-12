@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bdtui/internal/logger"
 )
 
 type BdClient struct {
@@ -79,6 +81,7 @@ func (c *BdClient) run(args ...string) (string, error) {
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {
+		logger.Error("bd %s failed: %v | output: %s", strings.Join(args, " "), err, text)
 		if text == "" {
 			return "", fmt.Errorf("bd %s failed: %w", strings.Join(args, " "), err)
 		}
