@@ -146,3 +146,4 @@ bd create "Title" -d "desc" -t task -p 2 --json  # Create issue
 - ❌ Do NOT use external issue trackers
 
 <!-- END BEADS INTEGRATION -->
+![2026-03-12-15-08-49](.idea/images/2026-03-12-15-08-49.png)

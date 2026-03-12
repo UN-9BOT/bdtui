@@ -826,6 +826,7 @@ func (m model) helpContentLines() []string {
 	query := strings.TrimSpace(strings.ToLower(m.HelpQuery))
 	global := m.filterHelpEntries(m.Keymap.Global, query)
 	leader := m.filterHelpEntries(m.Keymap.Leader, query)
+	tmux := m.filterHelpEntries(m.Keymap.Tmux, query)
 	form := m.filterHelpEntries(m.Keymap.Form, query)
 
 	lines = append(lines, "")
@@ -839,11 +840,16 @@ func (m model) helpContentLines() []string {
 		lines = append(lines, leader...)
 		lines = append(lines, "")
 	}
+	if len(tmux) > 0 {
+		lines = append(lines, "Tmux (t):")
+		lines = append(lines, tmux...)
+		lines = append(lines, "")
+	}
 	if len(form) > 0 {
 		lines = append(lines, "Forms:")
 		lines = append(lines, form...)
 	}
-	if len(global) == 0 && len(leader) == 0 && len(form) == 0 {
+	if len(global) == 0 && len(leader) == 0 && len(tmux) == 0 && len(form) == 0 {
 		lines = append(lines, "No matches")
 	}
 	return lines
@@ -994,7 +1000,7 @@ func (m model) styleHelpContentLine(raw string, padded string) string {
 		return padded
 	case "Hotkeys":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true).Render(padded)
-	case "Global:", "Leader (g):", "Forms:":
+	case "Global:", "Leader (g):", "Tmux (t):", "Forms:":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Bold(true).Render(padded)
 	case "No matches":
 		return m.Styles.Dim.Render(padded)

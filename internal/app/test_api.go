@@ -133,6 +133,10 @@ func MarshalEditorContent(payload FormEditorPayload) ([]byte, error) {
 	return marshalEditorContent(payload)
 }
 
+func EditorTempDir() string {
+	return editorTempDir()
+}
+
 func BeadsWatchTargets(root string) []string {
 	return beadsWatchTargets(root)
 }

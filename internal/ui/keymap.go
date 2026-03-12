@@ -3,6 +3,7 @@ package ui
 type Keymap struct {
 	Global []string
 	Leader []string
+	Tmux   []string
 	Form   []string
 }
 
@@ -45,6 +46,8 @@ func DefaultKeymap() Keymap {
 			"g d: show dependencies",
 			"g D: toggle dim override (auto → bright → dim → auto)",
 			"g o: toggle sort mode",
+		},
+		Tmux: []string{
 			"t s: send selected issue to attached tmux target",
 			"t S: pick tmux target, then send selected issue",
 			"t a: attach/change tmux target without sending",

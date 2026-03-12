@@ -1,8 +1,12 @@
 package bdtui_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	b "bdtui/internal/app"
 )
 
 func TestParseEditorContentPreservesDescriptionNewlines(t *testing.T) {
@@ -182,4 +186,25 @@ func editorDocument(description string) string {
 		"---",
 		description,
 	}, "\n")
+}
+
+func TestEditorTempDir(t *testing.T) {
+	t.Parallel()
+
+	dir := b.EditorTempDir()
+	expected := filepath.Join(".idea", "tmp")
+
+	if dir != expected {
+		t.Fatalf("expected %q, got %q", expected, dir)
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("directory %q should exist: %v", dir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q should be a directory", dir)
+	}
+
+	_ = os.RemoveAll(dir)
 }

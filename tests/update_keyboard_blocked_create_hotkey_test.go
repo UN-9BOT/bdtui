@@ -102,6 +102,7 @@ func TestDefaultKeymapDoesNotAdvertiseLeaderGb(t *testing.T) {
 	keymap := defaultKeymap()
 	global := strings.Join(keymap.Global, "\n")
 	leader := strings.Join(keymap.Leader, "\n")
+	tmux := strings.Join(keymap.Tmux, "\n")
 	if strings.Contains(leader, "g b") {
 		t.Fatalf("expected leader keymap to remove g b, got %q", leader)
 	}
@@ -118,8 +119,8 @@ func TestDefaultKeymapDoesNotAdvertiseLeaderGb(t *testing.T) {
 		t.Fatalf("expected global keymap to advertise t leader, got %q", global)
 	}
 	for _, expected := range []string{"t s:", "t S:", "t a:", "t d:"} {
-		if !strings.Contains(leader, expected) {
-			t.Fatalf("expected leader keymap to include %q, got %q", expected, leader)
+		if !strings.Contains(tmux, expected) {
+			t.Fatalf("expected tmux keymap to include %q, got %q", expected, tmux)
 		}
 	}
 }

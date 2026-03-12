@@ -4,12 +4,24 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"gopkg.in/yaml.v3"
 )
+
+// editorTempDir returns the directory for editor temp files (.idea/tmp/).
+// It creates the directory if it does not exist.
+func editorTempDir() string {
+	dir := filepath.Join(".idea", "tmp")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		// Fallback to system temp dir if .idea/tmp cannot be created
+		return ""
+	}
+	return dir
+}
 
 type formEditorPayload struct {
 	Title       string
@@ -59,7 +71,7 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 		return nil, fmt.Errorf("marshal form for editor: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp("", "bdtui-form-*.md")
+	tmpFile, err := os.CreateTemp(editorTempDir(), "bdtui-form-*.md")
 	if err != nil {
 		return nil, fmt.Errorf("create temp editor file: %w", err)
 	}
