@@ -1,6 +1,7 @@
 /bdtui
 /bin/
 .beads
+!tests/fixtures/testdb/.beads/
 .idea/project.shada
 .ralph-tui
 .idea/walkthrough.md

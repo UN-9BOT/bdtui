@@ -1,0 +1,11 @@
+# Beads Configuration for Test Database
+# This is a test fixture with comprehensive test data
+
+# Issue prefix for test issues
+issue-prefix: "test"
+
+# Use no-db mode: load from JSONL
+no-db: true
+
+# Enable auto-start of Dolt server for convenience
+dolt.auto-start: true
