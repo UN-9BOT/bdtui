@@ -402,6 +402,14 @@ func (m model) selectedBlocksSet() map[string]bool {
 	return ids
 }
 
+func (m model) selectedGhostCopiesSet() map[string]bool {
+	issue := m.currentIssue()
+	if issue == nil || len(issue.Children) == 0 {
+		return nil
+	}
+	return map[string]bool{issue.ID: true}
+}
+
 func (m model) renderColumn(status Status, width int, innerHeight int, active bool) string {
 	borderColor := columnBorderColor(status, active)
 	border := columnBorderStyle(active)
@@ -418,6 +426,7 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 	rows, issueRowIndex := m.buildColumnRows(status)
 	selectedBlockedBy := m.selectedBlockedBySet()
 	selectedBlocks := m.selectedBlocksSet()
+	selectedGhostCopies := m.selectedGhostCopiesSet()
 	idx := m.SelectedIdx[status]
 	if idx < 0 {
 		idx = 0
@@ -477,6 +486,9 @@ func (m model) renderColumn(status Status, width int, innerHeight int, active bo
 			if rowItem.ghost {
 				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("242"), true).
 					Render(renderIssueRowGhostPlain(rowItem.issue, maxTextWidth, rowItem.depth))
+				if !grayBoard && selectedGhostCopies != nil && selectedGhostCopies[rowItem.issue.ID] {
+					row = renderIssueRowDependencyAccent(rowItem.issue, maxTextWidth, rowItem.depth, m.Collapsed, dashboardGhostCopyHighlightStyle(rowItem.issue.IssueType))
+				}
 			}
 			if grayBoard && !rowItem.ghost {
 				row = dashboardDimmedRowStyle(rowItem.issue.IssueType, lipgloss.Color("243"), false).
@@ -2257,6 +2269,17 @@ func dashboardBlocksRowStyle(issueType string) lipgloss.Style {
 		Foreground(lipgloss.Color("94")).
 		Background(lipgloss.Color("229")).
 		Bold(true)
+	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
+		style = style.Bold(true)
+	}
+	return style
+}
+
+func dashboardGhostCopyHighlightStyle(issueType string) lipgloss.Style {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("31")).
+		Background(lipgloss.Color("189")).
+		Faint(true)
 	if _, isEpic := dashboardEpicAccentStyle(issueType); isEpic {
 		style = style.Bold(true)
 	}

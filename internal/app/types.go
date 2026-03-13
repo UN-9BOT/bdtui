@@ -148,11 +148,13 @@ const (
 type PromptAction string
 
 const (
-	PromptAssignee  PromptAction = "assignee"
-	PromptLabels    PromptAction = "labels"
-	PromptDepAdd    PromptAction = "dep_add"
-	PromptDepRemove PromptAction = "dep_remove"
-	PromptParentSet PromptAction = "parent_set"
+	PromptAssignee     PromptAction = "assignee"
+	PromptLabels       PromptAction = "labels"
+	PromptDepAdd       PromptAction = "dep_add"
+	PromptDepRemove    PromptAction = "dep_remove"
+	PromptParentSet    PromptAction = "parent_set"
+	PromptCloseReason  PromptAction = "close_reason"
+	PromptReopenReason PromptAction = "reopen_reason"
 )
 
 type PromptState struct {

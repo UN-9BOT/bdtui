@@ -1211,9 +1211,12 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		id := issue.ID
 		if issue.Status == StatusClosed {
-			return m, opCmd(fmt.Sprintf("%s reopened", id), func() error { return m.Client.ReopenIssue(id) })
+			m.Prompt = newPrompt(ModePrompt, "Reopen Issue", "Enter reopen reason:", id, PromptReopenReason, "")
+		} else {
+			m.Prompt = newPrompt(ModePrompt, "Close Issue", "Enter close reason:", id, PromptCloseReason, "")
 		}
-		return m, opCmd(fmt.Sprintf("%s closed", id), func() error { return m.Client.CloseIssue(id) })
+		m.Mode = ModePrompt
+		return m, nil
 	case "d":
 		issue := m.currentIssue()
 		if issue == nil {
@@ -1717,6 +1720,38 @@ func (m model) submitPrompt(issueID string, action PromptAction, value string) t
 		return opCmd("parent updated", func() error {
 			v := value
 			return m.Client.UpdateIssue(UpdateParams{ID: issueID, Parent: &v})
+		})
+	case PromptCloseReason:
+		issue := m.ByID[issueID]
+		if issue == nil {
+			return opCmd("", func() error { return fmt.Errorf("issue not found: %s", issueID) })
+		}
+		newDesc := issue.Description
+		if value != "" {
+			timestamp := time.Now().Format("2006-01-02 15:04")
+			newDesc = fmt.Sprintf("%s\n\n---\n**Closed**: %s - %s", strings.TrimSpace(newDesc), timestamp, value)
+		}
+		return opCmd(fmt.Sprintf("%s closed", issueID), func() error {
+			if err := m.Client.UpdateIssue(UpdateParams{ID: issueID, Description: &newDesc}); err != nil {
+				return err
+			}
+			return m.Client.CloseIssue(issueID)
+		})
+	case PromptReopenReason:
+		issue := m.ByID[issueID]
+		if issue == nil {
+			return opCmd("", func() error { return fmt.Errorf("issue not found: %s", issueID) })
+		}
+		newDesc := issue.Description
+		if value != "" {
+			timestamp := time.Now().Format("2006-01-02 15:04")
+			newDesc = fmt.Sprintf("%s\n\n---\n**Reopened**: %s - %s", strings.TrimSpace(newDesc), timestamp, value)
+		}
+		return opCmd(fmt.Sprintf("%s reopened", issueID), func() error {
+			if err := m.Client.UpdateIssue(UpdateParams{ID: issueID, Description: &newDesc}); err != nil {
+				return err
+			}
+			return m.Client.ReopenIssue(issueID)
 		})
 	default:
 		return opCmd("", func() error { return fmt.Errorf("unknown prompt action") })
