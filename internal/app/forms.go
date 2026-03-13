@@ -58,6 +58,7 @@ func newIssueFormEdit(issue *Issue, issues []Issue) *IssueForm {
 		Cursor:      0,
 		Title:       issue.Title,
 		Description: issue.Description,
+		Notes:       issue.Notes,
 		Status:      issue.Status,
 		Priority:    issue.Priority,
 		IssueType:   issue.IssueType,

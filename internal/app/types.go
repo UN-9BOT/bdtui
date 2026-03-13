@@ -173,6 +173,7 @@ type IssueForm struct {
 
 	Title       string
 	Description string
+	Notes       string
 	Status      Status
 	Priority    int
 	IssueType   string

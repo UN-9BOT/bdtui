@@ -26,6 +26,7 @@ func editorTempDir() string {
 type formEditorPayload struct {
 	Title       string
 	Description string
+	Notes       string
 	Status      string
 	Priority    int
 	IssueType   string
@@ -60,6 +61,7 @@ func (m model) openFormInEditorCmd() (tea.Cmd, error) {
 	payload := formEditorPayload{
 		Title:       m.Form.Title,
 		Description: m.Form.Description,
+		Notes:       m.Form.Notes,
 		Status:      string(m.Form.Status),
 		Priority:    m.Form.Priority,
 		IssueType:   m.Form.IssueType,
@@ -158,10 +160,16 @@ func marshalEditorContent(payload formEditorPayload) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.Write(body)
-	b.WriteString("---\n")
+	b.WriteString("---\n\n")
+	b.WriteString("---\n- DESCRIPTION\n---\n\n")
 	if payload.Description != "" {
 		b.WriteString(payload.Description)
 	}
+	b.WriteString("\n\n\n---\n- NOTES\n---\n\n")
+	if payload.Notes != "" {
+		b.WriteString(payload.Notes)
+	}
+	b.WriteString("\n")
 	return []byte(b.String()), nil
 }
 
@@ -232,21 +240,63 @@ func parseEditorContent(raw []byte) (formEditorPayload, error) {
 	}
 
 	yamlPart := rest[:idx]
-	description := rest[idx+len(sep):]
+	body := rest[idx+len(sep):]
 
 	var frontmatter formEditorFrontmatter
 	if err := yaml.Unmarshal([]byte(yamlPart), &frontmatter); err != nil {
 		return formEditorPayload{}, fmt.Errorf("invalid YAML frontmatter: %w", err)
 	}
 
+	description, notes := parseEditorSections(body)
+
 	return formEditorPayload{
 		Title:       frontmatter.Title,
 		Description: description,
+		Notes:       notes,
 		Status:      frontmatter.Status,
 		Priority:    frontmatter.Priority,
 		IssueType:   frontmatter.IssueType,
 		Parent:      frontmatter.Parent,
 	}, nil
+}
+
+const (
+	editorSectionDescStart  = "\n---\n- DESCRIPTION\n---\n\n"
+	editorSectionNotesStart = "\n---\n- NOTES\n---\n\n"
+)
+
+func parseEditorSections(body string) (description, notes string) {
+	descMarker := "\n---\n- DESCRIPTION\n---\n\n"
+	notesMarker := "\n---\n- NOTES\n---\n\n"
+
+	descStart := strings.Index(body, descMarker)
+	notesStart := strings.Index(body, notesMarker)
+
+	if descStart == -1 && notesStart == -1 {
+		return body, ""
+	}
+
+	if descStart == -1 {
+		descStart = 0
+	} else {
+		descStart += len(descMarker)
+	}
+
+	if notesStart == -1 {
+		description = body[descStart:]
+		return description, ""
+	}
+
+	if notesStart < descStart {
+		description = ""
+		notes = body[notesStart+len(notesMarker):]
+		return description, notes
+	}
+
+	description = strings.TrimRight(body[descStart:notesStart], "\n")
+	notes = body[notesStart+len(notesMarker):]
+
+	return description, notes
 }
 
 func normalizeEditorScalar(value string) string {

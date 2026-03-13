@@ -1409,6 +1409,11 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 		upd.Description = &v
 		changed++
 	}
+	if form.Notes != form.Original.Notes {
+		v := form.Notes
+		upd.Notes = &v
+		changed++
+	}
 	if form.Status != form.Original.Status {
 		v := form.Status
 		upd.Status = &v

@@ -63,6 +63,7 @@ type UpdateParams struct {
 	ID          string
 	Title       *string
 	Description *string
+	Notes       *string
 	Status      *Status
 	Priority    *int
 	IssueType   *string
@@ -275,6 +276,9 @@ func (c *BdClient) UpdateIssue(p UpdateParams) error {
 	if p.Labels != nil {
 		labelsArg := strings.Join(*p.Labels, ",")
 		args = append(args, "--set-labels", labelsArg)
+	}
+	if p.Notes != nil {
+		args = append(args, "--notes", *p.Notes)
 	}
 
 	_, err := c.run(args...)
