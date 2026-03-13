@@ -506,10 +506,10 @@ func (m *model) moveSelection(delta int) {
 func (m *model) moveColumn(delta int) {
 	next := m.SelectedCol + delta
 	if next < 0 {
-		next = 0
+		next = len(statusOrder) - 1
 	}
 	if next >= len(statusOrder) {
-		next = len(statusOrder) - 1
+		next = 0
 	}
 	m.SelectedCol = next
 	m.ensureSelectionVisible(m.currentStatus())
