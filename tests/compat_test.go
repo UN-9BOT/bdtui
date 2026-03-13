@@ -90,6 +90,7 @@ var (
 
 	parseEditorContent   = b.ParseEditorContent
 	marshalEditorContent = b.MarshalEditorContent
+	parseEditorSections  = b.ParseEditorSections
 
 	beadsWatchTargets         = b.BeadsWatchTargets
 	isBeadsWatchEventRelevant = b.IsBeadsWatchEventRelevant

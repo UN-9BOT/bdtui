@@ -208,3 +208,157 @@ func TestEditorTempDir(t *testing.T) {
 
 	_ = os.RemoveAll(dir)
 }
+
+func TestParseEditorSectionsDescriptionOnly(t *testing.T) {
+	t.Parallel()
+
+	body := "\n---\n- DESCRIPTION\n---\n\nline 1\nline 2"
+	desc, notes := parseEditorSections(body)
+
+	if desc != "line 1\nline 2" {
+		t.Fatalf("unexpected description: %q", desc)
+	}
+	if notes != "" {
+		t.Fatalf("expected empty notes, got: %q", notes)
+	}
+}
+
+func TestParseEditorSectionsNotesOnly(t *testing.T) {
+	t.Parallel()
+
+	body := "\n---\n- NOTES\n---\n\nnote line"
+	desc, notes := parseEditorSections(body)
+
+	if desc != "" {
+		t.Fatalf("expected empty description, got: %q", desc)
+	}
+	if notes != "note line" {
+		t.Fatalf("unexpected notes: %q", notes)
+	}
+}
+
+func TestParseEditorSectionsBothDescriptionAndNotes(t *testing.T) {
+	t.Parallel()
+
+	body := "\n---\n- DESCRIPTION\n---\n\ndesc content\n\n---\n- NOTES\n---\n\nnotes content"
+	desc, notes := parseEditorSections(body)
+
+	if desc != "desc content" {
+		t.Fatalf("unexpected description: %q", desc)
+	}
+	if notes != "notes content" {
+		t.Fatalf("unexpected notes: %q", notes)
+	}
+}
+
+func TestParseEditorSectionsNoMarkers(t *testing.T) {
+	t.Parallel()
+
+	body := "plain text without markers"
+	desc, notes := parseEditorSections(body)
+
+	if desc != "plain text without markers" {
+		t.Fatalf("unexpected description: %q", desc)
+	}
+	if notes != "" {
+		t.Fatalf("expected empty notes, got: %q", notes)
+	}
+}
+
+func TestMarshalEditorContentWithNotes(t *testing.T) {
+	t.Parallel()
+
+	payload := formEditorPayload{
+		Title:       "test",
+		Status:      "open",
+		Priority:    2,
+		IssueType:   "task",
+		Parent:      "",
+		Description: "desc content",
+		Notes:       "notes content",
+	}
+
+	raw, err := marshalEditorContent(payload)
+	if err != nil {
+		t.Fatalf("marshalEditorContent returned error: %v", err)
+	}
+
+	text := string(raw)
+	if !strings.Contains(text, "- DESCRIPTION") {
+		t.Fatal("expected DESCRIPTION marker")
+	}
+	if !strings.Contains(text, "- NOTES") {
+		t.Fatal("expected NOTES marker")
+	}
+	if !strings.Contains(text, "desc content") {
+		t.Fatal("expected description content")
+	}
+	if !strings.Contains(text, "notes content") {
+		t.Fatal("expected notes content")
+	}
+}
+
+func TestMarshalEditorContentEmptyNotes(t *testing.T) {
+	t.Parallel()
+
+	payload := formEditorPayload{
+		Title:       "test",
+		Status:      "open",
+		Priority:    2,
+		IssueType:   "task",
+		Parent:      "",
+		Description: "desc only",
+		Notes:       "",
+	}
+
+	raw, err := marshalEditorContent(payload)
+	if err != nil {
+		t.Fatalf("marshalEditorContent returned error: %v", err)
+	}
+
+	parsed, err := parseEditorContent(raw)
+	if err != nil {
+		t.Fatalf("parseEditorContent returned error: %v", err)
+	}
+
+	if parsed.Description != "desc only" {
+		t.Fatalf("unexpected description: %q", parsed.Description)
+	}
+	if strings.TrimSpace(parsed.Notes) != "" {
+		t.Fatalf("expected empty/whitespace notes, got: %q", parsed.Notes)
+	}
+}
+
+func TestRoundtripEditorContentWithNotes(t *testing.T) {
+	t.Parallel()
+
+	payload := formEditorPayload{
+		Title:       "test issue",
+		Status:      "in_progress",
+		Priority:    1,
+		IssueType:   "feature",
+		Parent:      "",
+		Description: "line 1\nline 2\nline 3",
+		Notes:       "note 1\nnote 2",
+	}
+
+	raw, err := marshalEditorContent(payload)
+	if err != nil {
+		t.Fatalf("marshalEditorContent returned error: %v", err)
+	}
+
+	parsed, err := parseEditorContent(raw)
+	if err != nil {
+		t.Fatalf("parseEditorContent returned error: %v", err)
+	}
+
+	if parsed.Title != payload.Title {
+		t.Fatalf("title mismatch: %q vs %q", parsed.Title, payload.Title)
+	}
+	if parsed.Description != payload.Description {
+		t.Fatalf("description mismatch: %q vs %q", parsed.Description, payload.Description)
+	}
+	if strings.TrimRight(parsed.Notes, "\n") != payload.Notes {
+		t.Fatalf("notes mismatch: %q vs %q", parsed.Notes, payload.Notes)
+	}
+}

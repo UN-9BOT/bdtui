@@ -133,6 +133,10 @@ func MarshalEditorContent(payload FormEditorPayload) ([]byte, error) {
 	return marshalEditorContent(payload)
 }
 
+func ParseEditorSections(body string) (description, notes string) {
+	return parseEditorSections(body)
+}
+
 func EditorTempDir() string {
 	return editorTempDir()
 }
