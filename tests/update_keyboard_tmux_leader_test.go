@@ -96,8 +96,8 @@ func TestHandleKeyTsWithoutAttachedTargetOpensTmuxPicker(t *testing.T) {
 	issue := Issue{ID: "bdtui-56i.31.1", Title: "tmux", Status: StatusOpen, Display: StatusOpen}
 	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
 		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {out: "$1:111\n"},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
-			out: "work\t$1\t%7\t@1\tzsh\ttarget\n",
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}": {
+			out: "work\t$1\t%7\t@1\t1\tzsh\ttarget\n",
 		},
 		"select-pane\x1f-m\x1f-t\x1f%7": {out: ""},
 	}}
@@ -127,8 +127,8 @@ func TestHandleTmuxLeaderForceSendAlwaysOpensPicker(t *testing.T) {
 	issue := Issue{ID: "bdtui-56i.31.1", Title: "tmux", Status: StatusOpen, Display: StatusOpen}
 	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
 		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {out: "$1:111\n"},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
-			out: "work\t$1\t%7\t@1\tzsh\ttarget\n",
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}": {
+			out: "work\t$1\t%7\t@1\t1\tzsh\ttarget\n",
 		},
 		"select-pane\x1f-m\x1f-t\x1f%7": {out: ""},
 	}}
@@ -157,8 +157,8 @@ func TestHandleTmuxLeaderAttachOpensPickerWithoutIssueID(t *testing.T) {
 	issue := Issue{ID: "bdtui-56i.31.1", Title: "tmux", Status: StatusOpen, Display: StatusOpen}
 	runner := &fakeTmuxRunner{results: map[string]fakeTmuxResult{
 		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {out: "$1:111\n"},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
-			out: "work\t$1\t%7\t@1\tzsh\ttarget\n",
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}": {
+			out: "work\t$1\t%7\t@1\t1\tzsh\ttarget\n",
 		},
 		"select-pane\x1f-m\x1f-t\x1f%7": {out: ""},
 	}}
@@ -271,5 +271,47 @@ func TestRenderTmuxPickerModalDoesNotMentionY(t *testing.T) {
 	out := m.RenderModal()
 	if strings.Contains(out, "(Y)") {
 		t.Fatalf("expected tmux picker modal to remove Y label, got %q", out)
+	}
+}
+
+func TestRenderTmuxPickerModalShowsWindowIndex(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		Mode:   ModeTmuxPicker,
+		Styles: newStyles(),
+		TmuxPicker: &TmuxPickerState{
+			Targets: []TmuxTarget{
+				{SessionName: "work", PaneID: "%7", WindowIndex: "3", Command: "zsh", Title: "main"},
+				{SessionName: "dev", PaneID: "%9", WindowIndex: "1", Command: "bash"},
+			},
+		},
+	}
+
+	out := m.RenderModal()
+	if !strings.Contains(out, "work:3") {
+		t.Fatalf("expected 'work:3' (session:window) in picker, got %q", out)
+	}
+	if !strings.Contains(out, "dev:1") {
+		t.Fatalf("expected 'dev:1' (session:window) in picker, got %q", out)
+	}
+}
+
+func TestRenderTmuxPickerModalOmitsWindowIndexWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		Mode:   ModeTmuxPicker,
+		Styles: newStyles(),
+		TmuxPicker: &TmuxPickerState{
+			Targets: []TmuxTarget{
+				{SessionName: "work", PaneID: "%7", Command: "zsh"},
+			},
+		},
+	}
+
+	out := m.RenderModal()
+	if strings.Contains(out, "work:") {
+		t.Fatalf("expected picker to omit window index when empty, got %q", out)
 	}
 }

@@ -60,8 +60,8 @@ func TestTmuxPlugin_ListTargetsSortsCodexFirst(t *testing.T) {
 		"list-clients\x1f-F\x1f#{session_id}:#{client_pid}": {
 			out: "$2:111\n",
 		},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
-			out: "dev\t$1\t%1\t@1\tbash\tlocal\nwork\t$2\t%2\t@2\tcodex\tCodex Main\n",
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}": {
+			out: "dev\t$1\t%1\t@1\t1\tbash\tlocal\nwork\t$2\t%2\t@2\t2\tcodex\tCodex Main\n",
 		},
 	}}
 
@@ -91,12 +91,12 @@ func TestTmuxPlugin_ListTargetsRemovesCurrentPaneAndPrioritizesCurrentWindow(t *
 		"display-message\x1f-p\x1f-t\x1f%2\x1f#{window_id}": {
 			out: "@1",
 		},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}": {
 			out: strings.Join([]string{
-				"work\t$1\t%2\t@1\tcodex\tbdtui",
-				"work\t$1\t%3\t@1\tbash\tlogs",
-				"dev\t$9\t%9\t@9\tcodex\tCodex Main",
-				"misc\t$3\t%4\t@2\tzsh\tshell",
+				"work\t$1\t%2\t@1\t1\tcodex\tbdtui",
+				"work\t$1\t%3\t@1\t1\tbash\tlogs",
+				"dev\t$9\t%9\t@9\t9\tcodex\tCodex Main",
+				"misc\t$3\t%4\t@2\t2\tzsh\tshell",
 			}, "\n"),
 		},
 	}}
@@ -129,11 +129,11 @@ func TestTmuxPlugin_ListTargetsKeepsOldSortingWhenCurrentWindowLookupFails(t *te
 		"display-message\x1f-p\x1f-t\x1f%2\x1f#{window_id}": {
 			err: fmt.Errorf("no current window"),
 		},
-		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}": {
+		"list-panes\x1f-a\x1f-F\x1f#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}": {
 			out: strings.Join([]string{
-				"dev\t$1\t%2\t@1\tcodex\tbdtui",
-				"work\t$2\t%7\t@7\tcodex\tCodex Main",
-				"misc\t$3\t%4\t@2\tzsh\tshell",
+				"dev\t$1\t%2\t@1\t1\tcodex\tbdtui",
+				"work\t$2\t%7\t@7\t7\tcodex\tCodex Main",
+				"misc\t$3\t%4\t@2\t2\tzsh\tshell",
 			}, "\n"),
 		},
 	}}
@@ -304,5 +304,87 @@ func TestTmuxPlugin_BlinkPaneWindowRequiresPaneID(t *testing.T) {
 	plugin := newTmuxPlugin(true, &fakeTmuxRunner{})
 	if err := plugin.BlinkPaneWindow("   "); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestParseTmuxTargetsIncludesWindowIndexIn7FieldFormat(t *testing.T) {
+	t.Parallel()
+
+	raw := "dev\t$1\t%3\t@1\t1\tbash\tmain\nwork\t$2\t%9\t@2\t2\tcodex\tcodex pane\n"
+	targets := parseTmuxTargets(raw)
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(targets))
+	}
+	if targets[0].WindowID != "@1" {
+		t.Fatalf("unexpected window id: %#v", targets[0])
+	}
+	if targets[0].WindowIndex != "1" {
+		t.Fatalf("expected window index 1, got %q", targets[0].WindowIndex)
+	}
+	if targets[0].Command != "bash" {
+		t.Fatalf("expected command 'bash', got %q", targets[0].Command)
+	}
+	if targets[0].Title != "main" {
+		t.Fatalf("expected title 'main', got %q", targets[0].Title)
+	}
+	if targets[1].WindowIndex != "2" {
+		t.Fatalf("expected window index 2, got %q", targets[1].WindowIndex)
+	}
+}
+
+func TestParseTmuxTargetsAcceptsLegacy6FieldFormat(t *testing.T) {
+	t.Parallel()
+
+	raw := "dev\t$1\t%3\t@1\tbash\tmain\n"
+	targets := parseTmuxTargets(raw)
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(targets))
+	}
+	if targets[0].WindowID != "@1" {
+		t.Fatalf("unexpected window id: %#v", targets[0])
+	}
+	if targets[0].WindowIndex != "" {
+		t.Fatalf("expected empty window index for legacy format, got %q", targets[0].WindowIndex)
+	}
+	if targets[0].Command != "bash" {
+		t.Fatalf("expected command 'bash', got %q", targets[0].Command)
+	}
+	if targets[0].Title != "main" {
+		t.Fatalf("expected title 'main', got %q", targets[0].Title)
+	}
+}
+
+func TestTmuxTargetLabelIncludesWindowIndexWhenSet(t *testing.T) {
+	t.Parallel()
+
+	target := TmuxTarget{
+		SessionName: "work",
+		SessionID:   "$1",
+		PaneID:      "%7",
+		WindowID:    "@1",
+		WindowIndex: "3",
+		Command:     "zsh",
+		Title:       "main",
+	}
+	got := target.Label()
+	if !strings.Contains(got, "work:3") {
+		t.Fatalf("expected label to contain 'work:3' (session:window), got %q", got)
+	}
+	if !strings.Contains(got, "%7") {
+		t.Fatalf("expected label to contain pane id, got %q", got)
+	}
+}
+
+func TestTmuxTargetLabelOmitsWindowIndexWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	target := TmuxTarget{
+		SessionName: "work",
+		PaneID:      "%7",
+		Command:     "zsh",
+	}
+	got := target.Label()
+	if strings.Contains(got, "work:") {
+		t.Fatalf("expected label without window index, got %q", got)
 	}
 }

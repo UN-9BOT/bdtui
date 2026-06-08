@@ -45,6 +45,7 @@ type rawIssue struct {
 	CreatedAt    any             `json:"created_at"`
 	UpdatedAt    any             `json:"updated_at"`
 	ClosedAt     any             `json:"closed_at"`
+	DeferUntil   any             `json:"defer_until"`
 	Parent       any             `json:"parent"`
 	Dependencies []rawDependency `json:"dependencies"`
 }
@@ -142,6 +143,7 @@ func normalizeIssues(raw []rawIssue) []Issue {
 			CreatedAt:   asString(r.CreatedAt),
 			UpdatedAt:   asString(r.UpdatedAt),
 			ClosedAt:    asString(r.ClosedAt),
+			DeferUntil:  asString(r.DeferUntil),
 			Parent:      asString(r.Parent),
 		}
 

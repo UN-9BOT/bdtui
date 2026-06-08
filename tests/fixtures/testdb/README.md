@@ -52,6 +52,7 @@ The test database includes issues covering all possible variations:
 | test-039 to test-040 | Blocker chain                                     |
 | test-041             | Empty epic (no children)                          |
 | test-042             | All fields populated                              |
+| test-099             | Deferred task (defer_until: 2099-12-30), hidden from `bd ready` |
 
 ## Usage
 

@@ -1,0 +1,79 @@
+# Dashboard Hotkeys NEW
+
+## Navigation
+
+| Key               | Action                |
+| ----------------- | --------------------- |
+| `h` / `←`         | Prev column (wrap)    |
+| `l` / `→`         | Next column (wrap)    |
+| `j` / `↓`         | Next issue            |
+| `k` / `↑`         | Prev issue            |
+| `0`               | First issue in column |
+| `G`               | Last issue in column  |
+| `Enter` / `Space` | Open details          |
+| `z` | Toggle children visibility |
+| `y` | Copy issue ID to clipboard |
+
+## Issue Create (n-prefixed)
+
+| Key      | Action                                   |
+| -------- | ---------------------------------------- |
+| `n n`      | Create new issue                         |
+| `n N`      | Create subtask (parent = current)        |
+| `n b`      | Create blocked issue (current = blocker) |
+
+## Issue Management (i-prefixed)
+| Key      | Action                                   |
+| -------- | ---------------------------------------- |
+| `i e`      | Edit issue (inline form)                 |
+| `i d`      | Delete issue (preview cascade)           |
+| `i x`      | Close / Reopen issue (with reason)       |
+| `i j` | Cycle priority forward     |
+| `i k` | Cycle priority backward    |
+| `i B` | Blocker picker      |
+| `i p` | Parent picker       |
+| `i s` | Cycle status forward       |
+| `i S` | Cycle status backward      |
+
+## Search & Filter
+
+| Key       | Action                   |
+| --------- | ------------------------ |
+| `/`  | Focus search            |
+| `esc`       | Clear search and filters |
+
+## Relations (g-prefixed)
+
+| Key   | Action              |
+| ----- | ------------------- |
+| `g u` | Jump to parent      |
+| `g P` | Clear parent        |
+| `g d` | Dependencies list   |
+| `g D` | Toggle dim override |
+| `g o` | Toggle sort mode    |
+
+## Tmux Integration (t-prefixed)
+
+| Key   | Action                      |
+| ----- | --------------------------- |
+| `t s` | Send issue to tmux          |
+| `t S` | Pick tmux target, then send |
+| `t a` | Attach tmux target          |
+| `t d` | Detach tmux target          |
+
+## General
+
+| Key | Action                     |
+| --- | -------------------------- |
+| `r` | Refresh (reload from `bd`) |
+| `?` | Help                       |
+| `q` | Quit                       |
+| `Ctrl+X` | Edit issue in `$EDITOR`                  |
+
+
+## NEED REMOVE HOTKEY
+
+| Key       | Action                   |
+| --------- | ------------------------ |
+| `f`  | Focus search            |
+| `c`       | Clear search and filters |

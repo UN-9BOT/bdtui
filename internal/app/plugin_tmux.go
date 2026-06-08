@@ -16,6 +16,7 @@ type TmuxTarget struct {
 	SessionID   string
 	PaneID      string
 	WindowID    string
+	WindowIndex string
 	Command     string
 	Title       string
 	HasClient   bool
@@ -29,9 +30,14 @@ type tmuxCurrentContext struct {
 func (t TmuxTarget) Label() string {
 	parts := []string{
 		defaultString(strings.TrimSpace(t.SessionName), "?"),
+	}
+	if w := strings.TrimSpace(t.WindowIndex); w != "" {
+		parts[0] = parts[0] + ":" + w
+	}
+	parts = append(parts,
 		defaultString(strings.TrimSpace(t.PaneID), "?"),
 		defaultString(strings.TrimSpace(t.Command), "-"),
-	}
+	)
 	if strings.TrimSpace(t.Title) != "" {
 		parts = append(parts, strings.TrimSpace(t.Title))
 	}
@@ -122,7 +128,7 @@ func (p *TmuxPlugin) ListTargets() ([]TmuxTarget, error) {
 		return nil, err
 	}
 
-	panesRaw, err := p.runner.Run("list-panes", "-a", "-F", "#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_title}")
+	panesRaw, err := p.runner.Run("list-panes", "-a", "-F", "#{session_name}\t#{session_id}\t#{pane_id}\t#{window_id}\t#{window_index}\t#{pane_current_command}\t#{pane_title}")
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +343,7 @@ func parseTmuxTargets(raw string) []TmuxTarget {
 			continue
 		}
 
-		parts := strings.SplitN(row, "\t", 6)
+		parts := strings.SplitN(row, "\t", 7)
 		if len(parts) < 5 {
 			continue
 		}
@@ -347,11 +353,18 @@ func parseTmuxTargets(raw string) []TmuxTarget {
 			SessionID:   strings.TrimSpace(parts[1]),
 			PaneID:      strings.TrimSpace(parts[2]),
 		}
-		if len(parts) >= 6 {
+		switch {
+		case len(parts) >= 7:
+			t.WindowID = strings.TrimSpace(parts[3])
+			t.WindowIndex = strings.TrimSpace(parts[4])
+			t.Command = strings.TrimSpace(parts[5])
+			t.Title = strings.TrimSpace(parts[6])
+		case len(parts) == 6:
+			// legacy 6-field format: no window_index column
 			t.WindowID = strings.TrimSpace(parts[3])
 			t.Command = strings.TrimSpace(parts[4])
 			t.Title = strings.TrimSpace(parts[5])
-		} else {
+		default:
 			t.Command = strings.TrimSpace(parts[3])
 			t.Title = strings.TrimSpace(parts[4])
 		}

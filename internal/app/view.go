@@ -549,8 +549,12 @@ func (m model) renderInspector() string {
 	titleText := truncate(defaultString(issue.Title, "-"), max(1, inner-lipgloss.Width(titlePrefix)))
 
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	deferValue := "-"
+	if issue.IsDeferred() {
+		deferValue = formatDeferDate(issue.DeferUntil)
+	}
 	metaLine := truncate(
-		"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-"),
+		"Parent: "+defaultString(issue.Parent, "-")+" | blockedBy: "+defaultString(strings.Join(issue.BlockedBy, ","), "-")+" | blocks: "+defaultString(strings.Join(issue.Blocks, ","), "-")+" | deferred: "+deferValue,
 		inner,
 	)
 	metaLine = styleDetailMetaLine(metaLine, keyStyle)
@@ -1380,12 +1384,16 @@ func (m model) renderTmuxPickerModal() string {
 			clientFlag = "A"
 		}
 
+		sessionLabel := defaultString(target.SessionName, "?")
+		if w := strings.TrimSpace(target.WindowIndex); w != "" {
+			sessionLabel = sessionLabel + ":" + w
+		}
 		linePlain := fmt.Sprintf(
 			"[%s%s%s] %s %s %s %s %s",
 			markFlag,
 			codexFlag,
 			clientFlag,
-			defaultString(target.SessionName, "?"),
+			sessionLabel,
 			defaultString(target.PaneID, "?"),
 			defaultString(target.Command, "-"),
 			defaultString(target.Title, "-"),
@@ -1397,7 +1405,7 @@ func (m model) renderTmuxPickerModal() string {
 			markMark,
 			codexMark,
 			clientMark,
-			lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(defaultString(target.SessionName, "?")),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(sessionLabel),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Render(defaultString(target.PaneID, "?")),
 			truncate(defaultString(target.Command, "-")+" | "+defaultString(target.Title, "-"), 70),
 		)
@@ -1565,7 +1573,7 @@ func renderBlockerPickerRowPlain(item Issue, maxTextWidth int, checked bool) str
 		checkbox = "[x]"
 	}
 	issueType := shortTypeDashboard(item.IssueType)
-	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, "", checkbox, issueType, "", item.Title, item.ID)
+	title, id, _, gap := layoutDashboardRowWithRightID(maxTextWidth, "", checkbox, issueType, "", item.Title, item.ID, item.deferBadgeLabel())
 	return checkbox + " " + issueType + " " + title + gap + id
 }
 
@@ -2291,7 +2299,7 @@ func renderIssueRowDependencyAccent(item Issue, maxTextWidth int, depth int, col
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
 	collapseIndicator := issueCollapseIndicator(item, collapsed)
-	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID)
+	title, id, badge, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID, item.deferBadgeLabel())
 	epicStyle, isEpic := dashboardEpicAccentStyle(item.IssueType)
 
 	prefixStyle := lipgloss.NewStyle()
@@ -2300,6 +2308,7 @@ func renderIssueRowDependencyAccent(item Issue, maxTextWidth int, depth int, col
 	titleStyle := lipgloss.NewStyle()
 	gapStyle := lipgloss.NewStyle()
 	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	badgeStyle := deferBadgeStyle()
 	if isEpic {
 		prefixStyle = prefixStyle.Inherit(epicStyle)
 		priorityTokenStyle = priorityTokenStyle.Inherit(epicStyle)
@@ -2309,11 +2318,15 @@ func renderIssueRowDependencyAccent(item Issue, maxTextWidth int, depth int, col
 		idStyle = idStyle.Inherit(epicStyle)
 	}
 
-	return prefixStyle.Render(prefix) +
+	out := prefixStyle.Render(prefix) +
 		priorityTokenStyle.Render(priority) +
 		" " + issueTypeTokenStyle.Render(issueType) +
-		" " + collapseIndicator + titleStyle.Render(title) +
-		gapStyle.Render(gap) + idStyle.Render(id)
+		" " + collapseIndicator + titleStyle.Render(title)
+	if badge != "" {
+		out += " " + badgeStyle.Render(badge)
+	}
+	out += gapStyle.Render(gap) + idStyle.Render(id)
+	return out
 }
 
 func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
@@ -2322,7 +2335,7 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[strin
 	prefix := treePrefix(depth)
 	collapseIndicator := issueCollapseIndicator(item, collapsed)
 
-	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID)
+	title, id, badge, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, collapseIndicator, item.Title, item.ID, item.deferBadgeLabel())
 	epicStyle, isEpic := dashboardEpicAccentStyle(item.IssueType)
 
 	prefixStyle := lipgloss.NewStyle()
@@ -2331,6 +2344,7 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[strin
 	titleStyle := lipgloss.NewStyle()
 	gapStyle := lipgloss.NewStyle()
 	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	badgeStyle := deferBadgeStyle()
 	if isEpic {
 		prefixStyle = prefixStyle.Inherit(epicStyle)
 		priorityTokenStyle = priorityTokenStyle.Inherit(epicStyle)
@@ -2340,11 +2354,15 @@ func renderIssueRow(item Issue, maxTextWidth int, depth int, collapsed map[strin
 		idStyle = idStyle.Inherit(epicStyle)
 	}
 
-	return prefixStyle.Render(prefix) +
+	out := prefixStyle.Render(prefix) +
 		priorityTokenStyle.Render(priority) +
 		" " + issueTypeTokenStyle.Render(issueType) +
-		" " + collapseIndicator + titleStyle.Render(title) +
-		gapStyle.Render(gap) + idStyle.Render(id)
+		" " + collapseIndicator + titleStyle.Render(title)
+	if badge != "" {
+		out += " " + badgeStyle.Render(badge)
+	}
+	out += gapStyle.Render(gap) + idStyle.Render(id)
+	return out
 }
 
 func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int, collapsed map[string]bool) string {
@@ -2352,48 +2370,70 @@ func renderIssueRowSelectedPlain(item Issue, maxTextWidth int, depth int, collap
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
 	collapseIndicator := issueCollapseIndicator(item, collapsed)
+	badge := item.deferBadgeLabel()
 
 	fixedWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(collapseIndicator)
-	titleWidth := max(1, maxTextWidth-fixedWidth)
+	badgeWidth := 0
+	if badge != "" {
+		badgeWidth = lipgloss.Width(badge) + 1
+	}
+	titleWidth := max(1, maxTextWidth-fixedWidth-badgeWidth)
 	title := truncate(item.Title, titleWidth)
 
-	return prefix + priority + " " + issueType + " " + collapseIndicator + title
+	out := prefix + priority + " " + issueType + " " + collapseIndicator + title
+	if badge != "" {
+		out += " " + badge
+	}
+	return out
 }
 
 func renderIssueRowGhostPlain(item Issue, maxTextWidth int, depth int) string {
 	priority := renderPriorityLabel(item.Priority)
 	issueType := shortTypeDashboard(item.IssueType)
 	prefix := treePrefix(depth)
-	title, id, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, "", item.Title, item.ID)
+	title, id, _, gap := layoutDashboardRowWithRightID(maxTextWidth, prefix, priority, issueType, "", item.Title, item.ID, item.deferBadgeLabel())
 
 	return prefix + priority + " " + issueType + " " + title + gap + id
 }
 
-func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority string, issueType string, collapseIndicator string, titleRaw string, idRaw string) (title string, id string, gap string) {
+func layoutDashboardRowWithRightID(maxTextWidth int, prefix string, priority string, issueType string, collapseIndicator string, titleRaw string, idRaw string, badgeRaw string) (title string, id string, badge string, gap string) {
 	if maxTextWidth < 1 {
 		maxTextWidth = 1
 	}
 
 	fixedPrefixWidth := lipgloss.Width(prefix) + lipgloss.Width(priority) + 1 + lipgloss.Width(issueType) + 1 + lipgloss.Width(collapseIndicator)
-	maxIDWidth := maxTextWidth - fixedPrefixWidth - 2
+	badge = badgeRaw
+	hasBadge := lipgloss.Width(badge) > 0
+	badgeSpace := 0
+	if hasBadge {
+		badgeSpace = lipgloss.Width(badge) + 1
+	}
+	maxIDWidth := maxTextWidth - fixedPrefixWidth - 2 - badgeSpace
 	if maxIDWidth < 1 {
 		maxIDWidth = 1
 	}
 	id = truncate(idRaw, min(14, maxIDWidth))
 
-	titleWidth := maxTextWidth - fixedPrefixWidth - 1 - lipgloss.Width(id)
+	titleWidth := maxTextWidth - fixedPrefixWidth - 1 - lipgloss.Width(id) - badgeSpace
 	if titleWidth < 0 {
 		titleWidth = 0
 	}
 	title = truncate(titleRaw, titleWidth)
 
 	leftPlain := prefix + priority + " " + issueType + " " + collapseIndicator + title
+	if hasBadge {
+		leftPlain += " " + badge
+	}
 	gapWidth := maxTextWidth - lipgloss.Width(leftPlain) - lipgloss.Width(id)
 	if gapWidth < 1 {
 		gapWidth = 1
 	}
 	gap = strings.Repeat(" ", gapWidth)
-	return title, id, gap
+	return title, id, badge, gap
+}
+
+func deferBadgeStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 }
 
 func issueCollapseIndicator(item Issue, collapsed map[string]bool) string {

@@ -50,6 +50,7 @@ type Issue struct {
 	CreatedAt   string
 	UpdatedAt   string
 	ClosedAt    string
+	DeferUntil  string
 
 	Parent    string
 	Children  []string
