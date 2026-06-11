@@ -14,7 +14,7 @@ type BoardRow struct {
 	Ghost bool
 }
 
-type TmuxRunner interface {
+type HerdrRunner interface {
 	Run(args ...string) (string, error)
 }
 
@@ -149,16 +149,12 @@ func IsBeadsWatchEventRelevant(ev fsnotify.Event) bool {
 	return isBeadsWatchEventRelevant(ev)
 }
 
-func NewTmuxPlugin(enabled bool, runner TmuxRunner) *TmuxPlugin {
-	return newTmuxPlugin(enabled, runner)
+func NewHerdrPlugin(enabled bool, runner HerdrRunner) *HerdrPlugin {
+	return newHerdrPlugin(enabled, runner)
 }
 
-func ParseTmuxClientSessions(raw string) map[string]bool {
-	return parseTmuxClientSessions(raw)
-}
-
-func ParseTmuxTargets(raw string) []TmuxTarget {
-	return parseTmuxTargets(raw)
+func ParseHerdrTargets(panesRaw, tabsRaw, workspacesRaw string) []MuxTarget {
+	return parseHerdrTargets(panesRaw, tabsRaw, workspacesRaw)
 }
 
 func ShortType(issueType string) string {
@@ -275,8 +271,8 @@ func (m Model) HandleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleFormKey(msg)
 }
 
-func (m Model) HandleTmuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleTmuxPickerKey(msg)
+func (m Model) HandleMuxPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.handleMuxPickerKey(msg)
 }
 
 func (m Model) HandleConfirmClosedParentCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -291,12 +287,8 @@ func (m Model) HandleLeaderCombo(key string) (tea.Model, tea.Cmd) {
 	return m.handleLeaderCombo("g", key)
 }
 
-func (m Model) HandleTmuxLeaderCombo(key string) (tea.Model, tea.Cmd) {
+func (m Model) HandleMuxLeaderCombo(key string) (tea.Model, tea.Cmd) {
 	return m.handleLeaderCombo("t", key)
-}
-
-func (m *Model) MarkTmuxPickerSelection() error {
-	return m.markTmuxPickerSelection()
 }
 
 func (m Model) FormatBeadsStartTaskCommand(issueID string) string {

@@ -6,7 +6,7 @@ type PluginToggles map[string]bool
 
 func defaultPluginToggles() PluginToggles {
 	return PluginToggles{
-		"tmux": true,
+		"herdr": true,
 	}
 }
 
@@ -34,8 +34,8 @@ func clonePluginToggles(src PluginToggles) PluginToggles {
 }
 
 type PluginRegistry struct {
-	Toggles    PluginToggles
-	TmuxPlugin *TmuxPlugin
+	Toggles     PluginToggles
+	HerdrPlugin *HerdrPlugin
 }
 
 func newPluginRegistry(cfg Config) PluginRegistry {
@@ -45,8 +45,8 @@ func newPluginRegistry(cfg Config) PluginRegistry {
 	}
 
 	return PluginRegistry{
-		Toggles:    clonePluginToggles(toggles),
-		TmuxPlugin: newTmuxPlugin(toggles.enabled("tmux"), shellTmuxRunner{}),
+		Toggles:     clonePluginToggles(toggles),
+		HerdrPlugin: newHerdrPlugin(toggles.enabled("herdr"), shellHerdrRunner{}),
 	}
 }
 
@@ -54,6 +54,6 @@ func (r PluginRegistry) Enabled(name string) bool {
 	return r.Toggles.enabled(name)
 }
 
-func (r PluginRegistry) Tmux() *TmuxPlugin {
-	return r.TmuxPlugin
+func (r PluginRegistry) Herdr() *HerdrPlugin {
+	return r.HerdrPlugin
 }

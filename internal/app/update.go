@@ -99,23 +99,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err:      msg.Err,
 		})
 
-	case tmuxMarkCleanupMsg:
-		if msg.Token != m.TmuxMark.Token {
-			return m, nil
-		}
-		if strings.TrimSpace(msg.PaneID) == "" || msg.PaneID != m.TmuxMark.PaneID {
-			return m, nil
-		}
-		tmuxPlugin := m.Plugins.Tmux()
-		if tmuxPlugin != nil && tmuxPlugin.Enabled() {
-			if err := tmuxPlugin.ClearMarkPane(msg.PaneID); err != nil {
-				m.setToast("warning", "tmux mark cleanup failed: "+err.Error())
-				return m, nil
-			}
-		}
-		m.TmuxMark.PaneID = ""
-		return m, nil
-
 	case tea.FocusMsg:
 		m.UIFocused = true
 		return m, nil

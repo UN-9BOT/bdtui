@@ -55,7 +55,7 @@ type Model struct {
 	CreateBlockerID string
 	Prompt          *PromptState
 	ParentPicker    *ParentPickerState
-	TmuxPicker      *TmuxPickerState
+	MuxPicker       *MuxPickerState
 	BlockerPicker   *BlockerPickerState
 
 	DepList *DepListState
@@ -80,12 +80,8 @@ type Model struct {
 	ResumeDetailsAfterEditor     bool
 	ResumeDescriptionAfterEditor bool
 	ResumeDescriptionScroll      int
-	TmuxMark                     struct {
-		PaneID string
-		Token  int
-	}
-	UIFocused   bool
-	DimOverride *bool // nil=auto, true=force dim, false=force no dim
+	UIFocused                    bool
+	DimOverride                  *bool // nil=auto, true=force dim, false=force no dim
 
 	Now time.Time
 }
@@ -189,7 +185,7 @@ func (m *model) clearTransientUI() {
 	m.LeaderPrefix = ""
 	m.Prompt = nil
 	m.ParentPicker = nil
-	m.TmuxPicker = nil
+	m.MuxPicker = nil
 	m.BlockerPicker = nil
 	m.DepList = nil
 	m.DescriptionPreview = nil
@@ -780,22 +776,6 @@ func pluginCmd(info string, fn func() error) tea.Cmd {
 		}
 		return pluginMsg{info: info, err: err}
 	}
-}
-
-func (m *model) scheduleTmuxMarkCleanup(delay time.Duration) tea.Cmd {
-	paneID := strings.TrimSpace(m.TmuxMark.PaneID)
-	if paneID == "" {
-		return nil
-	}
-	m.TmuxMark.Token++
-	token := m.TmuxMark.Token
-	return tea.Tick(delay, func(time.Time) tea.Msg {
-		return tmuxMarkCleanupMsg{PaneID: paneID, Token: token}
-	})
-}
-
-func (m *model) cancelTmuxMarkCleanup() {
-	m.TmuxMark.Token++
 }
 
 func depListCmd(c *BdClient, issueID string) tea.Cmd {

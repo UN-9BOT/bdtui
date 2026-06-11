@@ -14,7 +14,7 @@ type PromptState = b.PromptState
 type IssueForm = b.IssueForm
 type ParentOption = b.ParentOption
 type ParentPickerState = b.ParentPickerState
-type TmuxPickerState = b.TmuxPickerState
+type MuxPickerState = b.MuxPickerState
 type BlockerPickerState = b.BlockerPickerState
 type FilterForm = b.FilterForm
 type DeleteMode = b.DeleteMode
@@ -24,7 +24,7 @@ type DepListState = b.DepListState
 type DescriptionPreviewState = b.DescriptionPreviewState
 type PluginRegistry = b.PluginRegistry
 type PluginToggles = b.PluginToggles
-type TmuxTarget = b.TmuxTarget
+type MuxTarget = b.MuxTarget
 type BoardRow = b.BoardRow
 type formEditorPayload = b.FormEditorPayload
 type formEditorMsg = b.FormEditorMsg
@@ -50,7 +50,7 @@ const (
 	ModeEdit                      = b.ModeEdit
 	ModePrompt                    = b.ModePrompt
 	ModeParentPicker              = b.ModeParentPicker
-	ModeTmuxPicker                = b.ModeTmuxPicker
+	ModeMuxPicker                 = b.ModeMuxPicker
 	ModeBlockerPicker             = b.ModeBlockerPicker
 	ModeDepList                   = b.ModeDepList
 	ModeConfirmDelete             = b.ModeConfirmDelete
@@ -95,8 +95,7 @@ var (
 	beadsWatchTargets         = b.BeadsWatchTargets
 	isBeadsWatchEventRelevant = b.IsBeadsWatchEventRelevant
 
-	parseTmuxClientSessions     = b.ParseTmuxClientSessions
-	parseTmuxTargets            = b.ParseTmuxTargets
+	parseHerdrTargets           = b.ParseHerdrTargets
 	shortType                   = b.ShortType
 	shortTypeDashboard          = b.ShortTypeDashboard
 	dashboardEpicAccentStyle    = b.DashboardEpicAccentStyle
@@ -111,8 +110,8 @@ var (
 	ansiSGRRegexp               = b.AnsiSGRRegexp()
 )
 
-func newTmuxPlugin(enabled bool, runner interface {
+func newHerdrPlugin(enabled bool, runner interface {
 	Run(args ...string) (string, error)
-}) *b.TmuxPlugin {
-	return b.NewTmuxPlugin(enabled, runner)
+}) *b.HerdrPlugin {
+	return b.NewHerdrPlugin(enabled, runner)
 }

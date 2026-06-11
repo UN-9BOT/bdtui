@@ -6,7 +6,7 @@
 
 bdtui is a keyboard-first Kanban TUI for issue management via `bd` CLI.
 Reads/mutates data only through `bd` binary. Features ghost parent rows, blocked
-column derivation, tmux integration.
+column derivation, herdr integration.
 
 ## STRUCTURE
 
@@ -35,7 +35,7 @@ bdtui/
 | Forms (create/edit) | `internal/app/forms.go`                      | IssueForm, validation                    |
 | bd CLI wrapper      | `internal/app/bd_client.go`                  | `BdClient` wraps `bd` binary             |
 | Config/flags        | `internal/app/config.go`                     | `--beads-dir`, `--no-watch`, `--plugins` |
-| Tmux plugin         | `internal/app/plugin_tmux.go`                | Send issue to tmux                       |
+| Herdr plugin        | `internal/app/plugin_herdr.go`               | Send issue to herdr targets              |
 | External editor     | `internal/app/external_editor.go`            | `$EDITOR` integration                    |
 | Styles              | `internal/ui/styles.go`                      | lipgloss color palette                   |
 | Keymaps (display)   | `internal/ui/keymap.go`                      | Help text, not bindings                  |

@@ -4,7 +4,7 @@
 - single view: Kanban (`open` / `in_progress` / `blocked` / `closed`)
 - keyboard-first task management
 - backend mutations via `bd` CLI
-- plugin runtime with enable/disable toggles (first plugin: `tmux`)
+- plugin runtime with enable/disable toggles (current built-in plugin: `herdr`)
 
 ## Core files
 - `main.go` - entrypoint
@@ -19,7 +19,7 @@
 - `styles.go` - lipgloss styles
 - `keymap.go` - centralized hotkeys
 - `plugins.go` - plugin registry and toggles
-- `plugin_tmux.go` - tmux plugin (target picker, mark handling, paste flow)
+- `plugin_herdr.go` - herdr plugin (target picker, send-text, tab-focus fallback)
 
 ## Data flow
 1. find `.beads`
@@ -28,8 +28,8 @@
 4. render columns
 5. perform mutations via `bd` write commands
 6. reload issues after each mutation
-7. execute plugin actions separately (no issue reload), e.g. `Y` -> tmux paste
-8. in `tmux_picker`, current target is marked in tmux and auto-cleaned after 5s
+7. execute plugin actions separately (no issue reload), e.g. `t s` -> herdr send
+8. in `mux_picker`, selection is local to bdtui; no live external preview/marking
 
 ## Layout constraints
 - board columns are weight-based (equal widths)
@@ -47,4 +47,4 @@
 - `prompt`
 - `dep_list`
 - `confirm_delete`
-- `tmux_picker`
+- `mux_picker`

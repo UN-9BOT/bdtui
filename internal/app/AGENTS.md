@@ -21,7 +21,7 @@ cmd/bdtui/main.go → app.Run(args) → parseConfig → newModel → tea.NewProg
 | `bd_client.go`       | 456   | `BdClient` wraps `bd` CLI                              |
 | `forms.go`           | 555   | `IssueForm`, `FilterForm`, validation                  |
 | `config.go`          | —     | CLI flags: `--beads-dir`, `--no-watch`, `--plugins`    |
-| `plugin_tmux.go`     | 404   | Tmux integration                                       |
+| `plugin_herdr.go`    | —     | Herdr integration via generic mux target flow          |
 | `external_editor.go` | —     | `$EDITOR` with YAML frontmatter                        |
 | `test_api.go`        | 368   | Exports internals for `tests/`                         |
 
@@ -64,7 +64,7 @@ type Model struct {
 ## Modes
 
 `board` | `details` | `search` | `create` | `edit` | `parent_picker` |
-`blocker_picker` | `tmux_picker` | `dep_list` | `confirm_delete` |
+`blocker_picker` | `mux_picker` | `dep_list` | `confirm_delete` |
 `description_preview` | `notes_preview` | `help` | `filter` | `prompt` |
 `confirm_closed_parent_create`
 

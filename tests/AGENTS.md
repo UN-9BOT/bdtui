@@ -11,7 +11,7 @@ tests/
 ├── view_*_test.go              # 8 files — rendering
 ├── forms_*_test.go             # 3 files — form behavior
 ├── confirm_*_test.go           # 2 files — modals
-├── plugin_*_test.go            # 1 file — tmux plugin
+├── plugin_*_test.go            # 1 file — herdr plugin
 └── model_*_test.go             # misc unit tests
 ```
 
@@ -44,7 +44,7 @@ type Issue = b.Issue
 | Function naming | `Test<Function>_<Scenario>`                |
 | Parallelism     | `t.Parallel()` in most tests               |
 | Fixtures        | Direct struct construction (no builders)   |
-| Fakes           | `fakeTmuxRunner` pattern for external deps |
+| Fakes           | `fakeHerdrRunner` pattern for external deps |
 
 ## Example Test
 

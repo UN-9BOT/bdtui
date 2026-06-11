@@ -3,7 +3,7 @@ package ui
 type Keymap struct {
 	Global []string
 	Leader []string
-	Tmux   []string
+	Mux    []string
 	Form   []string
 }
 
@@ -34,7 +34,7 @@ func DefaultKeymap() Keymap {
 			"y: copy selected issue id",
 			"r: refresh",
 			"g: dependency/display leader combos",
-			"t: tmux leader combos",
+			"t: herdr leader combos",
 			"?: help",
 			"q: quit",
 		},
@@ -47,11 +47,11 @@ func DefaultKeymap() Keymap {
 			"g D: toggle dim override (auto → bright → dim → auto)",
 			"g o: toggle sort mode",
 		},
-		Tmux: []string{
-			"t s: send selected issue to attached tmux target",
-			"t S: pick tmux target, then send selected issue",
-			"t a: attach/change tmux target without sending",
-			"t d: detach current tmux target",
+		Mux: []string{
+			"t s: send selected issue to attached herdr target",
+			"t S: pick herdr target, then send selected issue",
+			"t a: attach/change herdr target without sending",
+			"t d: detach current herdr target",
 		},
 		Form: []string{
 			"↑/↓: next/previous field",

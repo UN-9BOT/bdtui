@@ -21,7 +21,7 @@ func parseConfig(args []string) (Config, error) {
 	var pluginsRaw string
 	fs.StringVar(&cfg.BeadsDir, "beads-dir", "", "Path to .beads directory")
 	fs.BoolVar(&cfg.NoWatch, "no-watch", false, "Disable periodic auto-reload")
-	fs.StringVar(&pluginsRaw, "plugins", "", "Plugin toggles CSV (e.g. tmux,-tmux)")
+	fs.StringVar(&pluginsRaw, "plugins", "", "Plugin toggles CSV (e.g. herdr,-herdr)")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err

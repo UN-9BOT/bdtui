@@ -139,7 +139,7 @@ const (
 	ModeEdit                      Mode = "edit"
 	ModePrompt                    Mode = "prompt"
 	ModeParentPicker              Mode = "parent_picker"
-	ModeTmuxPicker                Mode = "tmux_picker"
+	ModeMuxPicker                 Mode = "mux_picker"
 	ModeBlockerPicker             Mode = "blocker_picker"
 	ModeDepList                   Mode = "dep_list"
 	ModeConfirmDelete             Mode = "confirm_delete"
@@ -201,13 +201,10 @@ type ParentPickerState struct {
 	Index         int
 }
 
-type TmuxPickerState struct {
-	IssueID        string
-	Targets        []TmuxTarget
-	Index          int
-	MarkedPaneID   string
-	CleanupAt      time.Time
-	CleanupPending bool
+type MuxPickerState struct {
+	IssueID string
+	Targets []MuxTarget
+	Index   int
 }
 
 type BlockerPickerState struct {
@@ -295,11 +292,6 @@ type pluginMsg struct {
 	info    string
 	warning string
 	err     error
-}
-
-type tmuxMarkCleanupMsg struct {
-	PaneID string
-	Token  int
 }
 
 type beadsChangedMsg struct{}

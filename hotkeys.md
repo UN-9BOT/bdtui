@@ -54,14 +54,14 @@
 | `g D` | Toggle dim override |
 | `g o` | Toggle sort mode    |
 
-## Tmux Integration (t-prefixed)
+## Herdr Integration (t-prefixed)
 
 | Key   | Action                      |
 | ----- | --------------------------- |
-| `t s` | Send issue to tmux          |
-| `t S` | Pick tmux target, then send |
-| `t a` | Attach tmux target          |
-| `t d` | Detach tmux target          |
+| `t s` | Send issue to herdr         |
+| `t S` | Pick herdr target, then send |
+| `t a` | Attach herdr target         |
+| `t d` | Detach herdr target         |
 
 ## General
 
@@ -128,14 +128,14 @@
 | `g D` | Toggle dim override |
 | `g o` | Toggle sort mode    |
 
-## Tmux Integration (t-prefixed)
+## Herdr Integration (t-prefixed)
 
 | Key   | Action                      |
 | ----- | --------------------------- |
-| `t s` | Send issue to tmux          |
-| `t S` | Pick tmux target, then send |
-| `t a` | Attach tmux target          |
-| `t d` | Detach tmux target          |
+| `t s` | Send issue to herdr         |
+| `t S` | Pick herdr target, then send |
+| `t a` | Attach herdr target         |
+| `t d` | Detach herdr target         |
 
 ## General
 

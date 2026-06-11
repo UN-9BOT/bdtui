@@ -57,7 +57,7 @@ make build
 Options:
 - `--beads-dir /abs/path/to/.beads`
 - `--no-watch`
-- `--plugins tmux,-foo` (enable/disable plugins, `tmux` is enabled by default)
+- `--plugins herdr,-foo` (enable/disable plugins, `herdr` is enabled by default)
 
 ## Hotkeys
 
@@ -109,17 +109,15 @@ Options:
 - `g D` - toggle dim override (`auto → bright → dim → auto`)
 - `g o` - toggle sort mode (`status_date_only` / `priority_then_status_date`)
 
-### Tmux (`t` leader)
-- `t s` - send selected issue to attached tmux target
-- `t S` - pick tmux target, then send selected issue
-- `t a` - attach/change tmux target without sending
-- `t d` - detach current tmux target
+### Herdr (`t` leader)
+- `t s` - send selected issue to attached herdr target
+- `t S` - pick herdr target, then send selected issue
+- `t a` - attach/change herdr target without sending
+- `t d` - detach current herdr target
 
-On first send, bdtui opens a tmux target picker and then pastes one of:
+On first send, bdtui opens a herdr target picker and then pastes one of:
 - `skill $beads start implement task <issue-id>`
 - `skill $beads start implement task <issue-id> (epic <parent-id>)` when parent is an epic
-
-In tmux picker, current cursor target is live-marked in tmux (`M`), and mark auto-clears 5 seconds after picker exit.
 
 ### Misc
 - `r` - refresh

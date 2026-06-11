@@ -57,7 +57,7 @@ make build
 Опции:
 - `--beads-dir /abs/path/to/.beads`
 - `--no-watch`
-- `--plugins tmux,-foo` (включить/выключить плагины, `tmux` включён по умолчанию)
+- `--plugins herdr,-foo` (включить/выключить плагины, `herdr` включён по умолчанию)
 
 ## Горячие клавиши
 
@@ -109,17 +109,15 @@ make build
 - `g D` — переключить dim override (`auto → bright → dim → auto`)
 - `g o` — переключить режим сортировки (`status_date_only` / `priority_then_status_date`)
 
-### Tmux (leader `t`)
-- `t s` — отправить выбранную задачу в прикреплённый tmux target
-- `t S` — выбрать tmux target, затем отправить выбранную задачу
-- `t a` — прикрепить/сменить tmux target без отправки
-- `t d` — открепить текущий tmux target
+### Herdr (leader `t`)
+- `t s` — отправить выбранную задачу в прикреплённый herdr target
+- `t S` — выбрать herdr target, затем отправить выбранную задачу
+- `t a` — прикрепить/сменить herdr target без отправки
+- `t d` — открепить текущий herdr target
 
-При первой отправке bdtui открывает picker tmux target и вставляет одну из команд:
+При первой отправке bdtui открывает picker herdr target и вставляет одну из команд:
 - `skill $beads start implement task <issue-id>`
 - `skill $beads start implement task <issue-id> (epic <parent-id>)` если parent — epic
-
-В tmux picker текущий target курсора помечается в tmux (`M`), метка авто-очищается через 5 секунд после выхода из picker.
 
 ### Разное
 - `r` — обновить
