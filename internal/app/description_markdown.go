@@ -2,13 +2,64 @@ package app
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/muesli/termenv"
 )
 
 type markdownRenderFn func(content string, width int) (string, error)
 
 var renderMarkdown markdownRenderFn = renderMarkdownWithGlamour
+
+// glamourTermRenderer is a thin alias so tests can swap the factory without
+// importing glamour.
+type glamourTermRenderer = glamour.TermRenderer
+
+// glamourRendererFactory builds a renderer for a given word-wrap width.
+// Indirected through a var so tests can count invocations.
+var glamourRendererFactory = newGlamourRenderer
+
+func newGlamourRenderer(width int) (*glamourTermRenderer, error) {
+	if width <= 0 {
+		width = 1
+	}
+	return glamour.NewTermRenderer(
+		glamour.WithStandardStyle("notty"),
+		glamour.WithColorProfile(termenv.ANSI256),
+		glamour.WithWordWrap(width),
+	)
+}
+
+// glamourRendererCache memoises glamour renderers keyed by word-wrap width.
+// glamour.NewTermRenderer with WithAutoStyle() calls termenv.HasDarkBackground,
+// which sends a CSI 11;? query and performs a blocking read on stdout. Doing
+// that on every View() frame (or, worse, once per detail render) hangs the TUI
+// on terminals that do not answer the query, so we pin a color profile and
+// reuse a single renderer per width.
+var glamourRendererCache sync.Map // map[int]*glamour.TermRenderer
+
+func resetGlamourRendererCache() {
+	glamourRendererCache.Range(func(k, _ any) bool {
+		glamourRendererCache.Delete(k)
+		return true
+	})
+}
+
+func glamourRenderer(width int) (*glamourTermRenderer, error) {
+	if width <= 0 {
+		width = 1
+	}
+	if v, ok := glamourRendererCache.Load(width); ok {
+		return v.(*glamourTermRenderer), nil
+	}
+	r, err := glamourRendererFactory(width)
+	if err != nil {
+		return nil, err
+	}
+	glamourRendererCache.Store(width, r)
+	return r, nil
+}
 
 func renderDescriptionLines(description string, width int) []string {
 	text := strings.ReplaceAll(description, "\r\n", "\n")
@@ -33,18 +84,10 @@ func renderDescriptionLines(description string, width int) []string {
 }
 
 func renderMarkdownWithGlamour(content string, width int) (string, error) {
-	if width <= 0 {
-		width = 1
-	}
-
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-	)
+	r, err := glamourRenderer(width)
 	if err != nil {
 		return "", err
 	}
-
 	out, err := r.Render(content)
 	if err != nil {
 		return "", err

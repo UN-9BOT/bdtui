@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"bdtui/internal/logger"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -1023,11 +1024,14 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter", " ":
+		logger.Info("DBG enter: BEFORE mode=%s st=%s", m.Mode, m.currentStatus())
 		issue := m.currentIssue()
 		if issue == nil {
+			logger.Info("DBG enter: NO_ISSUE")
 			m.setToast("warning", "no issue selected")
 			return m, nil
 		}
+		logger.Info("DBG enter: issue=%s -> ModeDetails", issue.ID)
 		m.ShowDetails = true
 		m.Mode = ModeDetails
 		m.DetailsScroll = 0

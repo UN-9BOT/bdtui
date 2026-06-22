@@ -750,7 +750,10 @@ func (m model) selectedVisibleRowIndex(status Status) int {
 
 func (m model) loadCmd(source string) tea.Cmd {
 	return func() tea.Msg {
+		logger.Info("DBG loadCmd: start source=%s", source)
+		t0 := time.Now()
 		issues, hash, err := m.Client.ListIssues()
+		logger.Info("DBG loadCmd: done source=%s dur=%s n=%d err=%v", source, time.Since(t0), len(issues), err)
 		if err != nil {
 			logger.Error("load issues failed (source=%s): %v", source, err)
 		}
