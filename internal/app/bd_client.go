@@ -80,16 +80,46 @@ func (c *BdClient) run(args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "bd", args...)
 	cmd.Dir = c.RepoDir
 
-	out, err := cmd.CombinedOutput()
-	text := strings.TrimSpace(string(out))
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	outText := strings.TrimSpace(stdout.String())
+	errText := strings.TrimSpace(stderr.String())
+	if errText != "" {
+		logger.Info("bd %s stderr: %s", strings.Join(args, " "), errText)
+	}
 	if err != nil {
-		logger.Error("bd %s failed: %v | output: %s", strings.Join(args, " "), err, text)
-		if text == "" {
+		logger.Error("bd %s failed: %v | stdout: %s | stderr: %s", strings.Join(args, " "), err, outText, errText)
+		if outText == "" {
 			return "", fmt.Errorf("bd %s failed: %w", strings.Join(args, " "), err)
 		}
-		return "", fmt.Errorf("bd %s failed: %s", strings.Join(args, " "), text)
+		return "", fmt.Errorf("bd %s failed: %s", strings.Join(args, " "), outText)
 	}
-	return text, nil
+	return outText, nil
+}
+
+// stripJSONPrefix отсекает не-JSON префикс (warning/auto-import от bd),
+// оставляя начало массива или объекта.
+func stripJSONPrefix(s string) string {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			continue
+		}
+		if c == '[' || c == '{' {
+			return s[i:]
+		}
+		// встретили не-whitespace и не '['/'{' — пропускаем до конца строки
+		// и продолжаем поиск со следующей строки.
+		j := strings.IndexByte(s[i:], '\n')
+		if j < 0 {
+			return ""
+		}
+		i += j
+	}
+	return s
 }
 
 func (c *BdClient) ListIssues() ([]Issue, string, error) {
@@ -97,6 +127,7 @@ func (c *BdClient) ListIssues() ([]Issue, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	out = stripJSONPrefix(out)
 
 	var raw []rawIssue
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
