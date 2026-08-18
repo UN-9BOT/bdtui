@@ -28,6 +28,11 @@ func (s RunStatus) Terminal() bool {
 	return s == RunCompleted || s == RunFailed || s == RunCancelled
 }
 
+// CanTransitionRun reports whether from -> to is a legal Run state transition.
+func CanTransitionRun(from, to RunStatus) bool {
+	return statusTransitionValid(string(from), string(to))
+}
+
 // StepAttemptStatus is the lifecycle of a single step attempt within a Run.
 type StepAttemptStatus string
 
@@ -54,6 +59,12 @@ func (s StepAttemptStatus) Terminal() bool {
 	return s == StepCompleted || s == StepFailed || s == StepCancelled
 }
 
+// CanTransitionStepAttempt reports whether from -> to is a legal StepAttempt
+// state transition.
+func CanTransitionStepAttempt(from, to StepAttemptStatus) bool {
+	return statusTransitionValid(string(from), string(to))
+}
+
 // ExecutionStatus is the lifecycle of a concrete process/agent execution.
 type ExecutionStatus string
 
@@ -78,6 +89,31 @@ func (s ExecutionStatus) Valid() bool {
 
 func (s ExecutionStatus) Terminal() bool {
 	return s == ExecCompleted || s == ExecFailed || s == ExecCancelled
+}
+
+// CanTransitionExecution reports whether from -> to is a legal Execution state
+// transition.
+func CanTransitionExecution(from, to ExecutionStatus) bool {
+	return statusTransitionValid(string(from), string(to))
+}
+
+// statusTransitionValid is the shared lifecycle for queued/run-like states.
+// Terminal states (completed/failed/cancelled) cannot advance.
+func statusTransitionValid(from, to string) bool {
+	switch from {
+	case "queued":
+		return to == "running" || to == "failed" || to == "cancelled"
+	case "running":
+		return to == "waiting_human" || to == "needs_attention" || to == "completed" || to == "failed" || to == "cancelled"
+	case "waiting_human":
+		return to == "running" || to == "needs_attention" || to == "failed" || to == "cancelled"
+	case "needs_attention":
+		return to == "running" || to == "completed" || to == "failed" || to == "cancelled"
+	case "completed", "failed", "cancelled":
+		return false
+	default:
+		return false
+	}
 }
 
 // ExecutionKind discriminates what a single Execution drives.

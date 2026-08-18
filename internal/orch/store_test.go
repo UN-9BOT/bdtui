@@ -3,12 +3,16 @@ package orch
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
+	"sync"
 	"testing"
 )
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(context.Background(), ":memory:")
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -16,10 +20,27 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+func newProject(t *testing.T, s *Store, name string) *Project {
+	t.Helper()
+	p := &Project{Name: name, FsPath: "/" + name}
+	if err := s.CreateProject(context.Background(), p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	return p
+}
+
+func newRun(t *testing.T, s *Store, projectID, taskID string) *Run {
+	t.Helper()
+	r := &Run{ProjectID: projectID, TaskID: taskID, Status: RunQueued}
+	if err := s.CreateRun(context.Background(), r); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	return r
+}
+
 func TestMigrateIdempotent(t *testing.T) {
 	s := newTestStore(t)
-	ctx := context.Background()
-	if err := s.Migrate(ctx); err != nil {
+	if err := s.Migrate(context.Background()); err != nil {
 		t.Fatalf("second Migrate: %v", err)
 	}
 }
@@ -61,43 +82,27 @@ func TestProjectCreateGetUpdate(t *testing.T) {
 func TestRunLifecycleAtomicTransitions(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-
-	p := &Project{Name: "p", FsPath: "/p"}
-	if err := s.CreateProject(ctx, p); err != nil {
-		t.Fatal(err)
-	}
-
-	r := &Run{ProjectID: p.ID, Status: RunQueued, WorkflowSnapshotRef: "abc"}
-	if err := s.CreateRun(ctx, r); err != nil {
-		t.Fatal(err)
-	}
-	if r.ID == "" {
-		t.Fatal("expected run ID")
-	}
-
-	// Invalid transition (not in allowed set) must fail atomically.
-	err := s.TransitionRun(ctx, r.ID, []RunStatus{RunCompleted}, RunRunning, RunTransitionOpts{})
-	if !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("expected ErrInvalidTransition, got %v", err)
-	}
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
 
 	// queued -> running sets started_at.
-	if err := s.TransitionRun(ctx, r.ID, []RunStatus{RunQueued}, RunRunning, RunTransitionOpts{}); err != nil {
-		t.Fatal(err)
+	if err := s.TransitionRun(ctx, r.ID, RunRunning, RunTransitionOpts{}); err != nil {
+		t.Fatalf("queued->running: %v", err)
 	}
 	got, _ := s.GetRun(ctx, r.ID)
 	if got.Status != RunRunning || got.StartedAt == nil {
 		t.Fatalf("expected running with started_at, got %+v", got)
 	}
 
-	// running -> waiting_human (needs_attention_reason carried on later transition).
-	if err := s.TransitionRun(ctx, r.ID, []RunStatus{RunRunning}, RunWaitingHuman, RunTransitionOpts{}); err != nil {
-		t.Fatal(err)
+	// running -> waiting_human.
+	if err := s.TransitionRun(ctx, r.ID, RunWaitingHuman, RunTransitionOpts{}); err != nil {
+		t.Fatalf("running->waiting_human: %v", err)
 	}
-	if err := s.TransitionRun(ctx, r.ID, []RunStatus{RunWaitingHuman}, RunNeedsAttention, RunTransitionOpts{
+	// waiting_human -> needs_attention with reason.
+	if err := s.TransitionRun(ctx, r.ID, RunNeedsAttention, RunTransitionOpts{
 		NeedsAttentionReason: strPtrTo("writer ambiguous"),
 	}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("waiting_human->needs_attention: %v", err)
 	}
 	got, _ = s.GetRun(ctx, r.ID)
 	if got.Status != RunNeedsAttention || got.NeedsAttentionReason == nil || *got.NeedsAttentionReason != "writer ambiguous" {
@@ -105,29 +110,53 @@ func TestRunLifecycleAtomicTransitions(t *testing.T) {
 	}
 
 	// needs_attention -> completed sets completed_at.
-	if err := s.TransitionRun(ctx, r.ID, []RunStatus{RunNeedsAttention}, RunCompleted, RunTransitionOpts{}); err != nil {
-		t.Fatal(err)
+	if err := s.TransitionRun(ctx, r.ID, RunCompleted, RunTransitionOpts{}); err != nil {
+		t.Fatalf("needs_attention->completed: %v", err)
 	}
 	got, _ = s.GetRun(ctx, r.ID)
 	if got.Status != RunCompleted || got.CompletedAt == nil {
 		t.Fatalf("expected completed with completed_at, got %+v", got)
 	}
+}
 
-	// A transition whose source set does not include the current status is
-	// rejected even when the run is terminal.
-	if err := s.TransitionRun(ctx, r.ID, []RunStatus{RunQueued}, RunRunning, RunTransitionOpts{}); !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("expected ErrInvalidTransition for disallowed source, got %v", err)
+func TestTransitionRunStateMachine(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+
+	// queued -> completed is illegal (must go through running).
+	r := newRun(t, s, p.ID, "task-1")
+	if err := s.TransitionRun(ctx, r.ID, RunCompleted, RunTransitionOpts{}); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("queued->completed: expected ErrInvalidTransition, got %v", err)
+	}
+
+	// terminal -> running is illegal.
+	r2 := newRun(t, s, p.ID, "task-2")
+	_ = s.TransitionRun(ctx, r2.ID, RunRunning, RunTransitionOpts{})
+	_ = s.TransitionRun(ctx, r2.ID, RunCompleted, RunTransitionOpts{})
+	if err := s.TransitionRun(ctx, r2.ID, RunRunning, RunTransitionOpts{}); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("completed->running: expected ErrInvalidTransition, got %v", err)
+	}
+}
+
+func TestCreateRunEnforcesSingleActivePerTask(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+
+	_ = newRun(t, s, p.ID, "task-shared")
+
+	r2 := &Run{ProjectID: p.ID, TaskID: "task-shared", Status: RunQueued}
+	if err := s.CreateRun(ctx, r2); !errors.Is(err, ErrActiveRunExists) {
+		t.Fatalf("expected ErrActiveRunExists, got %v", err)
 	}
 }
 
 func TestEventsAppendOnlyPerRunSeq(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-
-	p := &Project{Name: "p", FsPath: "/p"}
-	_ = s.CreateProject(ctx, p)
-	r := &Run{ProjectID: p.ID, Status: RunQueued}
-	_ = s.CreateRun(ctx, r)
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
 
 	_ = s.AppendEvent(ctx, &r.ID, "custom.one", `{"a":1}`)
 	_ = s.AppendEvent(ctx, &r.ID, "custom.two", `{"a":2}`)
@@ -136,7 +165,6 @@ func TestEventsAppendOnlyPerRunSeq(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	// run.created (from CreateRun) + two custom events.
 	if len(events) != 3 {
 		t.Fatalf("expected 3 events, got %d", len(events))
@@ -151,14 +179,56 @@ func TestEventsAppendOnlyPerRunSeq(t *testing.T) {
 	}
 }
 
+func TestConcurrentAppendEvent(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
+
+	const n = 50
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := s.AppendEvent(ctx, &r.ID, "concurrent", fmt.Sprintf(`{"i":%d}`, i)); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+
+	events, err := s.ListEventsByRun(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != n+1 {
+		t.Fatalf("expected %d events, got %d", n+1, len(events))
+	}
+	seen := make(map[int64]bool, len(events))
+	for _, e := range events {
+		if seen[e.Seq] {
+			t.Fatalf("duplicate seq %d", e.Seq)
+		}
+		seen[e.Seq] = true
+	}
+	for i := int64(1); i <= n+1; i++ {
+		if !seen[i] {
+			t.Fatalf("missing seq %d", i)
+		}
+	}
+}
+
 func TestStartStepAttemptAtomicNumbering(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-
-	p := &Project{Name: "p", FsPath: "/p"}
-	_ = s.CreateProject(ctx, p)
-	r := &Run{ProjectID: p.ID, Status: RunRunning}
-	_ = s.CreateRun(ctx, r)
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
 
 	a1, err := s.StartStepAttempt(ctx, r.ID, "step-x", `{"in":1}`)
 	if err != nil {
@@ -184,14 +254,59 @@ func TestStartStepAttemptAtomicNumbering(t *testing.T) {
 	}
 }
 
+func TestConcurrentStartStepAttempt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
+
+	const n = 25
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.StartStepAttempt(ctx, r.ID, "step-x", "{}"); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("StartStepAttempt: %v", err)
+	}
+
+	// Attempts must be unique and cover 1..n.
+	seen := make(map[int]bool)
+	rows, err := s.db.QueryContext(ctx, `SELECT attempt FROM step_attempts WHERE run_id = ? AND step_id = ?`, r.ID, "step-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var attempt int
+		if err := rows.Scan(&attempt); err != nil {
+			t.Fatal(err)
+		}
+		if seen[attempt] {
+			t.Fatalf("duplicate attempt %d", attempt)
+		}
+		seen[attempt] = true
+	}
+	for i := 1; i <= n; i++ {
+		if !seen[i] {
+			t.Fatalf("missing attempt %d", i)
+		}
+	}
+}
+
 func TestExecutionLifecycle(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-
-	p := &Project{Name: "p", FsPath: "/p"}
-	_ = s.CreateProject(ctx, p)
-	r := &Run{ProjectID: p.ID, Status: RunRunning}
-	_ = s.CreateRun(ctx, r)
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
 	sa, _ := s.StartStepAttempt(ctx, r.ID, "step-x", "{}")
 
 	e := &Execution{
@@ -199,8 +314,8 @@ func TestExecutionLifecycle(t *testing.T) {
 		StepAttemptID: sa.ID,
 		Kind:          KindAgent,
 		Status:        ExecQueued,
-		Prompt:        "do the thing",
-		Artifacts:     "[]",
+		PromptRef:     "runs/" + r.ID + "/exec/prompt.md",
+		PromptHash:    "sha256:abc",
 	}
 	if err := s.CreateExecution(ctx, e); err != nil {
 		t.Fatal(err)
@@ -209,28 +324,51 @@ func TestExecutionLifecycle(t *testing.T) {
 		t.Fatal("expected execution ID")
 	}
 
-	if err := s.TransitionExecution(ctx, e.ID, []ExecutionStatus{ExecQueued}, ExecRunning); err != nil {
+	if err := s.TransitionExecution(ctx, e.ID, ExecRunning); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.TransitionExecution(ctx, e.ID, []ExecutionStatus{ExecRunning}, ExecCompleted); err != nil {
+	if err := s.TransitionExecution(ctx, e.ID, ExecCompleted); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.GetExecution(ctx, e.ID)
 	if got.Status != ExecCompleted || got.CompletedAt == nil {
 		t.Fatalf("unexpected execution: %+v", got)
 	}
+	if got.PromptRef != e.PromptRef || got.PromptHash != e.PromptHash {
+		t.Fatalf("prompt ref/hash not round-tripped: %+v", got)
+	}
 
-	if err := s.TransitionExecution(ctx, e.ID, []ExecutionStatus{ExecQueued}, ExecRunning); !errors.Is(err, ErrInvalidTransition) {
+	if err := s.TransitionExecution(ctx, e.ID, ExecRunning); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("expected ErrInvalidTransition, got %v", err)
+	}
+}
+
+func TestArtifactLifecycle(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
+	sa, _ := s.StartStepAttempt(ctx, r.ID, "step-x", "{}")
+	e := &Execution{RunID: r.ID, StepAttemptID: sa.ID, Kind: KindAgent, Status: ExecCompleted}
+	_ = s.CreateExecution(ctx, e)
+
+	a := &Artifact{ExecutionID: e.ID, Name: "report.md", Path: "artifacts/report.md", Hash: "sha256:def"}
+	if err := s.CreateArtifact(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	arts, err := s.ListArtifactsByExecution(ctx, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 || arts[0].Name != "report.md" || arts[0].Hash != "sha256:def" {
+		t.Fatalf("unexpected artifacts: %+v", arts)
 	}
 }
 
 func TestLaunchIntentResolve(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-
-	p := &Project{Name: "p", FsPath: "/p"}
-	_ = s.CreateProject(ctx, p)
+	p := newProject(t, s, "p")
 
 	li := &LaunchIntent{ProjectID: p.ID, WorkflowRef: "wf.yaml", Inputs: "{}"}
 	if err := s.CreateLaunchIntent(ctx, li); err != nil {
@@ -246,7 +384,6 @@ func TestLaunchIntentResolve(t *testing.T) {
 		t.Fatalf("unexpected resolved intent: %+v", got)
 	}
 
-	// Already resolved: cannot resolve again.
 	if err := s.ResolveLaunchIntent(ctx, li.ID, LaunchRejected, nil); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("expected ErrInvalidTransition, got %v", err)
 	}
@@ -255,11 +392,8 @@ func TestLaunchIntentResolve(t *testing.T) {
 func TestHumanInputAnswer(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-
-	p := &Project{Name: "p", FsPath: "/p"}
-	_ = s.CreateProject(ctx, p)
-	r := &Run{ProjectID: p.ID, Status: RunWaitingHuman}
-	_ = s.CreateRun(ctx, r)
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
 	sa, _ := s.StartStepAttempt(ctx, r.ID, "human-step", "{}")
 
 	h := &HumanInput{RunID: r.ID, StepAttemptID: sa.ID, Prompt: "approve?"}
@@ -270,8 +404,6 @@ func TestHumanInputAnswer(t *testing.T) {
 	if err := s.AnswerHumanInput(ctx, h.ID, "yes"); err != nil {
 		t.Fatal(err)
 	}
-
-	// Answering twice must be rejected.
 	if err := s.AnswerHumanInput(ctx, h.ID, "no"); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("expected ErrInvalidTransition, got %v", err)
 	}
