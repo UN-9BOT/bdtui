@@ -11,13 +11,6 @@ import (
 // activeRunStatusesSQL is the SQL list of non-terminal run statuses.
 const activeRunStatusesSQL = "('queued','running','waiting_human','needs_attention')"
 
-// RunTransitionOpts carries optional fields updated during a run transition.
-type RunTransitionOpts struct {
-	NeedsAttentionReason *string
-	CurrentStepID        *string
-	Error                *string
-}
-
 func (s *Store) CreateRun(ctx context.Context, r *Run) error {
 	if r.ID == "" {
 		r.ID = uuid.NewString()
@@ -43,8 +36,8 @@ func (s *Store) CreateRun(ctx context.Context, r *Run) error {
 	if r.TaskID != "" {
 		var exists bool
 		if err := tx.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM runs WHERE task_id = ? AND status IN `+activeRunStatusesSQL+`)`,
-			r.TaskID,
+			`SELECT EXISTS(SELECT 1 FROM runs WHERE project_id = ? AND task_id = ? AND status IN `+activeRunStatusesSQL+`)`,
+			r.ProjectID, r.TaskID,
 		).Scan(&exists); err != nil {
 			return err
 		}
@@ -145,9 +138,10 @@ func (s *Store) ListRunsByProject(ctx context.Context, projectID string) ([]Run,
 }
 
 // TransitionRun atomically moves a run to `to` if that transition is legal per
-// the Run state machine. It updates timestamps and audit state in a single
-// transaction and returns ErrInvalidTransition for illegal transitions.
-func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus, opts RunTransitionOpts) error {
+// the Run state machine. It updates only lifecycle timestamps and audit state;
+// metadata fields (current_step_id, needs_attention_reason, error) are managed
+// by dedicated setters so a transition never silently clears them.
+func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus) error {
 	if !to.Valid() {
 		return errInvalidStatus(to)
 	}
@@ -181,11 +175,9 @@ func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus, opts
 	}
 
 	res, err := tx.ExecContext(ctx,
-		`UPDATE runs SET status = ?, updated_at = ?, needs_attention_reason = ?, current_step_id = ?,
-		                error = ?, started_at = ?, completed_at = ?
+		`UPDATE runs SET status = ?, updated_at = ?, started_at = ?, completed_at = ?
 		 WHERE id = ? AND status = ?`,
-		string(to), timeString(now), opts.NeedsAttentionReason, opts.CurrentStepID,
-		opts.Error, started, completed, id, cur,
+		string(to), timeString(now), started, completed, id, cur,
 	)
 	if err != nil {
 		return err
@@ -200,4 +192,34 @@ func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus, opts
 		return err
 	}
 	return tx.Commit()
+}
+
+// SetRunCurrentStep sets (or clears, when stepID is nil) the current step of a
+// run without changing its status.
+func (s *Store) SetRunCurrentStep(ctx context.Context, id string, stepID *string) error {
+	return s.setRunField(ctx, id, "current_step_id", nullString(stepID))
+}
+
+// SetRunNeedsAttentionReason sets (or clears) the needs_attention reason.
+func (s *Store) SetRunNeedsAttentionReason(ctx context.Context, id string, reason *string) error {
+	return s.setRunField(ctx, id, "needs_attention_reason", nullString(reason))
+}
+
+// SetRunError sets (or clears) the run error.
+func (s *Store) SetRunError(ctx context.Context, id string, errMsg *string) error {
+	return s.setRunField(ctx, id, "error", nullString(errMsg))
+}
+
+func (s *Store) setRunField(ctx context.Context, id, column string, value any) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET `+column+` = ?, updated_at = ? WHERE id = ?`,
+		value, timeString(nowUTC()), id,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

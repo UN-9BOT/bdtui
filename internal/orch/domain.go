@@ -91,9 +91,12 @@ type Artifact struct {
 
 // LaunchIntent is a durable request to launch a Run, persisted before the Run
 // itself exists so a launch can be accepted/rejected without losing intent.
+// TaskID identifies the source Kanban task so recovery can unambiguously
+// claim/reconcile the right task after a daemon restart.
 type LaunchIntent struct {
 	ID          string             `json:"id"`
 	ProjectID   string             `json:"project_id"`
+	TaskID      string             `json:"task_id"`
 	WorkflowRef string             `json:"workflow_ref"`
 	Inputs      string             `json:"inputs"`
 	Status      LaunchIntentStatus `json:"status"`

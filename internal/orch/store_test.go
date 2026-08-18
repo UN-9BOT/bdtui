@@ -77,6 +77,17 @@ func TestProjectCreateGetUpdate(t *testing.T) {
 	if after.ID != p.ID {
 		t.Fatal("project ID must be stable")
 	}
+
+	// Both create and update emit project.upserted (audit stream visibility).
+	var upserted int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM events WHERE run_id IS NULL AND type = ?`, EventProjectUpserted,
+	).Scan(&upserted); err != nil {
+		t.Fatal(err)
+	}
+	if upserted != 2 {
+		t.Fatalf("expected 2 project.upserted events, got %d", upserted)
+	}
 }
 
 func TestRunLifecycleAtomicTransitions(t *testing.T) {
@@ -86,7 +97,7 @@ func TestRunLifecycleAtomicTransitions(t *testing.T) {
 	r := newRun(t, s, p.ID, "task-1")
 
 	// queued -> running sets started_at.
-	if err := s.TransitionRun(ctx, r.ID, RunRunning, RunTransitionOpts{}); err != nil {
+	if err := s.TransitionRun(ctx, r.ID, RunRunning); err != nil {
 		t.Fatalf("queued->running: %v", err)
 	}
 	got, _ := s.GetRun(ctx, r.ID)
@@ -95,14 +106,15 @@ func TestRunLifecycleAtomicTransitions(t *testing.T) {
 	}
 
 	// running -> waiting_human.
-	if err := s.TransitionRun(ctx, r.ID, RunWaitingHuman, RunTransitionOpts{}); err != nil {
+	if err := s.TransitionRun(ctx, r.ID, RunWaitingHuman); err != nil {
 		t.Fatalf("running->waiting_human: %v", err)
 	}
-	// waiting_human -> needs_attention with reason.
-	if err := s.TransitionRun(ctx, r.ID, RunNeedsAttention, RunTransitionOpts{
-		NeedsAttentionReason: strPtrTo("writer ambiguous"),
-	}); err != nil {
+	// waiting_human -> needs_attention, then set the reason separately.
+	if err := s.TransitionRun(ctx, r.ID, RunNeedsAttention); err != nil {
 		t.Fatalf("waiting_human->needs_attention: %v", err)
+	}
+	if err := s.SetRunNeedsAttentionReason(ctx, r.ID, strPtrTo("writer ambiguous")); err != nil {
+		t.Fatalf("SetRunNeedsAttentionReason: %v", err)
 	}
 	got, _ = s.GetRun(ctx, r.ID)
 	if got.Status != RunNeedsAttention || got.NeedsAttentionReason == nil || *got.NeedsAttentionReason != "writer ambiguous" {
@@ -110,12 +122,43 @@ func TestRunLifecycleAtomicTransitions(t *testing.T) {
 	}
 
 	// needs_attention -> completed sets completed_at.
-	if err := s.TransitionRun(ctx, r.ID, RunCompleted, RunTransitionOpts{}); err != nil {
+	if err := s.TransitionRun(ctx, r.ID, RunCompleted); err != nil {
 		t.Fatalf("needs_attention->completed: %v", err)
 	}
 	got, _ = s.GetRun(ctx, r.ID)
 	if got.Status != RunCompleted || got.CompletedAt == nil {
 		t.Fatalf("expected completed with completed_at, got %+v", got)
+	}
+}
+
+func TestTransitionRunPreservesMetadata(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
+
+	step := "plan_review"
+	if err := s.SetRunCurrentStep(ctx, r.ID, &step); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunError(ctx, r.ID, strPtrTo("boom")); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pure status transition must not clear metadata.
+	if err := s.TransitionRun(ctx, r.ID, RunRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.TransitionRun(ctx, r.ID, RunWaitingHuman); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := s.GetRun(ctx, r.ID)
+	if got.CurrentStepID == nil || *got.CurrentStepID != "plan_review" {
+		t.Fatalf("current_step_id was wiped: %+v", got)
+	}
+	if got.Error == nil || *got.Error != "boom" {
+		t.Fatalf("error was wiped: %+v", got)
 	}
 }
 
@@ -126,15 +169,15 @@ func TestTransitionRunStateMachine(t *testing.T) {
 
 	// queued -> completed is illegal (must go through running).
 	r := newRun(t, s, p.ID, "task-1")
-	if err := s.TransitionRun(ctx, r.ID, RunCompleted, RunTransitionOpts{}); !errors.Is(err, ErrInvalidTransition) {
+	if err := s.TransitionRun(ctx, r.ID, RunCompleted); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("queued->completed: expected ErrInvalidTransition, got %v", err)
 	}
 
 	// terminal -> running is illegal.
 	r2 := newRun(t, s, p.ID, "task-2")
-	_ = s.TransitionRun(ctx, r2.ID, RunRunning, RunTransitionOpts{})
-	_ = s.TransitionRun(ctx, r2.ID, RunCompleted, RunTransitionOpts{})
-	if err := s.TransitionRun(ctx, r2.ID, RunRunning, RunTransitionOpts{}); !errors.Is(err, ErrInvalidTransition) {
+	_ = s.TransitionRun(ctx, r2.ID, RunRunning)
+	_ = s.TransitionRun(ctx, r2.ID, RunCompleted)
+	if err := s.TransitionRun(ctx, r2.ID, RunRunning); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("completed->running: expected ErrInvalidTransition, got %v", err)
 	}
 }
@@ -146,9 +189,31 @@ func TestCreateRunEnforcesSingleActivePerTask(t *testing.T) {
 
 	_ = newRun(t, s, p.ID, "task-shared")
 
+	// Same project + same task: rejected.
 	r2 := &Run{ProjectID: p.ID, TaskID: "task-shared", Status: RunQueued}
 	if err := s.CreateRun(ctx, r2); !errors.Is(err, ErrActiveRunExists) {
 		t.Fatalf("expected ErrActiveRunExists, got %v", err)
+	}
+}
+
+func TestActiveTaskUniquenessIsProjectScoped(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	pA := newProject(t, s, "a")
+	pB := newProject(t, s, "b")
+
+	_ = newRun(t, s, pA.ID, "task-123")
+
+	// Same task id in a different project is allowed.
+	rB := &Run{ProjectID: pB.ID, TaskID: "task-123", Status: RunQueued}
+	if err := s.CreateRun(ctx, rB); err != nil {
+		t.Fatalf("cross-project task should be allowed, got %v", err)
+	}
+
+	// But a second active run for the same (project, task) is rejected.
+	rA2 := &Run{ProjectID: pA.ID, TaskID: "task-123", Status: RunQueued}
+	if err := s.CreateRun(ctx, rA2); !errors.Is(err, ErrActiveRunExists) {
+		t.Fatalf("expected ErrActiveRunExists within same project, got %v", err)
 	}
 }
 
@@ -370,7 +435,7 @@ func TestLaunchIntentResolve(t *testing.T) {
 	ctx := context.Background()
 	p := newProject(t, s, "p")
 
-	li := &LaunchIntent{ProjectID: p.ID, WorkflowRef: "wf.yaml", Inputs: "{}"}
+	li := &LaunchIntent{ProjectID: p.ID, TaskID: "task-1", WorkflowRef: "wf.yaml", Inputs: "{}"}
 	if err := s.CreateLaunchIntent(ctx, li); err != nil {
 		t.Fatal(err)
 	}
@@ -382,6 +447,9 @@ func TestLaunchIntentResolve(t *testing.T) {
 	got, _ := s.GetLaunchIntent(ctx, li.ID)
 	if got.Status != LaunchAccepted || got.RunID == nil || *got.RunID != "run-1" || got.ResolvedAt == nil {
 		t.Fatalf("unexpected resolved intent: %+v", got)
+	}
+	if got.TaskID != "task-1" {
+		t.Fatalf("task_id not round-tripped: %+v", got)
 	}
 
 	if err := s.ResolveLaunchIntent(ctx, li.ID, LaunchRejected, nil); !errors.Is(err, ErrInvalidTransition) {

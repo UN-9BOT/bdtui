@@ -41,7 +41,7 @@ CREATE TABLE runs (
 );
 CREATE INDEX idx_runs_project ON runs(project_id);
 CREATE INDEX idx_runs_status  ON runs(status);
-CREATE UNIQUE INDEX idx_runs_active_task ON runs(task_id)
+CREATE UNIQUE INDEX idx_runs_active_task ON runs(project_id, task_id)
     WHERE task_id <> '' AND status IN ('queued','running','waiting_human','needs_attention');
 
 CREATE TABLE step_attempts (
@@ -95,6 +95,7 @@ CREATE INDEX idx_artifacts_execution ON artifacts(execution_id);
 CREATE TABLE launch_intents (
     id           TEXT PRIMARY KEY,
     project_id   TEXT NOT NULL REFERENCES projects(id),
+    task_id      TEXT NOT NULL DEFAULT '',
     workflow_ref TEXT NOT NULL,
     inputs       TEXT NOT NULL DEFAULT '{}',
     status       TEXT NOT NULL,

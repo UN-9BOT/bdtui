@@ -62,7 +62,14 @@ func (s *Store) GetProject(ctx context.Context, id string) (*Project, error) {
 // git_remote). The ID is immutable.
 func (s *Store) UpdateProject(ctx context.Context, p *Project) error {
 	p.UpdatedAt = nowUTC()
-	res, err := s.db.ExecContext(ctx,
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
 		`UPDATE projects SET name = ?, fs_path = ?, git_remote = ?, updated_at = ? WHERE id = ?`,
 		p.Name, p.FsPath, p.GitRemote, timeString(p.UpdatedAt), p.ID,
 	)
@@ -72,5 +79,11 @@ func (s *Store) UpdateProject(ctx context.Context, p *Project) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+
+	if err := appendEventMapTx(ctx, tx, nil, EventProjectUpserted, map[string]any{
+		"project_id": p.ID,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

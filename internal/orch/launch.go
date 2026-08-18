@@ -30,16 +30,16 @@ func (s *Store) CreateLaunchIntent(ctx context.Context, li *LaunchIntent) error 
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO launch_intents(id, project_id, workflow_ref, inputs, status, run_id, created_at, resolved_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		li.ID, li.ProjectID, li.WorkflowRef, li.Inputs, string(li.Status), nullString(li.RunID),
+		`INSERT INTO launch_intents(id, project_id, task_id, workflow_ref, inputs, status, run_id, created_at, resolved_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		li.ID, li.ProjectID, li.TaskID, li.WorkflowRef, li.Inputs, string(li.Status), nullString(li.RunID),
 		timeString(li.CreatedAt), timeStringPtr(li.ResolvedAt),
 	); err != nil {
 		return err
 	}
 
 	if err := appendEventMapTx(ctx, tx, nil, EventIntentCreated, map[string]any{
-		"intent_id": li.ID, "project_id": li.ProjectID, "status": li.Status,
+		"intent_id": li.ID, "project_id": li.ProjectID, "task_id": li.TaskID, "status": li.Status,
 	}); err != nil {
 		return err
 	}
@@ -48,14 +48,14 @@ func (s *Store) CreateLaunchIntent(ctx context.Context, li *LaunchIntent) error 
 
 func (s *Store) GetLaunchIntent(ctx context.Context, id string) (*LaunchIntent, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, workflow_ref, inputs, status, run_id, created_at, resolved_at
+		`SELECT id, project_id, task_id, workflow_ref, inputs, status, run_id, created_at, resolved_at
 		 FROM launch_intents WHERE id = ?`, id)
 
 	li := &LaunchIntent{}
 	var status, created string
 	var runID, resolved sql.NullString
 
-	if err := row.Scan(&li.ID, &li.ProjectID, &li.WorkflowRef, &li.Inputs, &status,
+	if err := row.Scan(&li.ID, &li.ProjectID, &li.TaskID, &li.WorkflowRef, &li.Inputs, &status,
 		&runID, &created, &resolved); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
