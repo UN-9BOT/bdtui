@@ -34,3 +34,18 @@ func DefaultSocketPath() string {
 func DefaultDBPath() string {
 	return filepath.Join(StateDir(), dbName)
 }
+
+// EnsureStateDirs creates the parent directories of every file path it is
+// given (socket, db, pidfile, lockfile). It is idempotent and safe to call
+// before any daemon-owned file is created.
+func EnsureStateDirs(paths ...string) error {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
+}

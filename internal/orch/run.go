@@ -227,6 +227,50 @@ func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus) erro
 	return tx.Commit()
 }
 
+// RequestRunRetry re-queues a run that is in needs_attention. It is a command
+// ("please retry this run"), not a bare transition: the run returns to queued
+// so the controller/scheduler picks it up again. The needs_attention_reason is
+// cleared because it only applies while the run is in needs_attention.
+func (s *Store) RequestRunRetry(ctx context.Context, id string) error {
+	now := nowUTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var cur RunStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM runs WHERE id = ?`, id).Scan(&cur); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if cur != RunNeedsAttention {
+		return ErrInvalidTransition
+	}
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE runs SET status = ?, needs_attention_reason = NULL, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		string(RunQueued), timeString(now), id, cur,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrInvalidTransition
+	}
+
+	if err := appendEventMapTx(ctx, tx, &id, EventRunRetryRequest, map[string]any{
+		"run_id": id, "from": cur, "to": RunQueued,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SetRunCurrentStep sets (or clears, when stepID is nil) the current step of a
 // run without changing its status.
 func (s *Store) SetRunCurrentStep(ctx context.Context, id string, stepID *string) error {

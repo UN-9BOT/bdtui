@@ -29,6 +29,18 @@ func run(socketPath, dbPath, pidPath string) error {
 	if pidPath == "" {
 		pidPath = socketPath + ".pid"
 	}
+	lockPath := daemon.LockPath(socketPath)
+
+	if err := daemon.EnsureStateDirs(socketPath, dbPath, pidPath, lockPath); err != nil {
+		return fmt.Errorf("create state dirs: %w", err)
+	}
+
+	lock, err := daemon.AcquireLock(lockPath)
+	if err != nil {
+		return err
+	}
+	defer daemon.ReleaseLock(lock)
+
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 		return fmt.Errorf("write pidfile: %w", err)
 	}

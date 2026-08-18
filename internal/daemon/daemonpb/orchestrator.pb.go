@@ -169,10 +169,8 @@ type CreateRunRequest struct {
 	TaskId              string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	WorkflowSnapshotRef string                 `protobuf:"bytes,3,opt,name=workflow_snapshot_ref,json=workflowSnapshotRef,proto3" json:"workflow_snapshot_ref,omitempty"`
 	WorkflowSnapshot    string                 `protobuf:"bytes,4,opt,name=workflow_snapshot,json=workflowSnapshot,proto3" json:"workflow_snapshot,omitempty"`
-	// If empty, the daemon starts the Run as "queued".
-	Status        string `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CreateRunRequest) Reset() {
@@ -229,13 +227,6 @@ func (x *CreateRunRequest) GetWorkflowSnapshotRef() string {
 func (x *CreateRunRequest) GetWorkflowSnapshot() string {
 	if x != nil {
 		return x.WorkflowSnapshot
-	}
-	return ""
-}
-
-func (x *CreateRunRequest) GetStatus() string {
-	if x != nil {
-		return x.Status
 	}
 	return ""
 }
@@ -1131,14 +1122,13 @@ const file_internal_daemon_orchestrator_proto_rawDesc = "" +
 	"\x17_needs_attention_reasonB\b\n" +
 	"\x06_errorB\r\n" +
 	"\v_started_atB\x0f\n" +
-	"\r_completed_at\"\xc3\x01\n" +
+	"\r_completed_at\"\xab\x01\n" +
 	"\x10CreateRunRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x122\n" +
 	"\x15workflow_snapshot_ref\x18\x03 \x01(\tR\x13workflowSnapshotRef\x12+\n" +
-	"\x11workflow_snapshot\x18\x04 \x01(\tR\x10workflowSnapshot\x12\x16\n" +
-	"\x06status\x18\x05 \x01(\tR\x06status\"\x1f\n" +
+	"\x11workflow_snapshot\x18\x04 \x01(\tR\x10workflowSnapshot\"\x1f\n" +
 	"\rGetRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"D\n" +
 	"\x0fListRunsRequest\x12\"\n" +

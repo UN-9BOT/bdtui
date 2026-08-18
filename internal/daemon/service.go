@@ -34,18 +34,10 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 		return nil, toStatus(err)
 	}
 
-	runStatus := orch.RunQueued
-	if req.Status != "" {
-		runStatus = orch.RunStatus(req.Status)
-		if !runStatus.Valid() {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid run status %q", req.Status)
-		}
-	}
-
 	r := &orch.Run{
 		ProjectID:           req.ProjectId,
 		TaskID:              req.TaskId,
-		Status:              runStatus,
+		Status:              orch.RunQueued,
 		WorkflowSnapshotRef: req.WorkflowSnapshotRef,
 		WorkflowSnapshot:    req.WorkflowSnapshot,
 	}
@@ -99,7 +91,7 @@ func (s *Service) AnswerHumanInput(ctx context.Context, req *daemonpb.AnswerHuma
 }
 
 func (s *Service) RetryRun(ctx context.Context, req *daemonpb.RetryRunRequest) (*daemonpb.Run, error) {
-	if err := s.store.TransitionRun(ctx, req.Id, orch.RunRunning); err != nil {
+	if err := s.store.RequestRunRetry(ctx, req.Id); err != nil {
 		return nil, toStatus(err)
 	}
 	r, err := s.store.GetRun(ctx, req.Id)
@@ -166,17 +158,15 @@ func (s *Service) StreamEvents(req *daemonpb.StreamEventsRequest, stream daemonp
 }
 
 func sendEventsAfter(ctx context.Context, store *orch.Store, stream daemonpb.Orchestrator_StreamEventsServer, runID string, after *int64) error {
-	events, err := store.ListEventsByRun(ctx, runID)
+	events, err := store.ListEventsByRunAfter(ctx, runID, *after)
 	if err != nil {
 		return toStatus(err)
 	}
 	for i := range events {
-		if events[i].Seq > *after {
-			if err := stream.Send(eventToProto(&events[i])); err != nil {
-				return err
-			}
-			*after = events[i].Seq
+		if err := stream.Send(eventToProto(&events[i])); err != nil {
+			return err
 		}
+		*after = events[i].Seq
 	}
 	return nil
 }

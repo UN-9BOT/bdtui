@@ -119,8 +119,8 @@ func TestCreateGetListRun(t *testing.T) {
 	}
 }
 
-func TestRetryAndCancelRun(t *testing.T) {
-	_, project, client := startTestServer(t)
+func TestRetryRunRequiresNeedsAttention(t *testing.T) {
+	store, project, client := startTestServer(t)
 	ctx := context.Background()
 
 	run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: project.ID, TaskId: "task-retry"})
@@ -128,12 +128,35 @@ func TestRetryAndCancelRun(t *testing.T) {
 		t.Fatalf("create run: %v", err)
 	}
 
+	// A queued run cannot be retried: retry is a needs_attention-only command.
+	if _, err := client.RetryRun(ctx, &daemonpb.RetryRunRequest{Id: run.Id}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("retry from queued = %v, want FailedPrecondition", err)
+	}
+
+	// Drive the run to needs_attention through the controller/store path.
+	if err := store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
+		t.Fatalf("transition to running: %v", err)
+	}
+	if err := store.TransitionRun(ctx, run.Id, orch.RunNeedsAttention); err != nil {
+		t.Fatalf("transition to needs_attention: %v", err)
+	}
+
 	retried, err := client.RetryRun(ctx, &daemonpb.RetryRunRequest{Id: run.Id})
 	if err != nil {
 		t.Fatalf("retry run: %v", err)
 	}
-	if retried.Status != string(orch.RunRunning) {
-		t.Fatalf("status after retry = %q, want running", retried.Status)
+	if retried.Status != string(orch.RunQueued) {
+		t.Fatalf("status after retry = %q, want queued", retried.Status)
+	}
+}
+
+func TestCancelRun(t *testing.T) {
+	_, project, client := startTestServer(t)
+	ctx := context.Background()
+
+	run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: project.ID, TaskId: "task-cancel"})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
 	}
 
 	cancelled, err := client.CancelRun(ctx, &daemonpb.CancelRunRequest{Id: run.Id})
@@ -249,8 +272,8 @@ func TestStreamEvents(t *testing.T) {
 		t.Fatalf("first event type = %q, want run.created", first.Type)
 	}
 
-	if _, err := client.RetryRun(ctx, &daemonpb.RetryRunRequest{Id: run.Id}); err != nil {
-		t.Fatalf("retry run: %v", err)
+	if _, err := client.CancelRun(ctx, &daemonpb.CancelRunRequest{Id: run.Id}); err != nil {
+		t.Fatalf("cancel run: %v", err)
 	}
 
 	second, err := stream.Recv()
@@ -277,6 +300,37 @@ func TestErrorMapping(t *testing.T) {
 	}
 }
 
+func TestAcquireLockExclusive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daemon.sock.lock")
+
+	first, err := AcquireLock(path)
+	if err != nil {
+		t.Fatalf("acquire first lock: %v", err)
+	}
+	t.Cleanup(func() { _ = ReleaseLock(first) })
+
+	if _, err := AcquireLock(path); err == nil {
+		t.Fatal("second acquire unexpectedly succeeded")
+	}
+}
+
+func TestEnsureStateDirs(t *testing.T) {
+	base := t.TempDir()
+	paths := []string{
+		filepath.Join(base, "a", "b", "socket.sock"),
+		filepath.Join(base, "c", "db.db"),
+		filepath.Join(base, "d", "pid.pid"),
+	}
+	if err := EnsureStateDirs(paths...); err != nil {
+		t.Fatalf("ensure state dirs: %v", err)
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(filepath.Dir(p)); err != nil {
+			t.Fatalf("parent of %s not created: %v", p, err)
+		}
+	}
+}
+
 func TestEnsureDaemonAutoStart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping daemon auto-start integration test in short mode")
@@ -290,8 +344,11 @@ func TestEnsureDaemonAutoStart(t *testing.T) {
 		t.Fatalf("build bdtuid: %v\n%s", err, out)
 	}
 
-	socketPath := filepath.Join(dir, "daemon.sock")
-	dbPath := filepath.Join(dir, "orch.db")
+	// Deliberately use a nested, non-existent state dir so this also verifies
+	// the daemon creates parent directories before writing pidfile/DB/lock.
+	stateDir := filepath.Join(dir, "state", "nested")
+	socketPath := filepath.Join(stateDir, "daemon.sock")
+	dbPath := filepath.Join(stateDir, "orch.db")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -312,6 +369,13 @@ func TestEnsureDaemonAutoStart(t *testing.T) {
 	_, err = client.GetRun(ctx, &daemonpb.GetRunRequest{Id: "missing"})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetRun after auto-start = %v, want NotFound", err)
+	}
+
+	// A second daemon must fail to acquire the singleton lock.
+	second := exec.Command(binPath, "--socket", socketPath, "--db", dbPath)
+	second.Env = os.Environ()
+	if out, err := second.CombinedOutput(); err == nil {
+		t.Fatalf("second daemon unexpectedly started: %s", out)
 	}
 
 	// Stop the detached daemon so the test does not leak a background process.

@@ -44,8 +44,9 @@ message CreateRunRequest {
   string task_id = 2;
   string workflow_snapshot_ref = 3;
   string workflow_snapshot = 4;
-  // If empty, the daemon starts the Run as "queued".
-  string status = 5;
+  // Runs are always created "queued"; the controller owns subsequent
+  // transitions. A status field is intentionally absent so clients cannot
+  // pre-select a lifecycle state.
 }
 
 message GetRunRequest {
