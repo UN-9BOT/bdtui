@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package bdtui.daemon.v1;
+
+option go_package = "bdtui/internal/daemon/daemonpb;daemonpb";
+
+// Orchestrator is the global daemon API exposed over a Unix domain socket.
+//
+// Status/kind fields are plain strings for the MVP so the wire contract stays
+// tightly coupled to the orch domain's string enums (RunStatus,
+// ExecutionStatus, ExecutionKind, HumanInputStatus) without a second mapping
+// layer that can drift.
+service Orchestrator {
+  rpc CreateRun(CreateRunRequest) returns (Run);
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+  rpc GetRun(GetRunRequest) returns (Run);
+  rpc AnswerHumanInput(AnswerHumanInputRequest) returns (HumanInput);
+  rpc RetryRun(RetryRunRequest) returns (Run);
+  rpc CancelRun(CancelRunRequest) returns (Run);
+  rpc InspectExecution(InspectExecutionRequest) returns (InspectExecutionResponse);
+  rpc StreamEvents(StreamEventsRequest) returns (stream Event);
+}
+
+// Run mirrors orch.Run. Timestamps are RFC3339 strings. Nullable string fields
+// use proto3 optional so the client can distinguish null from empty.
+message Run {
+  string id = 1;
+  string project_id = 2;
+  string task_id = 3;
+  string status = 4;
+  string workflow_snapshot_ref = 5;
+  string workflow_snapshot = 6;
+  optional string current_step_id = 7;
+  optional string needs_attention_reason = 8;
+  optional string error = 9;
+  string created_at = 10;
+  string updated_at = 11;
+  optional string started_at = 12;
+  optional string completed_at = 13;
+}
+
+message CreateRunRequest {
+  string project_id = 1;
+  string task_id = 2;
+  string workflow_snapshot_ref = 3;
+  string workflow_snapshot = 4;
+  // Runs are always created "queued"; the controller owns subsequent
+  // transitions. A status field is intentionally absent so clients cannot
+  // pre-select a lifecycle state.
+}
+
+message GetRunRequest {
+  string id = 1;
+}
+
+message ListRunsRequest {
+  // When set, only runs for this project are returned.
+  optional string project_id = 1;
+}
+
+message ListRunsResponse {
+  repeated Run runs = 1;
+}
+
+message HumanInput {
+  string id = 1;
+  string run_id = 2;
+  string step_attempt_id = 3;
+  optional string execution_id = 4;
+  string prompt = 5;
+  optional string response = 6;
+  string status = 7;
+  string created_at = 8;
+  optional string answered_at = 9;
+}
+
+message AnswerHumanInputRequest {
+  string id = 1;
+  string response = 2;
+}
+
+message RetryRunRequest {
+  string id = 1;
+}
+
+message CancelRunRequest {
+  string id = 1;
+}
+
+message Execution {
+  string id = 1;
+  string run_id = 2;
+  string step_attempt_id = 3;
+  string kind = 4;
+  string status = 5;
+  optional string pane_id = 6;
+  optional string process_id = 7;
+  string prompt_ref = 8;
+  string prompt_hash = 9;
+  optional string result_json = 10;
+  optional string result_commit = 11;
+  optional string error = 12;
+  string created_at = 13;
+  string updated_at = 14;
+  optional string started_at = 15;
+  optional string completed_at = 16;
+}
+
+message Artifact {
+  string id = 1;
+  string execution_id = 2;
+  string name = 3;
+  string path = 4;
+  string hash = 5;
+  string created_at = 6;
+}
+
+message InspectExecutionRequest {
+  string id = 1;
+}
+
+message InspectExecutionResponse {
+  Execution execution = 1;
+  repeated Artifact artifacts = 2;
+}
+
+message StreamEventsRequest {
+  string run_id = 1;
+  // Only events with seq > after_seq are streamed. Use 0 to replay from the
+  // beginning of the run.
+  int64 after_seq = 2;
+}
+
+message Event {
+  int64 id = 1;
+  optional string run_id = 2;
+  int64 seq = 3;
+  string type = 4;
+  string payload = 5;
+  string created_at = 6;
+}

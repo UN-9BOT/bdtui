@@ -28,6 +28,26 @@ func (s *Store) ListEventsByRun(ctx context.Context, runID string) ([]Event, err
 	}
 	defer rows.Close()
 
+	return scanEvents(rows)
+}
+
+// ListEventsByRunAfter returns events for a run with seq greater than
+// afterSeq, ordered by sequence. The daemon uses this for incremental event
+// streaming so it never reloads a run's full history on every poll.
+func (s *Store) ListEventsByRunAfter(ctx context.Context, runID string, afterSeq int64) ([]Event, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, seq, type, payload, created_at FROM events WHERE run_id = ? AND seq > ? ORDER BY seq`,
+		runID, afterSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanEvents(rows)
+}
+
+func scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var e Event
@@ -37,6 +57,7 @@ func (s *Store) ListEventsByRun(ctx context.Context, runID string) ([]Event, err
 			return nil, err
 		}
 		e.RunID = strPtr(rid)
+		var err error
 		if e.CreatedAt, err = parseTime(created); err != nil {
 			return nil, err
 		}

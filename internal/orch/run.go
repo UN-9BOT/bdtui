@@ -137,6 +137,39 @@ func (s *Store) ListRunsByProject(ctx context.Context, projectID string) ([]Run,
 	return runs, nil
 }
 
+// ListRuns returns every run ordered by creation time. The daemon uses this
+// for the unfiltered list; callers that already have a project should prefer
+// ListRunsByProject.
+func (s *Store) ListRuns(ctx context.Context) ([]Run, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM runs ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	runs := make([]Run, 0, len(ids))
+	for _, id := range ids {
+		r, err := s.GetRun(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, *r)
+	}
+	return runs, nil
+}
+
 // TransitionRun atomically moves a run to `to` if that transition is legal per
 // the Run state machine. It updates only lifecycle timestamps and audit state;
 // metadata fields (current_step_id, needs_attention_reason, error) are managed
@@ -188,6 +221,50 @@ func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus) erro
 
 	if err := appendEventMapTx(ctx, tx, &id, EventRunTransition, map[string]any{
 		"run_id": id, "from": cur, "to": to,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RequestRunRetry re-queues a run that is in needs_attention. It is a command
+// ("please retry this run"), not a bare transition: the run returns to queued
+// so the controller/scheduler picks it up again. The needs_attention_reason is
+// cleared because it only applies while the run is in needs_attention.
+func (s *Store) RequestRunRetry(ctx context.Context, id string) error {
+	now := nowUTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var cur RunStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM runs WHERE id = ?`, id).Scan(&cur); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if cur != RunNeedsAttention {
+		return ErrInvalidTransition
+	}
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE runs SET status = ?, needs_attention_reason = NULL, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		string(RunQueued), timeString(now), id, cur,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrInvalidTransition
+	}
+
+	if err := appendEventMapTx(ctx, tx, &id, EventRunRetryRequest, map[string]any{
+		"run_id": id, "from": cur, "to": RunQueued,
 	}); err != nil {
 		return err
 	}

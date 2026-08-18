@@ -177,6 +177,7 @@ const (
 	EventProjectUpserted = "project.upserted"
 	EventRunCreated      = "run.created"
 	EventRunTransition   = "run.transition"
+	EventRunRetryRequest = "run.retry_requested"
 	EventStepCreated     = "step.created"
 	EventStepTransition  = "step.transition"
 	EventExecCreated     = "execution.created"

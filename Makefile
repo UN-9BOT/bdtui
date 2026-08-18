@@ -7,6 +7,7 @@ build:
 	go build ./...
 	mkdir -p bin
 	go build -o bin/bdtui ./cmd/bdtui
+	go build -o bin/bdtuid ./cmd/bdtuid
 
 TEST_DB_DIR := $(CURDIR)/tests/fixtures/testdb
 
