@@ -27,6 +27,9 @@ func NewService(store *orch.Store) *Service {
 }
 
 func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest) (*daemonpb.Run, error) {
+	if req.TaskId == "" {
+		return nil, status.Error(codes.InvalidArgument, "task_id is required")
+	}
 	if req.ProjectId == "" {
 		return nil, status.Error(codes.InvalidArgument, "project_id is required")
 	}

@@ -294,9 +294,14 @@ func TestErrorMapping(t *testing.T) {
 		t.Fatalf("GetRun error = %v, want NotFound", err)
 	}
 
-	_, err = client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: "missing-project"})
+	_, err = client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: "missing-project", TaskId: "task-x"})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("CreateRun error = %v, want NotFound", err)
+	}
+
+	_, err = client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: "p"})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("CreateRun without task_id = %v, want InvalidArgument", err)
 	}
 }
 
