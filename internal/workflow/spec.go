@@ -168,7 +168,10 @@ func (s *WorkflowSpec) Validate() error {
 		}
 	}
 
-	return s.validateGraph()
+	if err := s.validateGraph(); err != nil {
+		return err
+	}
+	return s.validateDataflowDominance()
 }
 
 func (st *StepSpec) validateFields() error {
@@ -225,6 +228,59 @@ func (s *WorkflowSpec) validateGraph() error {
 		}
 	}
 	return nil
+}
+
+// validateDataflowDominance enforces that a required input's source step must
+// be guaranteed to have executed before its consumer: the source must dominate
+// the consumer in the control-flow graph (every path from the entry to the
+// consumer passes through the source).
+func (s *WorkflowSpec) validateDataflowDominance() error {
+	adj := make(map[string][]string, len(s.Steps))
+	for i := range s.Steps {
+		for _, target := range s.Steps[i].On {
+			adj[s.Steps[i].ID] = append(adj[s.Steps[i].ID], target)
+		}
+	}
+
+	entry := s.Steps[0].ID
+	for i := range s.Steps {
+		consumer := &s.Steps[i]
+		for name, ref := range consumer.Inputs {
+			if ref.Step == consumer.ID {
+				return fmt.Errorf("workflow: step %q: input %q: source must not be itself", consumer.ID, name)
+			}
+			if !dominates(entry, ref.Step, consumer.ID, adj) {
+				return fmt.Errorf("workflow: step %q: input %q: source step %q does not dominate consumer", consumer.ID, name, ref.Step)
+			}
+		}
+	}
+	return nil
+}
+
+// dominates reports whether every path from entry to c passes through s.
+func dominates(entry, s, c string, adj map[string][]string) bool {
+	// s dominates c iff c is NOT reachable from entry while avoiding s.
+	visited := map[string]bool{}
+	var dfs func(id string) bool
+	dfs = func(id string) bool {
+		if id == c {
+			return true
+		}
+		if id == s {
+			return false
+		}
+		if visited[id] {
+			return false
+		}
+		visited[id] = true
+		for _, nxt := range adj[id] {
+			if dfs(nxt) {
+				return true
+			}
+		}
+		return false
+	}
+	return !dfs(entry)
 }
 
 // CanonicalJSON returns a deterministic, compact JSON representation of a

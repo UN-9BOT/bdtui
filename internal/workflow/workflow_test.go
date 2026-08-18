@@ -15,10 +15,6 @@ steps:
   - id: plan
     type: agent
     role: planner
-    inputs:
-      clarification:
-        step: ask
-        output: response
     on:
       planned: review
       question: ask
@@ -31,17 +27,23 @@ steps:
         output: plan
     on:
       approved: implement
-      revise: plan
+      revise: ask
       question: ask
   - id: ask
     type: human
-    inputs:
-      review:
-        step: review
-        output: review
     prompt: "Please clarify"
     on:
-      answered: plan
+      answered: replan
+  - id: replan
+    type: agent
+    role: planner
+    inputs:
+      clarification:
+        step: ask
+        output: response
+    on:
+      planned: review
+      question: ask
   - id: implement
     type: agent
     role: implementer
@@ -93,10 +95,10 @@ func TestParseValid(t *testing.T) {
 	if err := spec.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	if spec.Version != 1 || spec.Name != "ship" || len(spec.Steps) != 5 {
+	if spec.Version != 1 || spec.Name != "ship" || len(spec.Steps) != 6 {
 		t.Fatalf("unexpected spec: %+v", spec)
 	}
-	if spec.Steps[0].Role != "planner" || spec.Steps[2].Type != StepHuman || spec.Steps[4].Type != StepEnd {
+	if spec.Steps[0].Role != "planner" || spec.Steps[2].Type != StepHuman || spec.Steps[5].Type != StepEnd {
 		t.Fatalf("unexpected steps: %+v", spec.Steps)
 	}
 }
@@ -156,6 +158,7 @@ func TestValidateErrors(t *testing.T) {
 		{"input step is end", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    inputs:\n      x: {step: b, output: y}\n    on: {go: b}\n  - id: b\n    type: end\n", "end step"},
 		{"input missing output", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    inputs:\n      x: {step: a, output: \"\"}\n    on: {go: b}\n  - id: b\n    type: end\n", "output is required"},
 		{"unreachable", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {go: b}\n  - id: b\n    type: end\n  - id: orphan\n    type: end\n", "not reachable"},
+		{"source does not dominate", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    inputs:\n      x: {step: b, output: y}\n    on: {go: b}\n  - id: b\n    type: agent\n    role: r\n    on: {go: a}\n", "does not dominate"},
 	}
 
 	for _, tc := range cases {
@@ -316,7 +319,7 @@ func TestBundleValidateHumanResponseOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// validWorkflow flows ask.response -> plan.clarification.
+	// validWorkflow flows ask.response -> replan.clarification.
 	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err != nil {
 		t.Fatalf("human response dataflow: %v", err)
@@ -326,7 +329,7 @@ func TestBundleValidateHumanResponseOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	badSpec.Steps[0].Inputs = map[string]InputRef{"clarification": {Step: "ask", Output: "wrong"}}
+	badSpec.Steps[3].Inputs = map[string]InputRef{"clarification": {Step: "ask", Output: "wrong"}}
 	bad := Bundle{Spec: *badSpec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "not produced by step") {
 		t.Fatalf("validate = %v, want not-produced-by-step error", err)
