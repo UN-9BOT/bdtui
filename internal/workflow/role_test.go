@@ -48,6 +48,8 @@ func TestValidateRoleErrors(t *testing.T) {
 		{"empty outcome", "id: x\nprompt: p.md\noutcomes: [a, \"\"]\nworkspace: read\n", "outcome must not be empty"},
 		{"absolute prompt", "id: x\nprompt: /abs/p.md\noutcomes: [a]\nworkspace: read\n", "must be relative"},
 		{"dotdot prompt", "id: x\nprompt: ../p.md\noutcomes: [a]\nworkspace: read\n", "must not contain '..'"},
+		{"missing outputs", "id: x\nprompt: p.md\noutcomes: [a]\nresult_schema: s.json\nworkspace: read\n", "at least one output"},
+		{"missing result_schema", "id: x\nprompt: p.md\noutcomes: [a]\noutputs: [o]\nworkspace: read\n", "result_schema is required"},
 	}
 
 	for _, tc := range cases {

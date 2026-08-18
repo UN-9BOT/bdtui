@@ -8,12 +8,17 @@ import (
 )
 
 // Bundle is the fully resolved dependency closure of a workflow at Run start:
-// the workflow, the role contracts it references, and the raw contents of
-// referenced prompt/schema/instruction files. Keys in Files are relative paths.
+// the workflow, its raw source YAML, the role contracts it references, and the
+// raw contents of referenced prompt/schema/instruction files. Files keys are
+// namespaced logical refs (roles/<id>/prompt, roles/<id>/schema, etc.).
 type Bundle struct {
 	Spec  WorkflowSpec
 	Roles map[string]RoleContract
 	Files map[string]string
+
+	// WorkflowSource is the immutable launch-time source YAML that produced
+	// Spec. It is preserved for audit/debugging, not for re-parsing.
+	WorkflowSource string
 }
 
 // Snapshot is an immutable, content-addressed workflow dependency closure.
@@ -82,6 +87,22 @@ func (b *Bundle) Validate() error {
 			}
 		}
 	}
+
+	// The snapshot must be self-sufficient: every resolved role's prompt and
+	// schema content must be present in Files.
+	if b.Files == nil {
+		b.Files = map[string]string{}
+	}
+	for id, role := range b.Roles {
+		if _, ok := b.Files[rolePromptKey(id)]; !ok {
+			return fmt.Errorf("workflow: role %q: missing prompt dependency %q", id, rolePromptKey(id))
+		}
+		if role.ResultSchema != "" {
+			if _, ok := b.Files[roleSchemaKey(id)]; !ok {
+				return fmt.Errorf("workflow: role %q: missing schema dependency %q", id, roleSchemaKey(id))
+			}
+		}
+	}
 	return nil
 }
 
@@ -126,13 +147,15 @@ func BuildSnapshot(b Bundle) (Snapshot, error) {
 	}
 
 	payload := struct {
-		Workflow WorkflowSpec            `json:"workflow"`
-		Roles    map[string]RoleContract `json:"roles"`
-		Files    map[string]string       `json:"files"`
+		Workflow       WorkflowSpec            `json:"workflow"`
+		WorkflowSource string                  `json:"workflow_source"`
+		Roles          map[string]RoleContract `json:"roles"`
+		Files          map[string]string       `json:"files"`
 	}{
-		Workflow: b.Spec.forJSON(),
-		Roles:    roles,
-		Files:    b.Files,
+		Workflow:       b.Spec.forJSON(),
+		WorkflowSource: b.WorkflowSource,
+		Roles:          roles,
+		Files:          b.Files,
 	}
 
 	data, err := json.Marshal(payload)

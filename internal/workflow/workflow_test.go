@@ -216,6 +216,17 @@ func validRoles() map[string]RoleContract {
 	}
 }
 
+func completeFiles() map[string]string {
+	return map[string]string{
+		"roles/planner/prompt":     "planner prompt",
+		"roles/planner/schema":     `{"type":"object"}`,
+		"roles/reviewer/prompt":    "reviewer prompt",
+		"roles/reviewer/schema":    `{"type":"object"}`,
+		"roles/implementer/prompt": "implementer prompt",
+		"roles/implementer/schema": `{"type":"object"}`,
+	}
+}
+
 func TestBundleValidate(t *testing.T) {
 	spec, err := Parse([]byte(validWorkflow))
 	if err != nil {
@@ -224,17 +235,24 @@ func TestBundleValidate(t *testing.T) {
 	bundle := Bundle{
 		Spec:  *spec,
 		Roles: validRoles(),
-		Files: map[string]string{
-			"prompts/planner.md":     "planner prompt",
-			"prompts/reviewer.md":    "reviewer prompt",
-			"prompts/implementer.md": "implementer prompt",
-			"schemas/plan.json":      `{"type":"object"}`,
-			"schemas/review.json":    `{"type":"object"}`,
-			"schemas/patch.json":     `{"type":"object"}`,
-		},
+		Files: completeFiles(),
 	}
 	if err := bundle.Validate(); err != nil {
 		t.Fatalf("bundle validate: %v", err)
+	}
+}
+
+func TestBundleValidateMissingDependencyFile(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	files := completeFiles()
+	delete(files, "roles/reviewer/prompt")
+
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: files}
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "missing prompt dependency") {
+		t.Fatalf("validate = %v, want missing-dependency error", err)
 	}
 }
 
@@ -250,7 +268,7 @@ func TestBundleValidateOutcomeNotAllowed(t *testing.T) {
 	p.Outcomes = []string{"question"}
 	roles["planner"] = p
 
-	bundle := Bundle{Spec: *spec, Roles: roles}
+	bundle := Bundle{Spec: *spec, Roles: roles, Files: completeFiles()}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not allowed by role") {
 		t.Fatalf("validate = %v, want outcome-not-allowed error", err)
 	}
@@ -266,7 +284,7 @@ func TestBundleValidateMissingTransition(t *testing.T) {
 	steps[0].On = map[string]string{"planned": "review"}
 	spec.Steps = steps
 
-	bundle := Bundle{Spec: *spec, Roles: validRoles()}
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles()}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "has no transition") {
 		t.Fatalf("validate = %v, want missing-transition error", err)
 	}
@@ -277,13 +295,12 @@ func TestBundleValidateUndeclaredInputOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	roles := validRoles()
-	// Remove planner's "plan" output; the review step consumes plan from plan.
-	p := roles["planner"]
-	p.Outputs = []string{}
-	roles["planner"] = p
+	// The review step consumes an output the planner role does not declare.
+	steps := spec.Steps
+	steps[1].Inputs = map[string]InputRef{"plan": {Step: "plan", Output: "nonexistent"}}
+	spec.Steps = steps
 
-	bundle := Bundle{Spec: *spec, Roles: roles}
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles()}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not produced by step") {
 		t.Fatalf("validate = %v, want undeclared-output error", err)
 	}
@@ -295,12 +312,10 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	bundle := Bundle{
-		Spec:  *spec,
-		Roles: validRoles(),
-		Files: map[string]string{
-			"roles/planner/prompt": "planner prompt",
-			"roles/planner/schema": `{"type":"object"}`,
-		},
+		Spec:           *spec,
+		Roles:          validRoles(),
+		Files:          completeFiles(),
+		WorkflowSource: validWorkflow,
 	}
 	s1, err := BuildSnapshot(bundle)
 	if err != nil {
@@ -316,11 +331,18 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 	if len(s1.Ref) != 64 {
 		t.Fatalf("ref length = %d, want 64", len(s1.Ref))
 	}
+	if !strings.Contains(s1.JSON, "workflow_source") {
+		t.Fatal("snapshot should contain workflow_source")
+	}
 
 	changed := bundle
 	changed.Files = map[string]string{
-		"roles/planner/prompt": "planner prompt changed",
-		"roles/planner/schema": `{"type":"object"}`,
+		"roles/planner/prompt":     "planner prompt changed",
+		"roles/planner/schema":     `{"type":"object"}`,
+		"roles/reviewer/prompt":    "reviewer prompt",
+		"roles/reviewer/schema":    `{"type":"object"}`,
+		"roles/implementer/prompt": "implementer prompt",
+		"roles/implementer/schema": `{"type":"object"}`,
 	}
 	s3, err := BuildSnapshot(changed)
 	if err != nil {
@@ -328,6 +350,16 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 	}
 	if s3.Ref == s1.Ref {
 		t.Fatal("snapshot ref should change when a dependency file changes")
+	}
+
+	changedSource := bundle
+	changedSource.WorkflowSource = validWorkflow + "\n"
+	s4, err := BuildSnapshot(changedSource)
+	if err != nil {
+		t.Fatalf("snapshot 4: %v", err)
+	}
+	if s4.Ref == s1.Ref {
+		t.Fatal("snapshot ref should change when workflow_source changes")
 	}
 }
 
@@ -423,6 +455,7 @@ steps:
 id: ra
 prompt: prompts/ra.md
 outcomes: [done]
+outputs: [out]
 result_schema: schemas/result.json
 workspace: read
 `
@@ -430,6 +463,7 @@ workspace: read
 id: rb
 prompt: prompts/rb.md
 outcomes: [done]
+outputs: [out]
 result_schema: schemas/result.json
 workspace: read
 `

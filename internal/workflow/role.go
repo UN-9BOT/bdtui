@@ -60,8 +60,8 @@ func (r *RoleContract) Validate() error {
 	if r == nil {
 		return errors.New("role: nil contract")
 	}
-	if strings.TrimSpace(r.ID) == "" {
-		return errors.New("role: id is required")
+	if err := validateID(r.ID); err != nil {
+		return fmt.Errorf("role: id: %w", err)
 	}
 	if err := validateRelPath(r.Prompt); err != nil {
 		return fmt.Errorf("role: prompt: %w", err)
@@ -82,6 +82,9 @@ func (r *RoleContract) Validate() error {
 		}
 		seen[o] = true
 	}
+	if len(r.Outputs) == 0 {
+		return errors.New("role: at least one output is required")
+	}
 	seenOutputs := map[string]bool{}
 	for _, o := range r.Outputs {
 		if strings.TrimSpace(o) == "" {
@@ -92,10 +95,11 @@ func (r *RoleContract) Validate() error {
 		}
 		seenOutputs[o] = true
 	}
-	if r.ResultSchema != "" {
-		if err := validateRelPath(r.ResultSchema); err != nil {
-			return fmt.Errorf("role: result_schema: %w", err)
-		}
+	if r.ResultSchema == "" {
+		return errors.New("role: result_schema is required")
+	}
+	if err := validateRelPath(r.ResultSchema); err != nil {
+		return fmt.Errorf("role: result_schema: %w", err)
 	}
 	return nil
 }

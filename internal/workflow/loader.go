@@ -40,7 +40,7 @@ func (l Loader) Load(ctx context.Context, name string) (*Bundle, error) {
 		return nil, err
 	}
 
-	spec, err := parseWorkflowFile(filepath.Join(workflowDir, "workflows", name+".yaml"))
+	spec, source, err := parseWorkflowFile(filepath.Join(workflowDir, "workflows", name+".yaml"))
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (l Loader) Load(ctx context.Context, name string) (*Bundle, error) {
 		return nil, err
 	}
 
-	bundle := &Bundle{Spec: *spec, Roles: roles, Files: files}
+	bundle := &Bundle{Spec: *spec, Roles: roles, Files: files, WorkflowSource: source}
 	if err := bundle.Validate(); err != nil {
 		return nil, err
 	}
@@ -123,19 +123,19 @@ func (l Loader) resolveRoles(spec *WorkflowSpec) (map[string]RoleContract, map[s
 func rolePromptKey(roleID string) string { return "roles/" + roleID + "/prompt" }
 func roleSchemaKey(roleID string) string { return "roles/" + roleID + "/schema" }
 
-func parseWorkflowFile(path string) (*WorkflowSpec, error) {
+func parseWorkflowFile(path string) (*WorkflowSpec, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("workflow: read %s: %w", path, err)
+		return nil, "", fmt.Errorf("workflow: read %s: %w", path, err)
 	}
 	spec, err := Parse(data)
 	if err != nil {
-		return nil, fmt.Errorf("workflow: %s: %w", path, err)
+		return nil, "", fmt.Errorf("workflow: %s: %w", path, err)
 	}
 	if err := spec.Validate(); err != nil {
-		return nil, fmt.Errorf("workflow: %s: %w", path, err)
+		return nil, "", fmt.Errorf("workflow: %s: %w", path, err)
 	}
-	return spec, nil
+	return spec, string(data), nil
 }
 
 func parseRoleFile(path string) (*RoleContract, error) {
