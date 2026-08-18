@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -81,6 +82,14 @@ func (s *Store) GetLaunchIntent(ctx context.Context, id string) (*LaunchIntent, 
 func (s *Store) ResolveLaunchIntent(ctx context.Context, id string, to LaunchIntentStatus, runID *string) error {
 	if !to.Valid() || to == LaunchPending {
 		return errInvalidStatus(to)
+	}
+	// Invariant: an accepted intent must reference the run it produced; a
+	// rejected/cancelled intent must not carry a run id.
+	if to == LaunchAccepted && runID == nil {
+		return fmt.Errorf("%w: accepted intent requires a run id", ErrInvalidTransition)
+	}
+	if (to == LaunchRejected || to == LaunchCancelled) && runID != nil {
+		return fmt.Errorf("%w: rejected/cancelled intent must not have a run id", ErrInvalidTransition)
 	}
 	now := nowUTC()
 

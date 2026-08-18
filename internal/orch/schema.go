@@ -99,7 +99,7 @@ CREATE TABLE launch_intents (
     workflow_ref TEXT NOT NULL,
     inputs       TEXT NOT NULL DEFAULT '{}',
     status       TEXT NOT NULL,
-    run_id       TEXT,
+    run_id       TEXT REFERENCES runs(id),
     created_at   TEXT NOT NULL,
     resolved_at  TEXT
 );

@@ -440,12 +440,12 @@ func TestLaunchIntentResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runID := "run-1"
-	if err := s.ResolveLaunchIntent(ctx, li.ID, LaunchAccepted, &runID); err != nil {
+	run := newRun(t, s, p.ID, "task-1")
+	if err := s.ResolveLaunchIntent(ctx, li.ID, LaunchAccepted, &run.ID); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.GetLaunchIntent(ctx, li.ID)
-	if got.Status != LaunchAccepted || got.RunID == nil || *got.RunID != "run-1" || got.ResolvedAt == nil {
+	if got.Status != LaunchAccepted || got.RunID == nil || *got.RunID != run.ID || got.ResolvedAt == nil {
 		t.Fatalf("unexpected resolved intent: %+v", got)
 	}
 	if got.TaskID != "task-1" {
@@ -454,6 +454,41 @@ func TestLaunchIntentResolve(t *testing.T) {
 
 	if err := s.ResolveLaunchIntent(ctx, li.ID, LaunchRejected, nil); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("expected ErrInvalidTransition, got %v", err)
+	}
+}
+
+func TestResolveLaunchIntentInvariant(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+
+	// Accepted + nil run id is rejected.
+	li1 := &LaunchIntent{ProjectID: p.ID, TaskID: "task-1", WorkflowRef: "wf.yaml"}
+	if err := s.CreateLaunchIntent(ctx, li1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ResolveLaunchIntent(ctx, li1.ID, LaunchAccepted, nil); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("accepted+nil: expected ErrInvalidTransition, got %v", err)
+	}
+
+	// Rejected + non-nil run id is rejected.
+	li2 := &LaunchIntent{ProjectID: p.ID, TaskID: "task-2", WorkflowRef: "wf.yaml"}
+	if err := s.CreateLaunchIntent(ctx, li2); err != nil {
+		t.Fatal(err)
+	}
+	runID := "some-run"
+	if err := s.ResolveLaunchIntent(ctx, li2.ID, LaunchRejected, &runID); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("rejected+runID: expected ErrInvalidTransition, got %v", err)
+	}
+
+	// FK: accepting with a non-existent run id must fail at the DB level.
+	li3 := &LaunchIntent{ProjectID: p.ID, TaskID: "task-3", WorkflowRef: "wf.yaml"}
+	if err := s.CreateLaunchIntent(ctx, li3); err != nil {
+		t.Fatal(err)
+	}
+	ghost := "does-not-exist"
+	if err := s.ResolveLaunchIntent(ctx, li3.ID, LaunchAccepted, &ghost); err == nil {
+		t.Fatal("expected FK violation for non-existent run id")
 	}
 }
 
