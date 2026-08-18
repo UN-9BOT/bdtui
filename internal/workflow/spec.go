@@ -174,8 +174,8 @@ func (s *WorkflowSpec) Validate() error {
 func (st *StepSpec) validateFields() error {
 	switch st.Type {
 	case StepAgent:
-		if strings.TrimSpace(st.Role) == "" {
-			return errors.New("agent step requires role")
+		if err := validateID(st.Role); err != nil {
+			return fmt.Errorf("agent step role: %w", err)
 		}
 		if st.Prompt != "" {
 			return errors.New("agent step must not set prompt")

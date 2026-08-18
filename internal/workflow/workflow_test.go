@@ -32,9 +32,9 @@ steps:
   - id: ask
     type: human
     inputs:
-      question:
+      review:
         step: review
-        output: question
+        output: review
     prompt: "Please clarify"
     on:
       answered: plan
@@ -140,7 +140,8 @@ func TestValidateErrors(t *testing.T) {
 		{"no steps", "version: 1\nname: x\nsteps: []\n", "at least one step"},
 		{"duplicate id", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {go: b}\n  - id: a\n    type: end\n", "duplicate step id"},
 		{"invalid type", "version: 1\nname: x\nsteps:\n  - id: a\n    type: wat\n    on: {go: b}\n  - id: b\n    type: end\n", "invalid type"},
-		{"agent missing role", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    on: {go: b}\n  - id: b\n    type: end\n", "agent step requires role"},
+		{"agent missing role", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    on: {go: b}\n  - id: b\n    type: end\n", "agent step role"},
+		{"role path traversal", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: ../../evil\n    on: {go: b}\n  - id: b\n    type: end\n", "path separators"},
 		{"agent sets prompt", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    prompt: hi\n    on: {go: b}\n  - id: b\n    type: end\n", "agent step must not set prompt"},
 		{"agent missing on", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n  - id: b\n    type: end\n", "at least one outcome"},
 		{"human sets role", "version: 1\nname: x\nsteps:\n  - id: a\n    type: human\n    role: r\n    on: {go: b}\n  - id: b\n    type: end\n", "human step must not set role"},
@@ -255,6 +256,22 @@ func TestBundleValidateOutcomeNotAllowed(t *testing.T) {
 	}
 }
 
+func TestBundleValidateMissingTransition(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// Drop planner's "question" transition; the role still declares it.
+	steps := spec.Steps
+	steps[0].On = map[string]string{"planned": "review"}
+	spec.Steps = steps
+
+	bundle := Bundle{Spec: *spec, Roles: validRoles()}
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "has no transition") {
+		t.Fatalf("validate = %v, want missing-transition error", err)
+	}
+}
+
 func TestBundleValidateUndeclaredInputOutput(t *testing.T) {
 	spec, err := Parse([]byte(validWorkflow))
 	if err != nil {
@@ -281,8 +298,8 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 		Spec:  *spec,
 		Roles: validRoles(),
 		Files: map[string]string{
-			"prompts/planner.md": "planner prompt",
-			"schemas/plan.json":  `{"type":"object"}`,
+			"roles/planner/prompt": "planner prompt",
+			"roles/planner/schema": `{"type":"object"}`,
 		},
 	}
 	s1, err := BuildSnapshot(bundle)
@@ -302,8 +319,8 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 
 	changed := bundle
 	changed.Files = map[string]string{
-		"prompts/planner.md": "planner prompt changed",
-		"schemas/plan.json":  `{"type":"object"}`,
+		"roles/planner/prompt": "planner prompt changed",
+		"roles/planner/schema": `{"type":"object"}`,
 	}
 	s3, err := BuildSnapshot(changed)
 	if err != nil {
@@ -353,11 +370,89 @@ func TestLoaderWorkflowAndRoleOverride(t *testing.T) {
 	if bundle.Roles["reviewer"].Prompt != "prompts/reviewer.md" {
 		t.Fatalf("reviewer prompt = %q, want global fallback", bundle.Roles["reviewer"].Prompt)
 	}
-	if bundle.Files["prompts/project-planner.md"] != "project planner prompt" {
+	if bundle.Files["roles/planner/prompt"] != "project planner prompt" {
 		t.Fatalf("missing project planner prompt: %+v", bundle.Files)
 	}
-	if bundle.Files["prompts/reviewer.md"] != "reviewer prompt" {
+	if bundle.Files["roles/reviewer/prompt"] != "reviewer prompt" {
 		t.Fatalf("missing global reviewer prompt: %+v", bundle.Files)
+	}
+}
+
+func TestLoaderRoleIDMismatch(t *testing.T) {
+	dir := t.TempDir()
+	global := filepath.Join(dir, "global")
+
+	mustWriteDir(t, global, "workflows/wf.yaml", validWorkflow)
+	mustWriteDir(t, global, "roles/planner.yaml", strings.Replace(plannerRole, "id: planner", "id: implementer", 1))
+	mustWriteDir(t, global, "roles/reviewer.yaml", reviewerRole)
+	mustWriteDir(t, global, "roles/implementer.yaml", implementerRole)
+	mustWriteDir(t, global, "prompts/planner.md", "planner")
+	mustWriteDir(t, global, "prompts/reviewer.md", "reviewer")
+	mustWriteDir(t, global, "prompts/implementer.md", "implementer")
+	mustWriteDir(t, global, "schemas/plan.json", `{}`)
+	mustWriteDir(t, global, "schemas/review.json", `{}`)
+	mustWriteDir(t, global, "schemas/patch.json", `{}`)
+
+	loader := Loader{Global: global}
+	if _, err := loader.Load(context.Background(), "wf"); err == nil || !strings.Contains(err.Error(), "declares id") {
+		t.Fatalf("load = %v, want role-id-mismatch error", err)
+	}
+}
+
+func TestLoaderNamespacesDependencyFiles(t *testing.T) {
+	dir := t.TempDir()
+	global := filepath.Join(dir, "global")
+	project := filepath.Join(dir, "project")
+
+	const workflowYAML = `
+version: 1
+name: collision
+steps:
+  - id: a
+    type: agent
+    role: ra
+    on: {done: b}
+  - id: b
+    type: agent
+    role: rb
+    on: {done: end}
+  - id: end
+    type: end
+`
+	const raRole = `
+id: ra
+prompt: prompts/ra.md
+outcomes: [done]
+result_schema: schemas/result.json
+workspace: read
+`
+	const rbRole = `
+id: rb
+prompt: prompts/rb.md
+outcomes: [done]
+result_schema: schemas/result.json
+workspace: read
+`
+
+	mustWriteDir(t, global, "workflows/collision.yaml", workflowYAML)
+	mustWriteDir(t, global, "roles/rb.yaml", rbRole)
+	mustWriteDir(t, global, "prompts/rb.md", "global rb prompt")
+	mustWriteDir(t, global, "schemas/result.json", "global-schema")
+
+	mustWriteDir(t, project, "roles/ra.yaml", raRole)
+	mustWriteDir(t, project, "prompts/ra.md", "project ra prompt")
+	mustWriteDir(t, project, "schemas/result.json", "project-schema")
+
+	loader := Loader{Global: global, Project: project}
+	bundle, err := loader.Load(context.Background(), "collision")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if bundle.Files["roles/ra/schema"] != "project-schema" {
+		t.Fatalf("ra schema = %q, want project-schema", bundle.Files["roles/ra/schema"])
+	}
+	if bundle.Files["roles/rb/schema"] != "global-schema" {
+		t.Fatalf("rb schema = %q, want global-schema", bundle.Files["roles/rb/schema"])
 	}
 }
 

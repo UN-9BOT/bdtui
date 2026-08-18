@@ -72,15 +72,25 @@ func (r *RoleContract) Validate() error {
 	if len(r.Outcomes) == 0 {
 		return errors.New("role: at least one outcome is required")
 	}
+	seen := map[string]bool{}
 	for _, o := range r.Outcomes {
 		if strings.TrimSpace(o) == "" {
 			return errors.New("role: outcome must not be empty")
 		}
+		if seen[o] {
+			return fmt.Errorf("role: duplicate outcome %q", o)
+		}
+		seen[o] = true
 	}
+	seenOutputs := map[string]bool{}
 	for _, o := range r.Outputs {
 		if strings.TrimSpace(o) == "" {
 			return errors.New("role: output must not be empty")
 		}
+		if seenOutputs[o] {
+			return fmt.Errorf("role: duplicate output %q", o)
+		}
+		seenOutputs[o] = true
 	}
 	if r.ResultSchema != "" {
 		if err := validateRelPath(r.ResultSchema); err != nil {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Loader resolves workflow and role definitions from a project definitions
@@ -32,8 +31,8 @@ type Loader struct {
 // (AGENTS.md/CLAUDE.md/skills) are not added here; callers append them to the
 // returned Bundle.Files before building a snapshot.
 func (l Loader) Load(ctx context.Context, name string) (*Bundle, error) {
-	if err := validateName(name); err != nil {
-		return nil, err
+	if err := validateID(name); err != nil {
+		return nil, fmt.Errorf("workflow: name: %w", err)
 	}
 
 	workflowDir, err := l.resolveWorkflowDir(name)
@@ -101,19 +100,28 @@ func (l Loader) resolveRoles(spec *WorkflowSpec) (map[string]RoleContract, map[s
 		if err != nil {
 			return nil, nil, err
 		}
+		if role.ID != st.Role {
+			return nil, nil, fmt.Errorf("workflow: role file for %q declares id %q", st.Role, role.ID)
+		}
 		roles[st.Role] = *role
 
-		if err := addFile(files, dir, role.Prompt); err != nil {
+		if err := addDependency(files, rolePromptKey(st.Role), dir, role.Prompt); err != nil {
 			return nil, nil, fmt.Errorf("workflow: role %q: %w", st.Role, err)
 		}
 		if role.ResultSchema != "" {
-			if err := addFile(files, dir, role.ResultSchema); err != nil {
+			if err := addDependency(files, roleSchemaKey(st.Role), dir, role.ResultSchema); err != nil {
 				return nil, nil, fmt.Errorf("workflow: role %q: %w", st.Role, err)
 			}
 		}
 	}
 	return roles, files, nil
 }
+
+// rolePromptKey and roleSchemaKey namespace dependency files by role id so a
+// prompt/schema with the same relative path from a global and a project root
+// cannot collide in the snapshot closure.
+func rolePromptKey(roleID string) string { return "roles/" + roleID + "/prompt" }
+func roleSchemaKey(roleID string) string { return "roles/" + roleID + "/schema" }
 
 func parseWorkflowFile(path string) (*WorkflowSpec, error) {
 	data, err := os.ReadFile(path)
@@ -145,46 +153,15 @@ func parseRoleFile(path string) (*RoleContract, error) {
 	return role, nil
 }
 
-func addFile(files map[string]string, dir, rel string) error {
+func addDependency(files map[string]string, key, dir, rel string) error {
 	if err := validateRelPath(rel); err != nil {
 		return err
-	}
-	if _, ok := files[rel]; ok {
-		return nil
 	}
 	data, err := os.ReadFile(filepath.Join(dir, rel))
 	if err != nil {
 		return fmt.Errorf("read dependency %q: %w", rel, err)
 	}
-	files[rel] = string(data)
-	return nil
-}
-
-func validateName(name string) error {
-	if name == "" {
-		return fmt.Errorf("workflow: name is required")
-	}
-	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		return fmt.Errorf("workflow: invalid name %q: must be a bare name without path separators", name)
-	}
-	if name == "." || name == ".." {
-		return fmt.Errorf("workflow: invalid name %q", name)
-	}
-	return nil
-}
-
-func validateRelPath(p string) error {
-	if p == "" {
-		return fmt.Errorf("path is empty")
-	}
-	if filepath.IsAbs(p) {
-		return fmt.Errorf("path %q must be relative", p)
-	}
-	for _, part := range strings.Split(p, "/") {
-		if part == ".." {
-			return fmt.Errorf("path %q must not contain '..'", p)
-		}
-	}
+	files[key] = string(data)
 	return nil
 }
 

@@ -58,6 +58,11 @@ func (b *Bundle) Validate() error {
 		for _, o := range role.Outcomes {
 			allowed[o] = true
 		}
+		for _, o := range role.Outcomes {
+			if _, ok := st.On[o]; !ok {
+				return fmt.Errorf("workflow: step %q: outcome %q from role %q has no transition", st.ID, o, st.Role)
+			}
+		}
 		for outcome := range st.On {
 			if !allowed[outcome] {
 				return fmt.Errorf("workflow: step %q: outcome %q not allowed by role %q", st.ID, outcome, st.Role)
@@ -97,9 +102,6 @@ func (b *Bundle) declaredOutputs(st *StepSpec) map[string]bool {
 				out[o] = true
 			}
 		}
-	}
-	for outcome := range st.On {
-		out[outcome] = true
 	}
 	return out
 }
