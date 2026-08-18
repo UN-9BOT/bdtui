@@ -15,6 +15,10 @@ steps:
   - id: plan
     type: agent
     role: planner
+    inputs:
+      clarification:
+        step: ask
+        output: response
     on:
       planned: review
       question: ask
@@ -233,9 +237,10 @@ func TestBundleValidate(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	bundle := Bundle{
-		Spec:  *spec,
-		Roles: validRoles(),
-		Files: completeFiles(),
+		Spec:           *spec,
+		Roles:          validRoles(),
+		Files:          completeFiles(),
+		WorkflowSource: validWorkflow,
 	}
 	if err := bundle.Validate(); err != nil {
 		t.Fatalf("bundle validate: %v", err)
@@ -250,7 +255,7 @@ func TestBundleValidateMissingDependencyFile(t *testing.T) {
 	files := completeFiles()
 	delete(files, "roles/reviewer/prompt")
 
-	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: files}
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: files, WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "missing prompt dependency") {
 		t.Fatalf("validate = %v, want missing-dependency error", err)
 	}
@@ -268,7 +273,7 @@ func TestBundleValidateOutcomeNotAllowed(t *testing.T) {
 	p.Outcomes = []string{"question"}
 	roles["planner"] = p
 
-	bundle := Bundle{Spec: *spec, Roles: roles, Files: completeFiles()}
+	bundle := Bundle{Spec: *spec, Roles: roles, Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not allowed by role") {
 		t.Fatalf("validate = %v, want outcome-not-allowed error", err)
 	}
@@ -284,7 +289,7 @@ func TestBundleValidateMissingTransition(t *testing.T) {
 	steps[0].On = map[string]string{"planned": "review"}
 	spec.Steps = steps
 
-	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles()}
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "has no transition") {
 		t.Fatalf("validate = %v, want missing-transition error", err)
 	}
@@ -300,9 +305,31 @@ func TestBundleValidateUndeclaredInputOutput(t *testing.T) {
 	steps[1].Inputs = map[string]InputRef{"plan": {Step: "plan", Output: "nonexistent"}}
 	spec.Steps = steps
 
-	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles()}
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not produced by step") {
 		t.Fatalf("validate = %v, want undeclared-output error", err)
+	}
+}
+
+func TestBundleValidateHumanResponseOutput(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// validWorkflow flows ask.response -> plan.clarification.
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
+	if err := bundle.Validate(); err != nil {
+		t.Fatalf("human response dataflow: %v", err)
+	}
+
+	badSpec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	badSpec.Steps[0].Inputs = map[string]InputRef{"clarification": {Step: "ask", Output: "wrong"}}
+	bad := Bundle{Spec: *badSpec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "not produced by step") {
+		t.Fatalf("validate = %v, want not-produced-by-step error", err)
 	}
 }
 

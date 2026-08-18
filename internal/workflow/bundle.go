@@ -21,6 +21,11 @@ type Bundle struct {
 	WorkflowSource string
 }
 
+// HumanResponseOutput is the built-in output of a human step. It makes the
+// human answer an immutable output of a specific human step attempt that can
+// be explicitly referenced by a later step's dataflow inputs.
+const HumanResponseOutput = "response"
+
 // Snapshot is an immutable, content-addressed workflow dependency closure.
 type Snapshot struct {
 	// Ref is the hex SHA-256 of JSON.
@@ -36,6 +41,9 @@ type Snapshot struct {
 func (b *Bundle) Validate() error {
 	if b == nil {
 		return fmt.Errorf("workflow: nil bundle")
+	}
+	if b.WorkflowSource == "" {
+		return fmt.Errorf("workflow: workflow_source is required")
 	}
 	if err := b.Spec.Validate(); err != nil {
 		return err
@@ -117,12 +125,15 @@ func (b *Bundle) stepByID(id string) *StepSpec {
 
 func (b *Bundle) declaredOutputs(st *StepSpec) map[string]bool {
 	out := map[string]bool{}
-	if st.Type == StepAgent {
+	switch st.Type {
+	case StepAgent:
 		if role, ok := b.Roles[st.Role]; ok {
 			for _, o := range role.Outputs {
 				out[o] = true
 			}
 		}
+	case StepHuman:
+		out[HumanResponseOutput] = true
 	}
 	return out
 }
