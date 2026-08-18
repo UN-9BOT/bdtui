@@ -46,6 +46,36 @@ func (s *Store) CreateHumanInput(ctx context.Context, h *HumanInput) error {
 	return tx.Commit()
 }
 
+// GetHumanInput returns a single human input by ID.
+func (s *Store) GetHumanInput(ctx context.Context, id string) (*HumanInput, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, run_id, step_attempt_id, execution_id, prompt, response, status, created_at, answered_at
+		 FROM human_inputs WHERE id = ?`, id)
+
+	h := &HumanInput{}
+	var execID, response sql.NullString
+	var created string
+	var answered sql.NullString
+	if err := row.Scan(&h.ID, &h.RunID, &h.StepAttemptID, &execID, &h.Prompt, &response, &h.Status, &created, &answered); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	h.ExecutionID = strPtr(execID)
+	h.Response = strPtr(response)
+
+	var err error
+	if h.CreatedAt, err = parseTime(created); err != nil {
+		return nil, err
+	}
+	if h.AnsweredAt, err = timePtr(answered); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
 // AnswerHumanInput atomically records the response and marks the input answered.
 func (s *Store) AnswerHumanInput(ctx context.Context, id, response string) error {
 	now := nowUTC()

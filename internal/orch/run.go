@@ -137,6 +137,39 @@ func (s *Store) ListRunsByProject(ctx context.Context, projectID string) ([]Run,
 	return runs, nil
 }
 
+// ListRuns returns every run ordered by creation time. The daemon uses this
+// for the unfiltered list; callers that already have a project should prefer
+// ListRunsByProject.
+func (s *Store) ListRuns(ctx context.Context) ([]Run, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM runs ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	runs := make([]Run, 0, len(ids))
+	for _, id := range ids {
+		r, err := s.GetRun(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, *r)
+	}
+	return runs, nil
+}
+
 // TransitionRun atomically moves a run to `to` if that transition is legal per
 // the Run state machine. It updates only lifecycle timestamps and audit state;
 // metadata fields (current_step_id, needs_attention_reason, error) are managed
