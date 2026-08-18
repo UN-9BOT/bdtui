@@ -229,8 +229,9 @@ func (s *Store) TransitionRun(ctx context.Context, id string, to RunStatus) erro
 
 // RequestRunRetry re-queues a run that is in needs_attention. It is a command
 // ("please retry this run"), not a bare transition: the run returns to queued
-// so the controller/scheduler picks it up again. The needs_attention_reason is
-// cleared because it only applies while the run is in needs_attention.
+// so the controller/scheduler picks it up again. Both needs_attention_reason
+// and error are cleared because they describe the now-resolved problem and
+// only make sense while the run is in needs_attention.
 func (s *Store) RequestRunRetry(ctx context.Context, id string) error {
 	now := nowUTC()
 
@@ -252,7 +253,7 @@ func (s *Store) RequestRunRetry(ctx context.Context, id string) error {
 	}
 
 	res, err := tx.ExecContext(ctx,
-		`UPDATE runs SET status = ?, needs_attention_reason = NULL, updated_at = ?
+		`UPDATE runs SET status = ?, needs_attention_reason = NULL, error = NULL, updated_at = ?
 		 WHERE id = ? AND status = ?`,
 		string(RunQueued), timeString(now), id, cur,
 	)

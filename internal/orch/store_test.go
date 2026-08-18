@@ -131,6 +131,55 @@ func TestRunLifecycleAtomicTransitions(t *testing.T) {
 	}
 }
 
+func TestRequestRunRetryClearsAttentionMetadata(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-retry")
+
+	if err := s.TransitionRun(ctx, r.ID, RunRunning); err != nil {
+		t.Fatalf("queued->running: %v", err)
+	}
+	if err := s.TransitionRun(ctx, r.ID, RunNeedsAttention); err != nil {
+		t.Fatalf("running->needs_attention: %v", err)
+	}
+	if err := s.SetRunNeedsAttentionReason(ctx, r.ID, strPtrTo("review needed")); err != nil {
+		t.Fatalf("SetRunNeedsAttentionReason: %v", err)
+	}
+	if err := s.SetRunError(ctx, r.ID, strPtrTo("execution failed")); err != nil {
+		t.Fatalf("SetRunError: %v", err)
+	}
+
+	if err := s.RequestRunRetry(ctx, r.ID); err != nil {
+		t.Fatalf("RequestRunRetry: %v", err)
+	}
+
+	got, err := s.GetRun(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.Status != RunQueued {
+		t.Fatalf("status = %q, want queued", got.Status)
+	}
+	if got.NeedsAttentionReason != nil {
+		t.Fatalf("needs_attention_reason not cleared: %+v", got)
+	}
+	if got.Error != nil {
+		t.Fatalf("error not cleared: %+v", got)
+	}
+}
+
+func TestRequestRunRetryRejectsNonNeedsAttention(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-retry")
+
+	if err := s.RequestRunRetry(ctx, r.ID); err != ErrInvalidTransition {
+		t.Fatalf("retry from queued = %v, want ErrInvalidTransition", err)
+	}
+}
+
 func TestTransitionRunPreservesMetadata(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
