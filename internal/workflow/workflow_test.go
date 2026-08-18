@@ -16,9 +16,8 @@ steps:
     type: agent
     role: planner
     on:
-      planned: review
-      question: ask
-  - id: review
+      planned: review_initial
+  - id: review_initial
     type: agent
     role: reviewer
     inputs:
@@ -26,9 +25,21 @@ steps:
         step: plan
         output: plan
     on:
-      approved: implement
-      revise: ask
+      approved: implement_initial
+      revise: revise_plan
       question: ask
+  - id: implement_initial
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+      review:
+        step: review_initial
+        output: review
+    on:
+      done: end
   - id: ask
     type: human
     prompt: "Please clarify"
@@ -42,28 +53,70 @@ steps:
         step: ask
         output: response
     on:
-      planned: review
+      planned: review_replan
+  - id: review_replan
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: replan
+        output: plan
+    on:
+      approved: implement_replan
+      revise: end
       question: ask
-  - id: implement
+  - id: implement_replan
     type: agent
     role: implementer
     inputs:
       plan:
-        step: plan
+        step: replan
         output: plan
       review:
-        step: review
+        step: review_replan
         output: review
     on:
-      done: done
-  - id: done
+      done: end
+  - id: revise_plan
+    type: agent
+    role: planner
+    inputs:
+      review:
+        step: review_initial
+        output: review
+    on:
+      planned: review_revised
+  - id: review_revised
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: revise_plan
+        output: plan
+    on:
+      approved: implement_revised
+      revise: end
+      question: end
+  - id: implement_revised
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: revise_plan
+        output: plan
+      review:
+        step: review_revised
+        output: review
+    on:
+      done: end
+  - id: end
     type: end
 `
 
 const plannerRole = `
 id: planner
 prompt: prompts/planner.md
-outcomes: [planned, question]
+outcomes: [planned]
 outputs: [plan]
 result_schema: schemas/plan.json
 workspace: read
@@ -95,10 +148,10 @@ func TestParseValid(t *testing.T) {
 	if err := spec.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	if spec.Version != 1 || spec.Name != "ship" || len(spec.Steps) != 6 {
+	if spec.Version != 1 || spec.Name != "ship" || len(spec.Steps) != 11 {
 		t.Fatalf("unexpected spec: %+v", spec)
 	}
-	if spec.Steps[0].Role != "planner" || spec.Steps[2].Type != StepHuman || spec.Steps[5].Type != StepEnd {
+	if spec.Steps[0].Role != "planner" || spec.Steps[3].Type != StepHuman || spec.Steps[10].Type != StepEnd {
 		t.Fatalf("unexpected steps: %+v", spec.Steps)
 	}
 }
@@ -269,30 +322,45 @@ func TestBundleValidateOutcomeNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	roles := validRoles()
-	// Mutate planner outcomes so the plan step's "planned" outcome is no longer
-	// allowed.
-	p := roles["planner"]
-	p.Outcomes = []string{"question"}
-	roles["planner"] = p
+	// Add an outcome to review_initial that the reviewer role does not allow,
+	// while keeping every declared reviewer outcome covered.
+	steps := spec.Steps
+	steps[1].On = map[string]string{
+		"approved": "implement_initial",
+		"revise":   "revise_plan",
+		"question": "ask",
+		"bogus":    "end",
+	}
+	spec.Steps = steps
 
-	bundle := Bundle{Spec: *spec, Roles: roles, Files: completeFiles(), WorkflowSource: validWorkflow}
+	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not allowed by role") {
 		t.Fatalf("validate = %v, want outcome-not-allowed error", err)
 	}
 }
 
 func TestBundleValidateMissingTransition(t *testing.T) {
-	spec, err := Parse([]byte(validWorkflow))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	spec := &WorkflowSpec{
+		Version: 1,
+		Name:    "m",
+		Steps: []StepSpec{
+			{ID: "a", Type: StepAgent, Role: "r", On: map[string]string{"x": "end"}},
+			{ID: "end", Type: StepEnd},
+		},
 	}
-	// Drop planner's "question" transition; the role still declares it.
-	steps := spec.Steps
-	steps[0].On = map[string]string{"planned": "review"}
-	spec.Steps = steps
+	roles := map[string]RoleContract{
+		"r": {
+			ID:           "r",
+			Prompt:       "p.md",
+			Outcomes:     []string{"x", "y"},
+			Outputs:      []string{"o"},
+			ResultSchema: "s.json",
+			Workspace:    WorkspaceRead,
+		},
+	}
+	files := map[string]string{"roles/r/prompt": "p", "roles/r/schema": "s"}
+	bundle := Bundle{Spec: *spec, Roles: roles, Files: files, WorkflowSource: "version: 1\nname: m\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {x: end}\n  - id: end\n    type: end\n"}
 
-	bundle := Bundle{Spec: *spec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "has no transition") {
 		t.Fatalf("validate = %v, want missing-transition error", err)
 	}
@@ -329,7 +397,7 @@ func TestBundleValidateHumanResponseOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	badSpec.Steps[3].Inputs = map[string]InputRef{"clarification": {Step: "ask", Output: "wrong"}}
+	badSpec.Steps[4].Inputs = map[string]InputRef{"clarification": {Step: "ask", Output: "wrong"}}
 	bad := Bundle{Spec: *badSpec, Roles: validRoles(), Files: completeFiles(), WorkflowSource: validWorkflow}
 	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "not produced by step") {
 		t.Fatalf("validate = %v, want not-produced-by-step error", err)
