@@ -2,6 +2,9 @@
 
 **Generated:** 2026-03-12 **Stack:** Go 1.25 + Bubble Tea TUI
 
+repo maki /home/unbot/code/opensource/maki_fork
+repo herdr /home/unbot/code/pets/work9flow_references/herdr
+
 ## OVERVIEW
 
 bdtui is a keyboard-first Kanban TUI for issue management via `bd` CLI.
