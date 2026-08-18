@@ -81,6 +81,10 @@ type StepSpec struct {
 // Parse decodes a workflow definition strictly: any unknown YAML field is an
 // error. It does not validate the graph; call Validate separately.
 func Parse(data []byte) (*WorkflowSpec, error) {
+	if err := validateYAMLSubset(data); err != nil {
+		return nil, fmt.Errorf("workflow: %w", err)
+	}
+
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 

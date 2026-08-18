@@ -39,6 +39,10 @@ type RoleContract struct {
 
 // ParseRole decodes a role contract strictly; unknown fields are an error.
 func ParseRole(data []byte) (*RoleContract, error) {
+	if err := validateYAMLSubset(data); err != nil {
+		return nil, fmt.Errorf("role: %w", err)
+	}
+
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 

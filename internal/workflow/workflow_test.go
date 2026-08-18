@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 const validWorkflow = `
@@ -185,6 +187,44 @@ func TestParseMultipleDocuments(t *testing.T) {
 	_, err := Parse([]byte(validWorkflow + "\n---\nversion: 1\nname: second\nsteps: []\n"))
 	if err == nil {
 		t.Fatal("expected multiple-document error")
+	}
+}
+
+func TestParseRejectsYAMLAnchor(t *testing.T) {
+	_, err := Parse([]byte("version: 1\nname: &n ship\nsteps: []\n"))
+	if err == nil || !strings.Contains(err.Error(), "anchor") {
+		t.Fatalf("expected anchor rejection, got %v", err)
+	}
+}
+
+func TestParseRejectsYAMLAlias(t *testing.T) {
+	// A valid alias necessarily references a preceding anchor, so the
+	// preflight reports the anchor first; the alias branch itself is covered
+	// in TestValidateYAMLNodeRejectsAlias.
+	_, err := Parse([]byte("base: &b {type: agent}\nuse: *b\n"))
+	if err == nil {
+		t.Fatal("expected alias-bearing document to be rejected")
+	}
+}
+
+func TestValidateYAMLNodeRejectsAlias(t *testing.T) {
+	err := validateYAMLNode(&yaml.Node{Kind: yaml.AliasNode, Value: "b"})
+	if err == nil || !strings.Contains(err.Error(), "alias") {
+		t.Fatalf("expected alias rejection, got %v", err)
+	}
+}
+
+func TestParseRejectsYAMLMergeKey(t *testing.T) {
+	_, err := Parse([]byte("version: 1\nname: ship\nsteps: []\nextras: {<<: {p: 1}}\n"))
+	if err == nil || !strings.Contains(err.Error(), "merge key") {
+		t.Fatalf("expected merge key rejection, got %v", err)
+	}
+}
+
+func TestParseRejectsYAMLCustomTag(t *testing.T) {
+	_, err := Parse([]byte("version: 1\nname: ship\nsteps: []\nfoo: !custom value\n"))
+	if err == nil || !strings.Contains(err.Error(), "custom tag") {
+		t.Fatalf("expected custom tag rejection, got %v", err)
 	}
 }
 
