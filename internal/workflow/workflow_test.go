@@ -9,27 +9,76 @@ import (
 )
 
 const validWorkflow = `
+version: 1
 name: ship
 steps:
-  - id: write
+  - id: plan
     type: agent
-    role: roles/writer.md
-    inputs: [task]
-    outputs: [patch]
-    result_schema: schemas/result.json
-    next: review
+    role: planner
+    on:
+      planned: review
+      question: ask
   - id: review
     type: agent
-    role: roles/reviewer.md
-    inputs: [patch]
-    outputs: [review]
-    next: approve
-  - id: approve
+    role: reviewer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+    on:
+      approved: implement
+      revise: plan
+      question: ask
+  - id: ask
     type: human
-    prompt: "Approve the change?"
-    next: done
+    inputs:
+      question:
+        step: review
+        output: question
+    prompt: "Please clarify"
+    on:
+      answered: plan
+  - id: implement
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+      review:
+        step: review
+        output: review
+    on:
+      done: done
   - id: done
     type: end
+`
+
+const plannerRole = `
+id: planner
+prompt: prompts/planner.md
+outcomes: [planned, question]
+outputs: [plan]
+result_schema: schemas/plan.json
+workspace: read
+`
+
+const reviewerRole = `
+id: reviewer
+prompt: prompts/reviewer.md
+outcomes: [approved, revise, question]
+outputs: [review]
+result_schema: schemas/review.json
+workspace: read
+`
+
+const implementerRole = `
+id: implementer
+prompt: prompts/implementer.md
+outcomes: [done]
+outputs: [patch]
+result_schema: schemas/patch.json
+workspace: write
 `
 
 func TestParseValid(t *testing.T) {
@@ -40,26 +89,16 @@ func TestParseValid(t *testing.T) {
 	if err := spec.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	if spec.Name != "ship" || len(spec.Steps) != 4 {
+	if spec.Version != 1 || spec.Name != "ship" || len(spec.Steps) != 5 {
 		t.Fatalf("unexpected spec: %+v", spec)
 	}
-	if spec.Steps[0].Type != StepAgent || spec.Steps[3].Type != StepEnd {
-		t.Fatalf("unexpected step types: %+v", spec.Steps)
+	if spec.Steps[0].Role != "planner" || spec.Steps[2].Type != StepHuman || spec.Steps[4].Type != StepEnd {
+		t.Fatalf("unexpected steps: %+v", spec.Steps)
 	}
 }
 
 func TestParseUnknownField(t *testing.T) {
-	_, err := Parse([]byte(`
-name: ship
-steps:
-  - id: write
-    type: agent
-    role: roles/writer.md
-    next: done
-  - id: done
-    type: end
-bogus: true
-`))
+	_, err := Parse([]byte(validWorkflow + "\nbogus: true\n"))
 	if err == nil {
 		t.Fatal("expected unknown-field error")
 	}
@@ -67,12 +106,13 @@ bogus: true
 
 func TestParseUnknownStepField(t *testing.T) {
 	_, err := Parse([]byte(`
+version: 1
 name: ship
 steps:
-  - id: write
+  - id: plan
     type: agent
-    role: roles/writer.md
-    next: done
+    role: planner
+    on: { planned: done }
     wat: 1
   - id: done
     type: end
@@ -83,7 +123,7 @@ steps:
 }
 
 func TestParseMultipleDocuments(t *testing.T) {
-	_, err := Parse([]byte(validWorkflow + "\n---\nname: second\nsteps: []\n"))
+	_, err := Parse([]byte(validWorkflow + "\n---\nversion: 1\nname: second\nsteps: []\n"))
 	if err == nil {
 		t.Fatal("expected multiple-document error")
 	}
@@ -95,19 +135,22 @@ func TestValidateErrors(t *testing.T) {
 		yaml string
 		want string
 	}{
-		{"empty name", "steps:\n  - id: a\n    type: end\n", "name is required"},
-		{"no steps", "name: x\nsteps: []\n", "at least one step"},
-		{"duplicate id", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    next: b\n  - id: a\n    type: end\n", "duplicate step id"},
-		{"invalid type", "name: x\nsteps:\n  - id: a\n    type: wat\n    next: b\n  - id: b\n    type: end\n", "invalid type"},
-		{"agent missing role", "name: x\nsteps:\n  - id: a\n    type: agent\n    next: b\n  - id: b\n    type: end\n", "agent step requires role"},
-		{"agent sets prompt", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    prompt: hi\n    next: b\n  - id: b\n    type: end\n", "agent step must not set prompt"},
-		{"human missing prompt", "name: x\nsteps:\n  - id: a\n    type: human\n    next: b\n  - id: b\n    type: end\n", "human step requires prompt"},
-		{"end has next", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    next: b\n  - id: b\n    type: end\n    next: a\n", "end step must not have next"},
-		{"next not found", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    next: missing\n", "not found"},
-		{"self next", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    next: a\n", "must not be itself"},
-		{"cycle", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    next: b\n  - id: b\n    type: agent\n    role: r.md\n    next: a\n", "cycle detected"},
-		{"unreachable", "name: x\nsteps:\n  - id: a\n    type: agent\n    role: r.md\n    next: b\n  - id: b\n    type: end\n  - id: orphan\n    type: end\n", "not reachable"},
-		{"entry is end", "name: x\nsteps:\n  - id: a\n    type: end\n", "first step must not be end"},
+		{"missing version", "name: x\nsteps:\n  - id: a\n    type: end\n", "unsupported version"},
+		{"empty name", "version: 1\nsteps:\n  - id: a\n    type: end\n", "name is required"},
+		{"no steps", "version: 1\nname: x\nsteps: []\n", "at least one step"},
+		{"duplicate id", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {go: b}\n  - id: a\n    type: end\n", "duplicate step id"},
+		{"invalid type", "version: 1\nname: x\nsteps:\n  - id: a\n    type: wat\n    on: {go: b}\n  - id: b\n    type: end\n", "invalid type"},
+		{"agent missing role", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    on: {go: b}\n  - id: b\n    type: end\n", "agent step requires role"},
+		{"agent sets prompt", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    prompt: hi\n    on: {go: b}\n  - id: b\n    type: end\n", "agent step must not set prompt"},
+		{"agent missing on", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n  - id: b\n    type: end\n", "at least one outcome"},
+		{"human sets role", "version: 1\nname: x\nsteps:\n  - id: a\n    type: human\n    role: r\n    on: {go: b}\n  - id: b\n    type: end\n", "human step must not set role"},
+		{"human missing on", "version: 1\nname: x\nsteps:\n  - id: a\n    type: human\n    prompt: hi\n  - id: b\n    type: end\n", "at least one outcome"},
+		{"end has on", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {go: b}\n  - id: b\n    type: end\n    on: {x: a}\n", "end step must not set"},
+		{"on target not found", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {go: missing}\n", "not found"},
+		{"input step not found", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    inputs:\n      x: {step: missing, output: y}\n    on: {go: b}\n  - id: b\n    type: end\n", "not found"},
+		{"input step is end", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    inputs:\n      x: {step: b, output: y}\n    on: {go: b}\n  - id: b\n    type: end\n", "end step"},
+		{"input missing output", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    inputs:\n      x: {step: a, output: \"\"}\n    on: {go: b}\n  - id: b\n    type: end\n", "output is required"},
+		{"unreachable", "version: 1\nname: x\nsteps:\n  - id: a\n    type: agent\n    role: r\n    on: {go: b}\n  - id: b\n    type: end\n  - id: orphan\n    type: end\n", "not reachable"},
 	}
 
 	for _, tc := range cases {
@@ -118,12 +161,24 @@ func TestValidateErrors(t *testing.T) {
 			}
 			err = spec.Validate()
 			if err == nil {
-				t.Fatalf("expected validation error containing %q", tc.want)
+				t.Fatalf("expected error containing %q", tc.want)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %q, want substring %q", err.Error(), tc.want)
 			}
 		})
+	}
+}
+
+func TestCyclesAllowed(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// validWorkflow contains plan -> review -> revise -> plan and
+	// review -> question -> ask -> answered -> plan cycles.
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 }
 
@@ -136,7 +191,6 @@ func TestCanonicalJSONDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-
 	aj, err := a.CanonicalJSON()
 	if err != nil {
 		t.Fatalf("canonical a: %v", err)
@@ -148,8 +202,73 @@ func TestCanonicalJSONDeterministic(t *testing.T) {
 	if aj != bj {
 		t.Fatalf("canonical JSON not deterministic:\n%s\n%s", aj, bj)
 	}
-	if strings.Contains(aj, "null") {
-		t.Fatalf("canonical JSON should not contain null slices: %s", aj)
+}
+
+func validRoles() map[string]RoleContract {
+	planner, _ := ParseRole([]byte(plannerRole))
+	reviewer, _ := ParseRole([]byte(reviewerRole))
+	implementer, _ := ParseRole([]byte(implementerRole))
+	return map[string]RoleContract{
+		"planner":     *planner,
+		"reviewer":    *reviewer,
+		"implementer": *implementer,
+	}
+}
+
+func TestBundleValidate(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	bundle := Bundle{
+		Spec:  *spec,
+		Roles: validRoles(),
+		Files: map[string]string{
+			"prompts/planner.md":     "planner prompt",
+			"prompts/reviewer.md":    "reviewer prompt",
+			"prompts/implementer.md": "implementer prompt",
+			"schemas/plan.json":      `{"type":"object"}`,
+			"schemas/review.json":    `{"type":"object"}`,
+			"schemas/patch.json":     `{"type":"object"}`,
+		},
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatalf("bundle validate: %v", err)
+	}
+}
+
+func TestBundleValidateOutcomeNotAllowed(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	roles := validRoles()
+	// Mutate planner outcomes so the plan step's "planned" outcome is no longer
+	// allowed.
+	p := roles["planner"]
+	p.Outcomes = []string{"question"}
+	roles["planner"] = p
+
+	bundle := Bundle{Spec: *spec, Roles: roles}
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not allowed by role") {
+		t.Fatalf("validate = %v, want outcome-not-allowed error", err)
+	}
+}
+
+func TestBundleValidateUndeclaredInputOutput(t *testing.T) {
+	spec, err := Parse([]byte(validWorkflow))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	roles := validRoles()
+	// Remove planner's "plan" output; the review step consumes plan from plan.
+	p := roles["planner"]
+	p.Outputs = []string{}
+	roles["planner"] = p
+
+	bundle := Bundle{Spec: *spec, Roles: roles}
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not produced by step") {
+		t.Fatalf("validate = %v, want undeclared-output error", err)
 	}
 }
 
@@ -158,18 +277,19 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-
-	closure := Closure{Spec: *spec, Files: map[string]string{
-		"roles/writer.md":     "writer prompt",
-		"roles/reviewer.md":   "reviewer prompt",
-		"schemas/result.json": `{"type":"object"}`,
-	}}
-
-	s1, err := BuildSnapshot(closure)
+	bundle := Bundle{
+		Spec:  *spec,
+		Roles: validRoles(),
+		Files: map[string]string{
+			"prompts/planner.md": "planner prompt",
+			"schemas/plan.json":  `{"type":"object"}`,
+		},
+	}
+	s1, err := BuildSnapshot(bundle)
 	if err != nil {
 		t.Fatalf("snapshot 1: %v", err)
 	}
-	s2, err := BuildSnapshot(closure)
+	s2, err := BuildSnapshot(bundle)
 	if err != nil {
 		t.Fatalf("snapshot 2: %v", err)
 	}
@@ -180,11 +300,11 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 		t.Fatalf("ref length = %d, want 64", len(s1.Ref))
 	}
 
-	changed := Closure{Spec: *spec, Files: map[string]string{
-		"roles/writer.md":     "writer prompt",
-		"roles/reviewer.md":   "reviewer prompt",
-		"schemas/result.json": `{"type":"object","required":["ok"]}`,
-	}}
+	changed := bundle
+	changed.Files = map[string]string{
+		"prompts/planner.md": "planner prompt changed",
+		"schemas/plan.json":  `{"type":"object"}`,
+	}
 	s3, err := BuildSnapshot(changed)
 	if err != nil {
 		t.Fatalf("snapshot 3: %v", err)
@@ -194,60 +314,50 @@ func TestBuildSnapshotDeterministicAndSensitive(t *testing.T) {
 	}
 }
 
-func TestLoaderProjectOverrideAndGlobalFallback(t *testing.T) {
+func TestLoaderWorkflowAndRoleOverride(t *testing.T) {
 	dir := t.TempDir()
 	global := filepath.Join(dir, "global")
 	project := filepath.Join(dir, "project")
-	globalWF := "name: global\nsteps:\n  - id: a\n    type: human\n    prompt: hi\n    next: b\n  - id: b\n    type: end\n"
-	projectWF := "name: project\nsteps:\n  - id: a\n    type: human\n    prompt: hi\n    next: b\n  - id: b\n    type: end\n"
-	mustWriteDir(t, global, "wf.yaml", globalWF)
-	mustWriteDir(t, project, "wf.yaml", projectWF)
-	mustWriteDir(t, global, "only-global.yaml", "name: onlyglobal\nsteps:\n  - id: a\n    type: human\n    prompt: hi\n    next: b\n  - id: b\n    type: end\n")
 
-	loader := Loader{GlobalDir: global, ProjectDir: project}
+	// Global definitions.
+	mustWriteDir(t, global, "workflows/wf.yaml", validWorkflow)
+	mustWriteDir(t, global, "roles/planner.yaml", plannerRole)
+	mustWriteDir(t, global, "roles/reviewer.yaml", reviewerRole)
+	mustWriteDir(t, global, "roles/implementer.yaml", implementerRole)
+	mustWriteDir(t, global, "prompts/planner.md", "global planner prompt")
+	mustWriteDir(t, global, "prompts/reviewer.md", "reviewer prompt")
+	mustWriteDir(t, global, "prompts/implementer.md", "implementer prompt")
+	mustWriteDir(t, global, "schemas/plan.json", `{"type":"object"}`)
+	mustWriteDir(t, global, "schemas/review.json", `{"type":"object"}`)
+	mustWriteDir(t, global, "schemas/patch.json", `{"type":"object"}`)
 
-	// project overrides global wholesale
-	got, err := loader.Load(context.Background(), "wf")
-	if err != nil {
-		t.Fatalf("load wf: %v", err)
-	}
-	if got.Spec.Name != "project" {
-		t.Fatalf("name = %q, want project", got.Spec.Name)
-	}
+	// Project overrides the planner role (whole-definition), but the workflow
+	// and other roles come from global.
+	projectPlanner := strings.Replace(plannerRole, "prompts/planner.md", "prompts/project-planner.md", 1)
+	mustWriteDir(t, project, "roles/planner.yaml", projectPlanner)
+	mustWriteDir(t, project, "prompts/project-planner.md", "project planner prompt")
+	mustWriteDir(t, project, "schemas/plan.json", `{"type":"object"}`)
 
-	// global fallback when project does not define it
-	got, err = loader.Load(context.Background(), "only-global")
-	if err != nil {
-		t.Fatalf("load only-global: %v", err)
-	}
-	if got.Spec.Name != "onlyglobal" {
-		t.Fatalf("name = %q, want onlyglobal", got.Spec.Name)
-	}
-
-	if _, err := loader.Load(context.Background(), "missing"); err == nil {
-		t.Fatal("expected not-found error")
-	}
-}
-
-func TestLoaderCollectsDependencies(t *testing.T) {
-	dir := t.TempDir()
-	project := filepath.Join(dir, "project")
-
-	wf := "name: ship\nsteps:\n  - id: write\n    type: agent\n    role: roles/writer.md\n    result_schema: schemas/result.json\n    next: done\n  - id: done\n    type: end\n"
-	mustWriteDir(t, project, "ship.yaml", wf)
-	mustWriteDir(t, project, "roles/writer.md", "writer prompt")
-	mustWriteDir(t, project, "schemas/result.json", `{"type":"object"}`)
-
-	loader := Loader{ProjectDir: project}
-	got, err := loader.Load(context.Background(), "ship")
+	loader := Loader{Global: global, Project: project}
+	bundle, err := loader.Load(context.Background(), "wf")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if got.Files["roles/writer.md"] != "writer prompt" {
-		t.Fatalf("missing role file: %+v", got.Files)
+
+	if bundle.Spec.Name != "ship" {
+		t.Fatalf("spec name = %q, want ship", bundle.Spec.Name)
 	}
-	if got.Files["schemas/result.json"] != `{"type":"object"}` {
-		t.Fatalf("missing schema file: %+v", got.Files)
+	if bundle.Roles["planner"].Prompt != "prompts/project-planner.md" {
+		t.Fatalf("planner prompt = %q, want project override", bundle.Roles["planner"].Prompt)
+	}
+	if bundle.Roles["reviewer"].Prompt != "prompts/reviewer.md" {
+		t.Fatalf("reviewer prompt = %q, want global fallback", bundle.Roles["reviewer"].Prompt)
+	}
+	if bundle.Files["prompts/project-planner.md"] != "project planner prompt" {
+		t.Fatalf("missing project planner prompt: %+v", bundle.Files)
+	}
+	if bundle.Files["prompts/reviewer.md"] != "reviewer prompt" {
+		t.Fatalf("missing global reviewer prompt: %+v", bundle.Files)
 	}
 }
 

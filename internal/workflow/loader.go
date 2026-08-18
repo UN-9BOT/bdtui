@@ -8,58 +8,114 @@ import (
 	"strings"
 )
 
-// Loader resolves workflow definitions from a project directory (highest
-// precedence) and a global directory. Project definitions replace a same-named
-// global definition wholesale; there is no field-level merge.
+// Loader resolves workflow and role definitions from a project definitions
+// root (highest precedence) and a global definitions root. Workflows and roles
+// override independently: a project workflow with a given name replaces the
+// global workflow with the same name, and a project role with a given id
+// replaces the global role with the same id. A project workflow may still
+// reference a global role when no project role override exists.
+//
+// Layout under each root:
+//
+//	<root>/workflows/<name>.yaml
+//	<root>/roles/<id>.yaml
+//
+// Role prompt and result_schema paths are relative to the role's root.
 type Loader struct {
-	GlobalDir  string
-	ProjectDir string
+	Global  string
+	Project string
 }
 
-// Load reads and validates a named workflow and assembles the closure of its
-// directly referenced dependency files (role prompts and JSON Schemas).
-// Controller-discovered project instructions (AGENTS.md/CLAUDE.md/skills) are
-// not added here; callers append them to the returned Closure before building
-// a snapshot.
-func (l Loader) Load(ctx context.Context, name string) (*Closure, error) {
+// Load resolves a named workflow and assembles its bundle: the workflow, the
+// resolved role contracts it references, and the raw contents of referenced
+// prompt and schema files. Controller-discovered project instructions
+// (AGENTS.md/CLAUDE.md/skills) are not added here; callers append them to the
+// returned Bundle.Files before building a snapshot.
+func (l Loader) Load(ctx context.Context, name string) (*Bundle, error) {
 	if err := validateName(name); err != nil {
 		return nil, err
 	}
 
-	dir, err := l.resolveDir(name)
+	workflowDir, err := l.resolveWorkflowDir(name)
 	if err != nil {
 		return nil, err
 	}
 
-	spec, err := parseFile(filepath.Join(dir, name+".yaml"))
+	spec, err := parseWorkflowFile(filepath.Join(workflowDir, "workflows", name+".yaml"))
 	if err != nil {
 		return nil, err
 	}
 
-	files, err := collectDependencies(spec, dir)
+	roles, files, err := l.resolveRoles(spec)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Closure{Spec: *spec, Files: files}, nil
+	bundle := &Bundle{Spec: *spec, Roles: roles, Files: files}
+	if err := bundle.Validate(); err != nil {
+		return nil, err
+	}
+	return bundle, nil
 }
 
-func (l Loader) resolveDir(name string) (string, error) {
-	path := name + ".yaml"
-	if l.ProjectDir != "" {
-		if fileExists(filepath.Join(l.ProjectDir, path)) {
-			return l.ProjectDir, nil
-		}
+func (l Loader) resolveWorkflowDir(name string) (string, error) {
+	rel := filepath.Join("workflows", name+".yaml")
+	if l.Project != "" && fileExists(filepath.Join(l.Project, rel)) {
+		return l.Project, nil
 	}
-	if l.GlobalDir != "" {
-		if fileExists(filepath.Join(l.GlobalDir, path)) {
-			return l.GlobalDir, nil
-		}
+	if l.Global != "" && fileExists(filepath.Join(l.Global, rel)) {
+		return l.Global, nil
 	}
 	return "", fmt.Errorf("workflow: %q not found", name)
 }
 
-func parseFile(path string) (*WorkflowSpec, error) {
+func (l Loader) resolveRoleDir(id string) (string, error) {
+	rel := filepath.Join("roles", id+".yaml")
+	if l.Project != "" && fileExists(filepath.Join(l.Project, rel)) {
+		return l.Project, nil
+	}
+	if l.Global != "" && fileExists(filepath.Join(l.Global, rel)) {
+		return l.Global, nil
+	}
+	return "", fmt.Errorf("workflow: role %q not found", id)
+}
+
+func (l Loader) resolveRoles(spec *WorkflowSpec) (map[string]RoleContract, map[string]string, error) {
+	roles := map[string]RoleContract{}
+	files := map[string]string{}
+
+	for i := range spec.Steps {
+		st := &spec.Steps[i]
+		if st.Type != StepAgent {
+			continue
+		}
+		if _, ok := roles[st.Role]; ok {
+			continue
+		}
+
+		dir, err := l.resolveRoleDir(st.Role)
+		if err != nil {
+			return nil, nil, err
+		}
+		role, err := parseRoleFile(filepath.Join(dir, "roles", st.Role+".yaml"))
+		if err != nil {
+			return nil, nil, err
+		}
+		roles[st.Role] = *role
+
+		if err := addFile(files, dir, role.Prompt); err != nil {
+			return nil, nil, fmt.Errorf("workflow: role %q: %w", st.Role, err)
+		}
+		if role.ResultSchema != "" {
+			if err := addFile(files, dir, role.ResultSchema); err != nil {
+				return nil, nil, fmt.Errorf("workflow: role %q: %w", st.Role, err)
+			}
+		}
+	}
+	return roles, files, nil
+}
+
+func parseWorkflowFile(path string) (*WorkflowSpec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("workflow: read %s: %w", path, err)
@@ -74,25 +130,19 @@ func parseFile(path string) (*WorkflowSpec, error) {
 	return spec, nil
 }
 
-// collectDependencies reads role prompt and result schema files referenced by
-// the workflow, keyed by their relative path as written in the workflow.
-func collectDependencies(spec *WorkflowSpec, dir string) (map[string]string, error) {
-	files := map[string]string{}
-	for i := range spec.Steps {
-		st := &spec.Steps[i]
-		if st.Type != StepAgent {
-			continue
-		}
-		if err := addFile(files, dir, st.Role); err != nil {
-			return nil, fmt.Errorf("workflow: step %q: %w", st.ID, err)
-		}
-		if st.ResultSchema != "" {
-			if err := addFile(files, dir, st.ResultSchema); err != nil {
-				return nil, fmt.Errorf("workflow: step %q: %w", st.ID, err)
-			}
-		}
+func parseRoleFile(path string) (*RoleContract, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: read %s: %w", path, err)
 	}
-	return files, nil
+	role, err := ParseRole(data)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: %s: %w", path, err)
+	}
+	if err := role.Validate(); err != nil {
+		return nil, fmt.Errorf("workflow: %s: %w", path, err)
+	}
+	return role, nil
 }
 
 func addFile(files map[string]string, dir, rel string) error {
@@ -114,11 +164,11 @@ func validateName(name string) error {
 	if name == "" {
 		return fmt.Errorf("workflow: name is required")
 	}
-	if err := validateRelPath(name); err != nil {
-		return err
-	}
-	if strings.Contains(name, "/") {
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
 		return fmt.Errorf("workflow: invalid name %q: must be a bare name without path separators", name)
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("workflow: invalid name %q", name)
 	}
 	return nil
 }

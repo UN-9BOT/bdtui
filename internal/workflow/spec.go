@@ -1,7 +1,7 @@
-// Package workflow parses, validates, and snapshots strict YAML workflow
-// definitions for the orchestrator. Workflow authoring is human-driven: this
-// package only reads and validates definitions; it never creates or edits
-// them.
+// Package workflow parses, validates, resolves, and snapshots strict YAML
+// workflow definitions and their role contracts for the orchestrator.
+// Workflow authoring is human-driven: this package only reads and validates
+// definitions; it never creates or edits them.
 package workflow
 
 import (
@@ -14,6 +14,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// CurrentVersion is the workflow format version this package understands.
+const CurrentVersion = 1
 
 // StepType is the MVP step discriminator.
 type StepType string
@@ -34,35 +37,49 @@ func (t StepType) Valid() bool {
 	}
 }
 
-// WorkflowSpec is the typed representation of a workflow definition.
-type WorkflowSpec struct {
-	Name  string     `yaml:"name" json:"name"`
-	Steps []StepSpec `yaml:"steps" json:"steps"`
+// InputRef is an explicit dataflow reference: it names a step and one of that
+// step's declared outputs. It is not a bare global name and not a filesystem
+// convention.
+type InputRef struct {
+	Step   string `yaml:"step" json:"step"`
+	Output string `yaml:"output" json:"output"`
 }
 
-// StepSpec is a single workflow step. Fields are flat on purpose so strict
-// YAML decoding can reject unknown keys; Validate enforces which fields are
-// legal per step type.
+// WorkflowSpec is the typed representation of a workflow definition.
+type WorkflowSpec struct {
+	Version int        `yaml:"version" json:"version"`
+	Name    string     `yaml:"name" json:"name"`
+	Steps   []StepSpec `yaml:"steps" json:"steps"`
+}
+
+// StepSpec is a single workflow step.
+//
+// Transitions are semantic: `on` maps a role/human outcome to the next step
+// id. Technical failures are handled by the engine, not encoded here. Cycles
+// are legal (e.g. plan -> review -> revise -> plan).
 type StepSpec struct {
 	ID    string   `yaml:"id" json:"id"`
 	Type  StepType `yaml:"type" json:"type"`
 	Title string   `yaml:"title,omitempty" json:"title,omitempty"`
 
-	// Agent step fields.
-	Role         string   `yaml:"role,omitempty" json:"role,omitempty"`           // relative path to the role prompt file
-	Inputs       []string `yaml:"inputs,omitempty" json:"inputs,omitempty"`       // declared input names
-	Outputs      []string `yaml:"outputs,omitempty" json:"outputs,omitempty"`     // declared artifact names
-	ResultSchema string   `yaml:"result_schema,omitempty" json:"result_schema,omitempty"` // relative path to a JSON Schema for result.json
+	// Role is a role id (not a path). The role contract owns the prompt,
+	// allowed outcomes, result schema, declared outputs, and workspace mode.
+	Role string `yaml:"role,omitempty" json:"role,omitempty"`
 
-	// Human step field.
-	Prompt string `yaml:"prompt,omitempty" json:"prompt,omitempty"` // inline prompt text
+	// Inputs is a dataflow map from a local input name to its source
+	// (step, output).
+	Inputs map[string]InputRef `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 
-	// Transition. Every non-end step must name its single successor.
-	Next string `yaml:"next,omitempty" json:"next,omitempty"`
+	// On maps a semantic outcome to the next step id.
+	On map[string]string `yaml:"on,omitempty" json:"on,omitempty"`
+
+	// Prompt is an optional static prompt for human steps. It supplements
+	// inputs; it never replaces explicit dataflow.
+	Prompt string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
 }
 
 // Parse decodes a workflow definition strictly: any unknown YAML field is an
-// error. Parsing does not validate the graph; call Validate separately.
+// error. It does not validate the graph; call Validate separately.
 func Parse(data []byte) (*WorkflowSpec, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -71,7 +88,6 @@ func Parse(data []byte) (*WorkflowSpec, error) {
 	if err := dec.Decode(&spec); err != nil {
 		return nil, fmt.Errorf("decode workflow: %w", err)
 	}
-	// Reject trailing YAML documents so a file cannot smuggle extra content.
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
 			return nil, errors.New("decode workflow: multiple YAML documents")
@@ -81,11 +97,16 @@ func Parse(data []byte) (*WorkflowSpec, error) {
 	return &spec, nil
 }
 
-// Validate checks the workflow graph and per-step field rules. It does not
-// mutate the spec.
+// Validate checks the workflow graph and per-step field rules. It allows
+// cycles but rejects unreachable steps, missing transition targets, and
+// malformed dataflow references. Role-contract-level checks happen after role
+// resolution (see Bundle.Validate).
 func (s *WorkflowSpec) Validate() error {
 	if s == nil {
 		return errors.New("workflow: nil spec")
+	}
+	if s.Version != CurrentVersion {
+		return fmt.Errorf("workflow: unsupported version %d (want %d)", s.Version, CurrentVersion)
 	}
 	if strings.TrimSpace(s.Name) == "" {
 		return errors.New("workflow: name is required")
@@ -119,20 +140,30 @@ func (s *WorkflowSpec) Validate() error {
 
 	for i := range s.Steps {
 		st := &s.Steps[i]
-		switch st.Type {
-		case StepEnd:
-			if st.Next != "" {
-				return fmt.Errorf("workflow: step %q: end step must not have next", st.ID)
+		for outcome, target := range st.On {
+			if strings.TrimSpace(outcome) == "" {
+				return fmt.Errorf("workflow: step %q: empty outcome", st.ID)
 			}
-		default:
-			if strings.TrimSpace(st.Next) == "" {
-				return fmt.Errorf("workflow: step %q: missing next", st.ID)
+			if _, ok := byID[target]; !ok {
+				return fmt.Errorf("workflow: step %q: outcome %q target %q not found", st.ID, outcome, target)
 			}
-			if _, ok := byID[st.Next]; !ok {
-				return fmt.Errorf("workflow: step %q: next %q not found", st.ID, st.Next)
+		}
+		for name, ref := range st.Inputs {
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("workflow: step %q: empty input name", st.ID)
 			}
-			if st.Next == st.ID {
-				return fmt.Errorf("workflow: step %q: next must not be itself", st.ID)
+			if strings.TrimSpace(ref.Step) == "" {
+				return fmt.Errorf("workflow: step %q: input %q: step is required", st.ID, name)
+			}
+			if strings.TrimSpace(ref.Output) == "" {
+				return fmt.Errorf("workflow: step %q: input %q: output is required", st.ID, name)
+			}
+			idx, ok := byID[ref.Step]
+			if !ok {
+				return fmt.Errorf("workflow: step %q: input %q: step %q not found", st.ID, name, ref.Step)
+			}
+			if s.Steps[idx].Type == StepEnd {
+				return fmt.Errorf("workflow: step %q: input %q: step %q is an end step and produces no output", st.ID, name, ref.Step)
 			}
 		}
 	}
@@ -149,47 +180,48 @@ func (st *StepSpec) validateFields() error {
 		if st.Prompt != "" {
 			return errors.New("agent step must not set prompt")
 		}
-	case StepHuman:
-		if strings.TrimSpace(st.Prompt) == "" {
-			return errors.New("human step requires prompt")
+		if len(st.On) == 0 {
+			return errors.New("agent step requires at least one outcome in on")
 		}
-		if st.Role != "" || st.ResultSchema != "" || len(st.Inputs) > 0 || len(st.Outputs) > 0 {
-			return errors.New("human step must not set agent-only fields")
+	case StepHuman:
+		if st.Role != "" {
+			return errors.New("human step must not set role")
+		}
+		if len(st.On) == 0 {
+			return errors.New("human step requires at least one outcome in on")
 		}
 	case StepEnd:
-		if st.Role != "" || st.Prompt != "" || st.ResultSchema != "" || len(st.Inputs) > 0 || len(st.Outputs) > 0 {
-			return errors.New("end step must not set step-specific fields")
+		if st.Role != "" || st.Prompt != "" || len(st.Inputs) > 0 || len(st.On) > 0 {
+			return errors.New("end step must not set role, prompt, inputs, or on")
 		}
 	}
 	return nil
 }
 
-// validateGraph walks the single-successor graph from the entry step and
-// rejects cycles and unreachable steps.
+// validateGraph walks the outcome graph from the entry step and rejects
+// unreachable steps. Cycles are legal and are not an error.
 func (s *WorkflowSpec) validateGraph() error {
 	byID := make(map[string]*StepSpec, len(s.Steps))
 	for i := range s.Steps {
 		byID[s.Steps[i].ID] = &s.Steps[i]
 	}
 
-	entry := s.Steps[0].ID
 	reachable := make(map[string]bool, len(s.Steps))
-	cur := entry
-	for {
-		if reachable[cur] {
-			return fmt.Errorf("workflow: cycle detected at step %q", cur)
+	var visit func(id string)
+	visit = func(id string) {
+		if reachable[id] {
+			return
 		}
-		reachable[cur] = true
-		st := byID[cur]
-		if st.Type == StepEnd {
-			break
+		reachable[id] = true
+		for _, target := range byID[id].On {
+			visit(target)
 		}
-		cur = st.Next
 	}
+	visit(s.Steps[0].ID)
 
 	for i := range s.Steps {
 		if !reachable[s.Steps[i].ID] {
-			return fmt.Errorf("workflow: step %q is not reachable from entry %q", s.Steps[i].ID, entry)
+			return fmt.Errorf("workflow: step %q is not reachable from entry %q", s.Steps[i].ID, s.Steps[0].ID)
 		}
 	}
 	return nil
@@ -208,17 +240,17 @@ func (s *WorkflowSpec) CanonicalJSON() (string, error) {
 	return string(b), nil
 }
 
-// forJSON returns a copy with nil slices normalized to empty slices so the
+// forJSON returns a copy with nil maps normalized to empty maps so the
 // canonical representation is stable regardless of how the spec was built.
 func (s *WorkflowSpec) forJSON() WorkflowSpec {
-	out := WorkflowSpec{Name: s.Name, Steps: make([]StepSpec, len(s.Steps))}
+	out := WorkflowSpec{Version: s.Version, Name: s.Name, Steps: make([]StepSpec, len(s.Steps))}
 	for i := range s.Steps {
 		st := s.Steps[i]
 		if st.Inputs == nil {
-			st.Inputs = []string{}
+			st.Inputs = map[string]InputRef{}
 		}
-		if st.Outputs == nil {
-			st.Outputs = []string{}
+		if st.On == nil {
+			st.On = map[string]string{}
 		}
 		out.Steps[i] = st
 	}
