@@ -228,6 +228,13 @@ func TestParseRejectsYAMLCustomTag(t *testing.T) {
 	}
 }
 
+func TestParseRejectsLongFormCustomTag(t *testing.T) {
+	_, err := Parse([]byte("version: 1\nname: !<tag:yaml.org,2002:evil> ship\nsteps: []\n"))
+	if err == nil || !strings.Contains(err.Error(), "custom tag") {
+		t.Fatalf("expected long-form custom tag rejection, got %v", err)
+	}
+}
+
 func TestValidateErrors(t *testing.T) {
 	cases := []struct {
 		name string

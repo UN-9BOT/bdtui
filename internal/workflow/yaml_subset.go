@@ -52,10 +52,11 @@ func validateYAMLNode(n *yaml.Node) error {
 	if n.Kind == yaml.AliasNode {
 		return fmt.Errorf("aliases are not supported (alias %q)", n.Value)
 	}
-	if n.Kind == yaml.ScalarNode && n.Tag == "!!merge" {
+	tag := normalizeYAMLTag(n.Tag)
+	if n.Kind == yaml.ScalarNode && tag == "!!merge" {
 		return fmt.Errorf("merge keys are not supported")
 	}
-	if isCustomTag(n.Tag) {
+	if tag != "" && !standardYAMLTags[tag] {
 		return fmt.Errorf("custom tags are not supported (tag %q)", n.Tag)
 	}
 	for _, c := range n.Content {
@@ -66,17 +67,12 @@ func validateYAMLNode(n *yaml.Node) error {
 	return nil
 }
 
-// isCustomTag reports whether tag is a YAML custom tag rather than a standard
-// core-schema tag. An empty tag means the node was untagged and resolved by the
-// schema, so it is not custom.
-func isCustomTag(tag string) bool {
-	if tag == "" {
-		return false
+// normalizeYAMLTag converts a long-form yaml.org,2002 tag to its short "!!"
+// form so that merge-key and custom-tag checks share one canonical allowlist.
+func normalizeYAMLTag(tag string) string {
+	const prefix = "tag:yaml.org,2002:"
+	if strings.HasPrefix(tag, prefix) {
+		return "!!" + strings.TrimPrefix(tag, prefix)
 	}
-	// Long-form tags are standard only in the yaml.org,2002 namespace.
-	if strings.HasPrefix(tag, "tag:yaml.org,2002:") {
-		return false
-	}
-	// Short-form standard tags use the "!!" handle and are allowlisted.
-	return !standardYAMLTags[tag]
+	return tag
 }
