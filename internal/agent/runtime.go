@@ -6,19 +6,18 @@ import (
 )
 
 // Invocation is a provider-agnostic description of what the runtime should
-// run. The adapter builds it from a Request; the runtime executes it.
+// run. ExecutionID is the durable, controller-allocated identity that the
+// runtime MUST use as the spawned Execution.ID; the adapter copies it from
+// Request.ExecutionID so the runtime contract is enforced end-to-end.
 type Invocation struct {
-	Bin   string
-	Args  []string
-	Dir   string
-	Stdin []byte
+	ExecutionID string
+	Bin         string
+	Args        []string
+	Dir         string
+	Stdin       []byte
 }
 
-// Execution is the durable, runtime-side identity of a single attempt. The
-// runtime owns the mapping from ID to the live process and uses it for
-// wait/stop/inspect/reattach. This is distinct from the agent-level session
-// id captured by the adapter (Result.SessionID): ExecutionID lives in the
-// runtime (Herdr pane/process), SessionID lives in the agent (Maki session).
+// Execution is the durable, runtime-side identity of a single attempt.
 type Execution struct {
 	ID string
 }
@@ -32,30 +31,40 @@ type RuntimeResult struct {
 	ExitErr error
 }
 
+// InspectResult describes what the runtime knows about an Execution ID.
+type InspectResult struct {
+	// Found is true if the runtime has a record of this ID (running or
+	// already completed with a buffered result).
+	Found bool
+	// Running is true if the underlying process is still alive.
+	Running bool
+}
+
 // Runtime owns the lifecycle of an external process invocation. It is the
-// seam where the future HerdrRuntime plugs in: HerdrRuntime spawns the agent
-// inside a Herdr pane, captures pane/process identity as Execution.ID, and
-// supports reattach on daemon restart. ExecRuntime is the MVP default and
-// demonstrates the same async lifecycle semantics using os/exec directly.
+// seam where the future HerdrRuntime plugs in.
 //
-// Lifecycle:
+// Durable-id contract:
 //
-//	Spawn(ctx, inv) -> Execution   // durable ID allocated; process started
-//	Wait(ctx, exec) -> RuntimeResult // blocks until completion
-//	Stop(ctx, exec) -> error         // terminates the running process
-//
-// Spawn/Wait/Stop may be called from different goroutines and across daemon
-// restarts (reattach by Execution.ID).
+//   - Spawn(ctx, Invocation{ExecutionID, ...}) MUST use inv.ExecutionID as
+//     the spawned Execution.ID. The controller has already persisted that
+//     ID, so a mismatch is a fatal contract violation.
+//   - Reattach(ctx, Execution{ID}) is the recovery path: it Inspects the ID
+//     and, if found, blocks until completion and returns the buffered
+//     result. If the runtime has no record (e.g. ExecRuntime after a
+//     daemon restart), it returns ErrLostExecution.
+//   - Inspect(ctx, Execution{ID}) exposes the Found/Running state for
+//     callers that want to decide between Wait and Stop without Wait
+//     blocking.
+//   - Wait blocks until the execution completes.
+//   - Stop terminates a running execution.
 type Runtime interface {
 	Spawn(ctx context.Context, inv Invocation) (Execution, error)
+	Reattach(ctx context.Context, exec Execution) (RuntimeResult, error)
+	Inspect(ctx context.Context, exec Execution) (InspectResult, error)
 	Wait(ctx context.Context, exec Execution) (RuntimeResult, error)
 	Stop(ctx context.Context, exec Execution) error
 }
 
-// ErrAlreadyDone is returned by Spawn/Wait when the execution has already
-// terminated.
-var ErrAlreadyDone = errors.New("agent: runtime: execution already done")
-
-// ErrNotFound is returned by Wait/Stop when the execution ID is unknown to
-// the runtime.
-var ErrNotFound = errors.New("agent: runtime: execution not found")
+// ErrDuplicateExecution is returned by Spawn when inv.ExecutionID already
+// has a live record in the runtime.
+var ErrDuplicateExecution = errors.New("agent: runtime: duplicate execution id")

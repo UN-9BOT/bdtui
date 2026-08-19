@@ -13,16 +13,19 @@ import (
 
 // ExecRuntime is the MVP default Runtime. It uses os/exec to spawn the
 // agent binary, captures stdout/stderr asynchronously, and exposes the same
-// Spawn/Wait/Stop lifecycle the future HerdrRuntime will satisfy. It exists
-// so the agent package can be developed and tested end-to-end before
-// HerdrRuntime is implemented.
+// Spawn/Reattach/Inspect/Wait/Stop lifecycle the future HerdrRuntime will
+// satisfy. It exists so the agent package can be developed and tested
+// end-to-end before HerdrRuntime is implemented.
+//
+// ExecRuntime keeps completed handles in its map after Wait so a same-process
+// Reattach can still retrieve the buffered result. After a daemon restart
+// the in-memory map is empty and Reattach returns ErrLostExecution; that
+// is the crash-recovery signal the controller resolves per bdtui-6pc.
 type ExecRuntime struct {
 	mu    sync.Mutex
 	procs map[string]*execHandle
 }
 
-// execHandle is the live state of a single process spawned by ExecRuntime.
-// The runtime goroutine writes exitErr and closes done exactly once.
 type execHandle struct {
 	cmd        *exec.Cmd
 	stdoutBuf  bytes.Buffer
@@ -32,19 +35,27 @@ type execHandle struct {
 	finishOnce sync.Once
 }
 
-// NewExecRuntime builds an empty ExecRuntime.
 func NewExecRuntime() *ExecRuntime {
 	return &ExecRuntime{procs: map[string]*execHandle{}}
 }
 
-// Spawn starts inv as a child process and returns its durable Execution.ID.
-// The process runs asynchronously; the caller blocks on Wait to collect the
-// result. If the spawn fails, the returned error wraps the underlying cause
-// and Execution.ID is empty.
+// Spawn uses inv.ExecutionID as the durable Execution.ID. The caller must
+// pre-allocate that ID; Spawn rejects empty or duplicate IDs so the
+// controller can rely on the persisted ID matching the live process.
 func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error) {
-	if inv.Bin == "" {
-		return Execution{}, errors.New("agent: ExecRuntime: invocation bin is required")
+	if inv.ExecutionID == "" {
+		return Execution{}, errors.New("agent: ExecRuntime: Invocation.ExecutionID is required")
 	}
+	if inv.Bin == "" {
+		return Execution{}, errors.New("agent: ExecRuntime: Invocation.Bin is required")
+	}
+	r.mu.Lock()
+	if _, exists := r.procs[inv.ExecutionID]; exists {
+		r.mu.Unlock()
+		return Execution{}, ErrDuplicateExecution
+	}
+	r.mu.Unlock()
+
 	cmd := exec.Command(inv.Bin, inv.Args...)
 	if inv.Dir != "" {
 		cmd.Dir = inv.Dir
@@ -63,9 +74,8 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 		return Execution{}, err
 	}
 
-	id := uuid.NewString()
 	r.mu.Lock()
-	r.procs[id] = h
+	r.procs[inv.ExecutionID] = h
 	r.mu.Unlock()
 
 	go func() {
@@ -73,21 +83,49 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 		h.finishOnce.Do(func() { close(h.done) })
 	}()
 
-	return Execution{ID: id}, nil
+	return Execution{ID: inv.ExecutionID}, nil
 }
 
-// Wait blocks until the execution completes (exit, signal, or normal end) and
-// returns the captured stdout/stderr/exitErr. Returns ErrNotFound if the id
-// is unknown, ErrAlreadyDone if Wait was called more than once.
-func (r *ExecRuntime) Wait(_ context.Context, exec Execution) (RuntimeResult, error) {
+// Reattach is the recovery entry point. If the in-memory map still holds
+// the ID, it Waits and returns the (possibly already-completed) result.
+// Otherwise it returns ErrLostExecution so the controller can resolve
+// needs_attention / technical retry.
+func (r *ExecRuntime) Reattach(ctx context.Context, exec Execution) (RuntimeResult, error) {
 	h, ok := r.lookup(exec.ID)
 	if !ok {
-		return RuntimeResult{}, ErrNotFound
+		return RuntimeResult{}, ErrLostExecution
 	}
+	return r.waitHandle(ctx, exec.ID, h)
+}
+
+// Inspect reports whether the ID is known and whether the process is still
+// running, without blocking.
+func (r *ExecRuntime) Inspect(_ context.Context, exec Execution) (InspectResult, error) {
+	h, ok := r.lookup(exec.ID)
+	if !ok {
+		return InspectResult{}, nil
+	}
+	select {
+	case <-h.done:
+		return InspectResult{Found: true, Running: false}, nil
+	default:
+		return InspectResult{Found: true, Running: true}, nil
+	}
+}
+
+// Wait blocks until the execution completes. Repeated calls on the same ID
+// return the same buffered result (the handle is retained until process
+// exit; the map is the source of truth).
+func (r *ExecRuntime) Wait(ctx context.Context, exec Execution) (RuntimeResult, error) {
+	h, ok := r.lookup(exec.ID)
+	if !ok {
+		return RuntimeResult{}, ErrLostExecution
+	}
+	return r.waitHandle(ctx, exec.ID, h)
+}
+
+func (r *ExecRuntime) waitHandle(_ context.Context, id string, h *execHandle) (RuntimeResult, error) {
 	<-h.done
-	r.mu.Lock()
-	delete(r.procs, exec.ID)
-	r.mu.Unlock()
 	return RuntimeResult{
 		Stdout:  append([]byte(nil), h.stdoutBuf.Bytes()...),
 		Stderr:  append([]byte(nil), h.stderrBuf.Bytes()...),
@@ -95,13 +133,11 @@ func (r *ExecRuntime) Wait(_ context.Context, exec Execution) (RuntimeResult, er
 	}, nil
 }
 
-// Stop terminates a running execution. Returns ErrNotFound if unknown or
-// already finished. Idempotent: stopping an already-finished execution is a
-// no-op (returns nil).
+// Stop terminates a running execution. No-op if the ID is unknown or the
+// process already exited.
 func (r *ExecRuntime) Stop(_ context.Context, exec Execution) error {
 	h, ok := r.lookup(exec.ID)
 	if !ok {
-		// Could be a finished execution we already removed; treat as no-op.
 		return nil
 	}
 	if h.cmd.Process == nil {
@@ -115,4 +151,11 @@ func (r *ExecRuntime) lookup(id string) (*execHandle, bool) {
 	defer r.mu.Unlock()
 	h, ok := r.procs[id]
 	return h, ok
+}
+
+// AllocateExecutionID returns a new UUID suitable as a controller-side
+// durable execution identity. It is a convenience wrapper around the
+// uuid package so callers do not import github.com/google/uuid directly.
+func AllocateExecutionID() string {
+	return uuid.NewString()
 }

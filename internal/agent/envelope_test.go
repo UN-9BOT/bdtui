@@ -7,16 +7,36 @@ import (
 	"bdtui/internal/workflow"
 )
 
+const testDataSchema = `{"type":"object","required":["plan"],"properties":{"plan":{"type":"string"}}}`
+
+func resolvedContract(t *testing.T, role workflow.RoleContract) ResultContract {
+	t.Helper()
+	c, err := ResolveContract(role, testDataSchema)
+	if err != nil {
+		t.Fatalf("ResolveContract: %v", err)
+	}
+	return c
+}
+
+func validRole() workflow.RoleContract {
+	return workflow.RoleContract{
+		ID:           "planner",
+		Description:  "Plans the work",
+		Workspace:    workflow.WorkspaceWrite,
+		Outcomes:     []string{"planned", "needs_clarification"},
+		Outputs:      []string{"plan", "alternatives"},
+		ResultSchema: "schemas/result.json",
+	}
+}
+
 func validEnvelopeInput() EnvelopeInput {
+	role := validRole()
+	c, err := ResolveContract(role, testDataSchema)
+	if err != nil {
+		panic(err) // testDataSchema and validRole are constructed; should not error.
+	}
 	return EnvelopeInput{
-		Role: workflow.RoleContract{
-			ID:           "planner",
-			Description:  "Plans the work",
-			Workspace:    workflow.WorkspaceWrite,
-			Outcomes:     []string{"planned", "needs_clarification"},
-			Outputs:      []string{"plan", "alternatives"},
-			ResultSchema: `{"type":"object","required":["plan"],"properties":{"plan":{"type":"string"}}}`,
-		},
+		Role:       role,
 		RolePrompt: "Produce a plan for the task.",
 		Task: TaskSnapshot{
 			ID:          "bdtui-1",
@@ -34,15 +54,11 @@ func validEnvelopeInput() EnvelopeInput {
 		OutputPaths: OutputPaths{
 			Result: "/run/storage/result.json",
 			Artifacts: map[string]string{
-				"plan":        "/run/storage/plan.md",
+				"plan":         "/run/storage/plan.md",
 				"alternatives": "/run/storage/alternatives.md",
 			},
 		},
-		Contract: ResultContract{
-			Schema:          `{"type":"object","required":["plan"],"properties":{"plan":{"type":"string"}}}`,
-			AllowedOutcomes: []string{"planned", "needs_clarification"},
-			DeclaredOutputs: []string{"plan", "alternatives"},
-		},
+		Contract: c,
 	}
 }
 
@@ -81,8 +97,12 @@ func TestBuildEnvelopeRequiresFields(t *testing.T) {
 		{"no role id", func(in *EnvelopeInput) { in.Role.ID = "" }},
 		{"no role prompt", func(in *EnvelopeInput) { in.RolePrompt = "" }},
 		{"no result path", func(in *EnvelopeInput) { in.OutputPaths.Result = "" }},
-		{"no outcomes", func(in *EnvelopeInput) { in.Contract.AllowedOutcomes = nil }},
-		{"no schema", func(in *EnvelopeInput) { in.Contract.Schema = "" }},
+		{"no outcomes", func(in *EnvelopeInput) {
+			in.Contract.allowedOutcomes = nil
+		}},
+		{"no schema", func(in *EnvelopeInput) {
+			in.Contract = ResultContract{allowedOutcomes: []string{"ok"}, declaredOutputs: []string{"plan"}}
+		}},
 		{"blank instruction name", func(in *EnvelopeInput) {
 			in.Instructions = []ProjectInstruction{{Name: "", Content: "x"}}
 		}},
@@ -119,5 +139,42 @@ func TestBuildEnvelopeContainsContract(t *testing.T) {
 		if !strings.Contains(got, needle) {
 			t.Fatalf("envelope missing %q\n---\n%s", needle, got)
 		}
+	}
+}
+
+// TestResolveContractEqualsRole asserts that ResolveContract makes
+// DeclaredOutputs and AllowedOutcomes agree with the role — the bypass the
+// reviewer flagged ("Role.Outputs=[plan], Contract.DeclaredOutputs=[]") is
+// structurally impossible because the factory derives both from the role.
+func TestResolveContractEqualsRole(t *testing.T) {
+	role := validRole()
+	c := resolvedContract(t, role)
+	if err := c.consistentWith(role); err != nil {
+		t.Fatalf("fresh contract must agree with role: %v", err)
+	}
+}
+
+// TestResolveContractRejectsMismatch is the reviewer's regression test: a
+// manually-constructed ResultContract that disagrees with the role (here
+// DeclaredOutputs=[] against role.Outputs=["plan"]) is rejected by
+// consistentWith. External callers cannot reach this state because the
+// fields are unexported; this test proves the defense-in-depth check.
+func TestResolveContractRejectsMismatch(t *testing.T) {
+	role := validRole()
+	bypass := ResultContract{
+		schema:          testDataSchema,
+		allowedOutcomes: []string{"planned"},
+		declaredOutputs: nil, // bypass: empty declared outputs for role.Outputs=[plan]
+	}
+	if err := bypass.consistentWith(role); err == nil {
+		t.Fatal("expected mismatch error for empty DeclaredOutputs vs role.Outputs=[plan]")
+	}
+	bypass2 := ResultContract{
+		schema:          testDataSchema,
+		allowedOutcomes: nil, // bypass: empty allowed outcomes
+		declaredOutputs: []string{"plan"},
+	}
+	if err := bypass2.consistentWith(role); err == nil {
+		t.Fatal("expected mismatch error for empty AllowedOutcomes vs role.Outcomes")
 	}
 }

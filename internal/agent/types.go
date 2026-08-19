@@ -10,8 +10,8 @@
 //	             |                       |
 //	          MakiAdapter             Runtime (HerdrRuntime / ExecRuntime)
 //	             |                       |
-//	      build invocation        spawn / wait / stop / reattach
-//	      parse wire format       (durable ExecutionID)
+//	      build invocation        spawn / wait / stop / inspect / reattach
+//	      parse wire format       (controller-allocated ExecutionID)
 //
 // Workflow authoring is human-driven: this package only reads and validates
 // definitions; it never creates or edits them. Agents do not create or edit
@@ -19,7 +19,20 @@
 // controller-assigned result.json plus any declared artifacts.
 package agent
 
-import "bdtui/internal/workflow"
+import (
+	"errors"
+	"strings"
+
+	"bdtui/internal/workflow"
+)
+
+// ErrLostExecution is returned by RunAgent when a reattach finds no live
+// process for the given ExecutionID. This is the crash-recovery signal: the
+// controller persists the execution_id before spawn, so a NotFound on inspect
+// after a daemon restart means the live process is gone. The controller
+// resolves this into needs_attention (writer) or technical retry (reader)
+// per the runtime/recovery contract.
+var ErrLostExecution = errors.New("agent: execution lost (no live runtime record)")
 
 // Request is a provider-agnostic request to run a single agent step. The
 // controller builds the deterministic prompt envelope and assigns the output
@@ -27,10 +40,16 @@ import "bdtui/internal/workflow"
 // the request into the underlying CLI/protocol.
 type Request struct {
 	// ExecutionID is the durable runtime-side identity for this attempt. The
-	// runtime uses it to spawn/inspect/reattach/stop the underlying process.
-	// Empty means "allocate one". Pass an existing ID on reattach after a
-	// daemon restart.
+	// controller MUST allocate it (UUID), persist it in the orch store
+	// BEFORE invoking RunAgent, and pass it here on every call (fresh and
+	// reattach). The runtime uses it for spawn and reattach.
 	ExecutionID string
+
+	// Reattach signals that ExecutionID refers to an already-spawned
+	// execution that the controller wants to re-attach to (after a daemon
+	// restart or async dispatch). RunAgent will Inspect+Wait instead of
+	// Spawn when true. False (the default) is a fresh spawn.
+	Reattach bool
 
 	// SessionKey identifies a reusable agent session. MVP keeps one session
 	// per (run, role) so revise/review loops for the same role may reuse the
@@ -48,42 +67,116 @@ type Request struct {
 	// where the agent must write its structured result and declared artifacts.
 	OutputPaths OutputPaths
 
-	// Contract describes the shape of the result `data` and the control-plane
-	// invariants the completion check enforces. DeclaredOutputs is the
-	// resolved set of role-declared artifact names; BuildEnvelope rejects if
-	// any of them is missing a controller-assigned path.
+	// Contract is the resolved, immutable completion contract for this
+	// attempt. It is constructed only via ResolveContract; the controller
+	// cannot assemble the parts independently and therefore cannot bypass
+	// the mandatory-artifact invariant by omitting DeclaredOutputs.
 	Contract ResultContract
 }
 
 // OutputPaths are the controller-assigned absolute paths inside Run storage
 // where the agent must write its structured result and declared artifacts.
 type OutputPaths struct {
-	// Result is the absolute path of result.json.
-	Result string
-
-	// Artifacts maps a role-declared output name to its absolute path in Run
-	// storage. Declared artifacts live outside the Git worktree and are
-	// immutable per step attempt.
+	Result    string
 	Artifacts map[string]string
 }
 
-// ResultContract is the single, resolved contract for a step attempt. It
-// combines the role-declared schema, the allowed control-plane outcomes, and
-// the declared artifact names so the mandatory-artifact invariant cannot be
-// bypassed by the caller omitting an argument.
+// ResultContract is the single, resolved contract for a step attempt. The
+// fields are unexported so the contract can only be constructed via
+// ResolveContract (which derives Outcomes and Outputs from the
+// authoritative RoleContract). This makes the mandatory-artifact invariant
+// structurally impossible to bypass from outside the package.
 //
 // The JSON Schema validates the result `data` object only; the `outcome`
 // field is a control-plane concern validated separately by the controller.
 type ResultContract struct {
-	// Schema is the JSON Schema for the result.json `data` object.
-	Schema string
+	schema          string
+	allowedOutcomes []string
+	declaredOutputs []string
+}
 
-	// AllowedOutcomes is the set of semantic outcomes the role may report.
-	AllowedOutcomes []string
+// Schema returns the JSON Schema text for the result.json `data` object.
+func (c ResultContract) Schema() string { return c.schema }
 
-	// DeclaredOutputs is the resolved set of role-declared output names. The
-	// completion check requires every name to have a non-empty artifact.
-	DeclaredOutputs []string
+// AllowedOutcomes returns the set of semantic outcomes the role may report.
+func (c ResultContract) AllowedOutcomes() []string {
+	return append([]string(nil), c.allowedOutcomes...)
+}
+
+// DeclaredOutputs returns the resolved set of role-declared artifact names.
+func (c ResultContract) DeclaredOutputs() []string {
+	return append([]string(nil), c.declaredOutputs...)
+}
+
+// ResolveContract builds the immutable ResultContract for a step attempt
+// from the resolved role contract and the result_schema content. Outcomes
+// and Outputs are taken from the role; the controller cannot supply its own
+// disjoint lists, so the mandatory-artifact invariant cannot be bypassed.
+func ResolveContract(role workflow.RoleContract, schemaContent string) (ResultContract, error) {
+	if role.ID == "" {
+		return ResultContract{}, errors.New("agent: ResolveContract: role id is required")
+	}
+	if strings.TrimSpace(schemaContent) == "" {
+		return ResultContract{}, errors.New("agent: ResolveContract: schema is required")
+	}
+
+	seenO := map[string]bool{}
+	outcomes := make([]string, 0, len(role.Outcomes))
+	for _, o := range role.Outcomes {
+		if strings.TrimSpace(o) == "" || seenO[o] {
+			continue
+		}
+		seenO[o] = true
+		outcomes = append(outcomes, o)
+	}
+	if len(outcomes) == 0 {
+		return ResultContract{}, errors.New("agent: ResolveContract: role has no outcomes")
+	}
+
+	seenD := map[string]bool{}
+	outputs := make([]string, 0, len(role.Outputs))
+	for _, o := range role.Outputs {
+		if strings.TrimSpace(o) == "" || seenD[o] {
+			continue
+		}
+		seenD[o] = true
+		outputs = append(outputs, o)
+	}
+
+	return ResultContract{
+		schema:          schemaContent,
+		allowedOutcomes: outcomes,
+		declaredOutputs: outputs,
+	}, nil
+}
+
+// consistentWith reports whether c agrees with role on outcomes and outputs.
+// It is a defense-in-depth check used by tests; production code always
+// builds c via ResolveContract so this holds by construction.
+func (c ResultContract) consistentWith(role workflow.RoleContract) error {
+	if !sameStringSet(c.allowedOutcomes, role.Outcomes) {
+		return errors.New("agent: ResultContract: allowed_outcomes do not match role.outcomes")
+	}
+	if !sameStringSet(c.declaredOutputs, role.Outputs) {
+		return errors.New("agent: ResultContract: declared_outputs do not match role.outputs")
+	}
+	return nil
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := map[string]bool{}
+	for _, v := range a {
+		m[v] = true
+	}
+	for _, v := range b {
+		if !m[v] {
+			return false
+		}
+	}
+	return true
 }
 
 // TaskSnapshot is the immutable snapshot of the source Kanban task for a run.
@@ -93,17 +186,14 @@ type TaskSnapshot struct {
 	Description string
 }
 
-// ProjectInstruction is a snapshotted project instruction file
-// (AGENTS.md/CLAUDE.md/known skills where applicable).
+// ProjectInstruction is a snapshotted project instruction file.
 type ProjectInstruction struct {
 	Name    string
 	Content string
 }
 
 // EnvelopeInput is the fully-resolved input the controller passes to
-// BuildEnvelope. Ordering of Instructions is significant (the controller
-// supplies them in discovery order); Inputs are rendered in sorted-key order
-// so the envelope is byte-deterministic across runs with equal inputs.
+// BuildEnvelope.
 type EnvelopeInput struct {
 	Role         workflow.RoleContract
 	RolePrompt   string
@@ -114,41 +204,18 @@ type EnvelopeInput struct {
 	Contract     ResultContract
 }
 
-// Result is the raw outcome of a single agent invocation. It carries the
-// runtime/process-level facts the controller needs (session id, stop reason,
-// error flag) and the bytes the completion check validates (result.json,
-// artifacts). Result does not carry the semantic outcome; that is extracted
-// and validated by the completion check.
+// Result is the raw outcome of a single agent invocation.
 type Result struct {
-	// ExecutionID echoes the durable runtime-side identity for this attempt.
 	ExecutionID string
-
-	// SessionID is the underlying agent session id; the adapter persists it
-	// per SessionKey so the next invocation for the same role may resume.
-	SessionID string
-
-	// StopReason is the underlying agent stop reason.
-	StopReason string
-
-	// IsError is true if the underlying process signalled a failure (agent
-	// reported is_error=true, non-zero exit, or unparseable output).
-	IsError bool
-
-	// ResultJSON is the raw bytes of result.json as read from OutputPaths.Result
-	// after process completion. Empty if the file is missing.
-	ResultJSON []byte
-
-	// Artifacts maps a role-declared output name to its raw bytes as read from
-	// the assigned path. Missing artifacts are simply absent from the map.
-	Artifacts map[string][]byte
-
-	// Raw is the raw agent output text for diagnostics. The completion check
-	// does not inspect it.
-	Raw string
+	SessionID   string
+	StopReason  string
+	IsError     bool
+	ResultJSON  []byte
+	Artifacts   map[string][]byte
+	Raw         string
 }
 
-// Completion is the validated completion of a step attempt. Outcome is
-// guaranteed to be in Contract.AllowedOutcomes.
+// Completion is the validated completion of a step attempt.
 type Completion struct {
 	Outcome string
 }

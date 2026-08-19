@@ -26,7 +26,7 @@ func CheckCompletion(r Result, contract ResultContract) (Completion, error) {
 		return Completion{}, errors.New("agent: completion: result.json is missing or empty")
 	}
 
-	rs, err := resolveSchema(contract.Schema)
+	rs, err := resolveSchema(contract.schema)
 	if err != nil {
 		return Completion{}, fmt.Errorf("agent: completion: resolve schema: %w", err)
 	}
@@ -40,7 +40,7 @@ func CheckCompletion(r Result, contract ResultContract) (Completion, error) {
 	if err != nil {
 		return Completion{}, fmt.Errorf("agent: completion: %w", err)
 	}
-	if !contains(contract.AllowedOutcomes, outcome) {
+	if !contains(contract.allowedOutcomes, outcome) {
 		return Completion{}, fmt.Errorf("agent: completion: outcome %q is not in allowed_outcomes", outcome)
 	}
 
@@ -55,7 +55,7 @@ func CheckCompletion(r Result, contract ResultContract) (Completion, error) {
 		return Completion{}, fmt.Errorf("agent: completion: result.json `data` does not satisfy schema: %w", err)
 	}
 
-	for _, name := range contract.DeclaredOutputs {
+	for _, name := range contract.declaredOutputs {
 		body, ok := r.Artifacts[name]
 		if !ok || len(body) == 0 {
 			return Completion{}, fmt.Errorf("agent: completion: declared output %q is missing", name)

@@ -51,7 +51,9 @@ func NewMakiAdapter(bin string, sessions SessionStore) *MakiAdapter {
 }
 
 // BuildInvocation translates req into the Maki SDK-mode invocation. It adds
-// `--session <sid>` when a prior session id exists for SessionKey.
+// `--session <sid>` when a prior session id exists for SessionKey and
+// propagates req.ExecutionID into the Invocation so the runtime uses the
+// controller-allocated durable identity.
 func (a *MakiAdapter) BuildInvocation(_ context.Context, req Request) (Invocation, error) {
 	if req.WorkingDir == "" {
 		return Invocation{}, errors.New("agent: MakiAdapter: working dir is required")
@@ -71,7 +73,13 @@ func (a *MakiAdapter) BuildInvocation(_ context.Context, req Request) (Invocatio
 	if err != nil {
 		return Invocation{}, err
 	}
-	return Invocation{Bin: a.bin, Args: args, Dir: req.WorkingDir, Stdin: stdin}, nil
+	return Invocation{
+		ExecutionID: req.ExecutionID,
+		Bin:         a.bin,
+		Args:        args,
+		Dir:         req.WorkingDir,
+		Stdin:       stdin,
+	}, nil
 }
 
 // ParseResult turns the captured stdout into a normalized Result. It scans

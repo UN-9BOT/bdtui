@@ -28,14 +28,14 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 	if in.OutputPaths.Result == "" {
 		return "", errors.New("agent: envelope: result output path is required")
 	}
-	if len(in.Contract.AllowedOutcomes) == 0 {
+	if len(in.Contract.allowedOutcomes) == 0 {
 		return "", errors.New("agent: envelope: at least one allowed outcome is required")
 	}
-	if strings.TrimSpace(in.Contract.Schema) == "" {
+	if strings.TrimSpace(in.Contract.schema) == "" {
 		return "", errors.New("agent: envelope: result schema is required")
 	}
 
-	missing := missingArtifactPaths(in.Contract.DeclaredOutputs, in.OutputPaths)
+	missing := missingArtifactPaths(in.Contract.declaredOutputs, in.OutputPaths)
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		return "", fmt.Errorf("agent: envelope: declared outputs without controller-assigned path: %s", strings.Join(missing, ", "))
@@ -50,11 +50,11 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 	}
 	fmt.Fprintf(&b, "workspace: %s\n", in.Role.Workspace)
 	b.WriteString("allowed_outcomes:\n")
-	for _, o := range in.Contract.AllowedOutcomes {
+	for _, o := range in.Contract.allowedOutcomes {
 		fmt.Fprintf(&b, "  - %s\n", o)
 	}
 	b.WriteString("declared_outputs:\n")
-	outputNames := append([]string(nil), in.Contract.DeclaredOutputs...)
+	outputNames := append([]string(nil), in.Contract.declaredOutputs...)
 	sort.Strings(outputNames)
 	for _, o := range outputNames {
 		fmt.Fprintf(&b, "  - %s: %s\n", o, in.OutputPaths.Artifacts[o])
@@ -116,7 +116,7 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 	b.WriteString("```\n")
 	b.WriteString("The `data` object MUST satisfy this JSON Schema:\n")
 	b.WriteString("```json\n")
-	b.WriteString(strings.TrimRight(in.Contract.Schema, "\n"))
+	b.WriteString(strings.TrimRight(in.Contract.schema, "\n"))
 	b.WriteString("\n```\n")
 	b.WriteString("Write declared_outputs to their assigned paths.\n")
 
@@ -143,8 +143,7 @@ func missingArtifactPaths(declared []string, paths OutputPaths) []string {
 }
 
 // encodeInputValue renders a declared input value as a stable, single-line
-// string. Strings render unquoted when they are simple; everything else
-// renders as compact JSON.
+// string.
 func encodeInputValue(v any) (string, error) {
 	switch x := v.(type) {
 	case nil:
