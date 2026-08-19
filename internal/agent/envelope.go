@@ -11,9 +11,13 @@ import (
 // BuildEnvelope renders a deterministic prompt envelope from the fully-resolved
 // EnvelopeInput. The output is byte-stable for equal inputs: map keys are
 // sorted, no timestamps are embedded, whitespace is normalized. The envelope
-// instructs the agent (a) to write a controller-assigned result.json matching
-// the role contract and (b) to write each declared artifact to its assigned
-// path, so the machine completion gate is well-defined.
+// instructs the agent to write a controller-assigned result.json matching the
+// role contract and each declared artifact to its assigned path, so the
+// machine completion gate is well-defined.
+//
+// BuildEnvelope rejects if any role-declared output lacks a non-empty
+// controller-assigned path, so a missing path cannot disable the mandatory
+// artifact invariant downstream.
 func BuildEnvelope(in EnvelopeInput) (string, error) {
 	if in.Role.ID == "" {
 		return "", errors.New("agent: envelope: role id is required")
@@ -31,6 +35,12 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 		return "", errors.New("agent: envelope: result schema is required")
 	}
 
+	missing := missingArtifactPaths(in.Contract.DeclaredOutputs, in.OutputPaths)
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return "", fmt.Errorf("agent: envelope: declared outputs without controller-assigned path: %s", strings.Join(missing, ", "))
+	}
+
 	var b strings.Builder
 
 	b.WriteString("# Role\n")
@@ -44,14 +54,10 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 		fmt.Fprintf(&b, "  - %s\n", o)
 	}
 	b.WriteString("declared_outputs:\n")
-	outputNames := make([]string, 0, len(in.Role.Outputs))
-	for _, o := range in.Role.Outputs {
-		outputNames = append(outputNames, o)
-	}
+	outputNames := append([]string(nil), in.Contract.DeclaredOutputs...)
 	sort.Strings(outputNames)
 	for _, o := range outputNames {
-		path := in.OutputPaths.Artifacts[o]
-		fmt.Fprintf(&b, "  - %s: %s\n", o, path)
+		fmt.Fprintf(&b, "  - %s: %s\n", o, in.OutputPaths.Artifacts[o])
 	}
 	b.WriteString("prompt: |\n")
 	for _, ln := range strings.Split(strings.TrimRight(in.RolePrompt, "\n"), "\n") {
@@ -101,26 +107,44 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 
 	b.WriteString("\n# Output Contract\n")
 	fmt.Fprintf(&b, "Write your structured result to: %s\n", in.OutputPaths.Result)
-	b.WriteString("The result.json MUST satisfy this JSON Schema:\n")
+	b.WriteString("The result.json MUST be a JSON object of this shape:\n")
+	b.WriteString("```json\n")
+	b.WriteString("{\n")
+	b.WriteString("  \"outcome\": \"<one of allowed_outcomes>\",\n")
+	b.WriteString("  \"data\": { ... }\n")
+	b.WriteString("}\n")
+	b.WriteString("```\n")
+	b.WriteString("The `data` object MUST satisfy this JSON Schema:\n")
 	b.WriteString("```json\n")
 	b.WriteString(strings.TrimRight(in.Contract.Schema, "\n"))
 	b.WriteString("\n```\n")
-	b.WriteString("When finished, choose exactly one allowed_outcome and place it under the `outcome` key.\n")
+	b.WriteString("Write declared_outputs to their assigned paths.\n")
 
 	b.WriteString("\n# Completion\n")
 	b.WriteString("Machine completion is gated on:\n")
 	b.WriteString("- the agent process exits cleanly,\n")
-	b.WriteString("- result.json exists at the assigned path, parses as JSON, and satisfies the schema above,\n")
+	b.WriteString("- result.json exists at the assigned path, parses as JSON, and satisfies the contract above,\n")
 	b.WriteString("- every declared_output is written to its assigned path.\n")
 	b.WriteString("An empty worktree or an empty git diff does NOT waive these requirements.\n")
 
 	return b.String(), nil
 }
 
+// missingArtifactPaths returns the declared output names whose
+// controller-assigned path is empty or missing.
+func missingArtifactPaths(declared []string, paths OutputPaths) []string {
+	var missing []string
+	for _, name := range declared {
+		if strings.TrimSpace(paths.Artifacts[name]) == "" {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
 // encodeInputValue renders a declared input value as a stable, single-line
 // string. Strings render unquoted when they are simple; everything else
-// renders as compact JSON. The result is always a single token suitable for a
-// `key: value` envelope line so the envelope stays diff-friendly.
+// renders as compact JSON.
 func encodeInputValue(v any) (string, error) {
 	switch x := v.(type) {
 	case nil:
@@ -145,9 +169,6 @@ func encodeInputValue(v any) (string, error) {
 	}
 }
 
-// isSimpleScalar reports whether s contains only characters safe to render
-// unquoted in a `key: value` envelope line. The intent is diff-friendliness,
-// not full YAML safety; edge cases fall back to JSON encoding.
 func isSimpleScalar(s string) bool {
 	if s == "" {
 		return false

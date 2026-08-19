@@ -5,106 +5,122 @@ import (
 	"testing"
 )
 
-const completionSchema = `{
+const dataSchema = `{
   "type": "object",
-  "required": ["outcome"],
-  "properties": {
-    "outcome": {"type": "string"},
-    "plan":    {"type": "string"}
-  },
+  "required": ["plan"],
+  "properties": {"plan": {"type": "string"}},
   "additionalProperties": true
 }`
 
-func validContract() ResultContract {
+func validResultContract() ResultContract {
 	return ResultContract{
-		Schema:          completionSchema,
+		Schema:          dataSchema,
 		AllowedOutcomes: []string{"planned", "needs_clarification"},
+		DeclaredOutputs: []string{"plan"},
 	}
 }
 
-func TestCheckCompletionValid(t *testing.T) {
-	body, _ := json.Marshal(map[string]any{"outcome": "planned", "plan": "step 1"})
-	res := Result{
-		ResultJSON: body,
-		Artifacts:  map[string][]byte{"plan": []byte("step 1")},
+// buildResultJSON returns a valid {"outcome", "data"} envelope.
+func buildResultJSON(t *testing.T, outcome string, data map[string]any) []byte {
+	t.Helper()
+	body := map[string]any{"outcome": outcome, "data": data}
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, err := CheckCompletion(res, validContract(), []string{"plan"})
+	return b
+}
+
+func TestCheckCompletionValid(t *testing.T) {
+	body := buildResultJSON(t, "planned", map[string]any{"plan": "step 1"})
+	res := Result{ResultJSON: body, Artifacts: map[string][]byte{"plan": []byte("step 1")}}
+	got, err := CheckCompletion(res, validResultContract())
 	if err != nil {
 		t.Fatalf("CheckCompletion: %v", err)
 	}
 	if got.Outcome != "planned" {
-		t.Fatalf("Outcome=%q want planned", got.Outcome)
+		t.Fatalf("Outcome=%q", got.Outcome)
 	}
 }
 
 func TestCheckCompletionRejectsError(t *testing.T) {
-	res := Result{IsError: true, ResultJSON: []byte(`{"outcome":"planned"}`)}
-	if _, err := CheckCompletion(res, validContract(), nil); err == nil {
+	body := buildResultJSON(t, "planned", map[string]any{"plan": "x"})
+	if _, err := CheckCompletion(Result{IsError: true, ResultJSON: body}, validResultContract()); err == nil {
 		t.Fatal("expected IsError rejection")
 	}
 }
 
 func TestCheckCompletionRejectsMissingResult(t *testing.T) {
-	res := Result{}
-	if _, err := CheckCompletion(res, validContract(), nil); err == nil {
+	if _, err := CheckCompletion(Result{}, validResultContract()); err == nil {
 		t.Fatal("expected missing-result rejection")
 	}
 }
 
-func TestCheckCompletionRejectsBadSchema(t *testing.T) {
-	res := Result{ResultJSON: []byte(`{"plan":"x"}`)} // missing outcome
-	if _, err := CheckCompletion(res, validContract(), nil); err == nil {
-		t.Fatal("expected schema rejection")
+func TestCheckCompletionRejectsBadJSON(t *testing.T) {
+	res := Result{ResultJSON: []byte(`{not json`)}
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
+		t.Fatal("expected bad-JSON rejection")
 	}
 }
 
-func TestCheckCompletionRejectsMalformedJSON(t *testing.T) {
-	res := Result{ResultJSON: []byte(`{not json`)}
-	if _, err := CheckCompletion(res, validContract(), nil); err == nil {
-		t.Fatal("expected malformed-JSON rejection")
+func TestCheckCompletionRejectsMissingOutcome(t *testing.T) {
+	res := Result{ResultJSON: []byte(`{"data":{"plan":"x"}}`)}
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
+		t.Fatal("expected missing-outcome rejection")
 	}
 }
 
 func TestCheckCompletionRejectsDisallowedOutcome(t *testing.T) {
-	body, _ := json.Marshal(map[string]any{"outcome": "rogue"})
+	body := buildResultJSON(t, "rogue", map[string]any{"plan": "x"})
 	res := Result{ResultJSON: body}
-	if _, err := CheckCompletion(res, validContract(), nil); err == nil {
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
 		t.Fatal("expected disallowed-outcome rejection")
 	}
 }
 
 func TestCheckCompletionRejectsNonStringOutcome(t *testing.T) {
-	body, _ := json.Marshal(map[string]any{"outcome": 42})
+	body, _ := json.Marshal(map[string]any{"outcome": 42, "data": map[string]any{"plan": "x"}})
 	res := Result{ResultJSON: body}
-	if _, err := CheckCompletion(res, validContract(), nil); err == nil {
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
 		t.Fatal("expected non-string-outcome rejection")
 	}
 }
 
-func TestCheckCompletionRejectsMissingArtifact(t *testing.T) {
-	body, _ := json.Marshal(map[string]any{"outcome": "planned"})
+func TestCheckCompletionRejectsMissingData(t *testing.T) {
+	res := Result{ResultJSON: []byte(`{"outcome":"planned"}`)}
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
+		t.Fatal("expected missing-data rejection")
+	}
+}
+
+func TestCheckCompletionRejectsNullData(t *testing.T) {
+	res := Result{ResultJSON: []byte(`{"outcome":"planned","data":null}`)}
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
+		t.Fatal("expected null-data rejection")
+	}
+}
+
+func TestCheckCompletionRejectsDataSchemaMismatch(t *testing.T) {
+	body := buildResultJSON(t, "planned", map[string]any{"plan": 42}) // plan must be string
 	res := Result{ResultJSON: body}
-	if _, err := CheckCompletion(res, validContract(), []string{"plan"}); err == nil {
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
+		t.Fatal("expected data-schema rejection")
+	}
+}
+
+func TestCheckCompletionRejectsMissingArtifact(t *testing.T) {
+	body := buildResultJSON(t, "planned", map[string]any{"plan": "x"})
+	res := Result{ResultJSON: body} // no artifact
+	if _, err := CheckCompletion(res, validResultContract()); err == nil {
 		t.Fatal("expected missing-artifact rejection")
 	}
 }
 
-func TestCheckCompletionRejectsEmptyArtifact(t *testing.T) {
-	body, _ := json.Marshal(map[string]any{"outcome": "planned"})
-	res := Result{
-		ResultJSON: body,
-		Artifacts:  map[string][]byte{"plan": nil},
-	}
-	if _, err := CheckCompletion(res, validContract(), []string{"plan"}); err == nil {
-		t.Fatal("expected empty-artifact rejection")
-	}
-}
-
-func TestCheckCompletionRejectsBadSchemaText(t *testing.T) {
-	bad := validContract()
-	bad.Schema = "{not json"
-	res := Result{ResultJSON: []byte(`{"outcome":"planned"}`)}
-	if _, err := CheckCompletion(res, bad, nil); err == nil {
+func TestCheckCompletionRejectsBadSchema(t *testing.T) {
+	c := validResultContract()
+	c.Schema = "{not json"
+	body := buildResultJSON(t, "planned", map[string]any{"plan": "x"})
+	if _, err := CheckCompletion(Result{ResultJSON: body}, c); err == nil {
 		t.Fatal("expected bad-schema rejection")
 	}
 }

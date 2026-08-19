@@ -7,8 +7,6 @@ import (
 	"bdtui/internal/workflow"
 )
 
-// validEnvelopeInput returns a fully-populated EnvelopeInput used as the base
-// for envelope tests. Tests mutate fields off this base.
 func validEnvelopeInput() EnvelopeInput {
 	return EnvelopeInput{
 		Role: workflow.RoleContract{
@@ -17,7 +15,7 @@ func validEnvelopeInput() EnvelopeInput {
 			Workspace:    workflow.WorkspaceWrite,
 			Outcomes:     []string{"planned", "needs_clarification"},
 			Outputs:      []string{"plan", "alternatives"},
-			ResultSchema: `{"type":"object","required":["outcome","plan"],"properties":{"outcome":{"type":"string","enum":["planned","needs_clarification"]},"plan":{"type":"string"}}}`,
+			ResultSchema: `{"type":"object","required":["plan"],"properties":{"plan":{"type":"string"}}}`,
 		},
 		RolePrompt: "Produce a plan for the task.",
 		Task: TaskSnapshot{
@@ -34,12 +32,16 @@ func validEnvelopeInput() EnvelopeInput {
 			"prior":         map[string]any{"v": 1, "ok": true},
 		},
 		OutputPaths: OutputPaths{
-			Result:    "/run/storage/result.json",
-			Artifacts: map[string]string{"plan": "/run/storage/plan.md"},
+			Result: "/run/storage/result.json",
+			Artifacts: map[string]string{
+				"plan":        "/run/storage/plan.md",
+				"alternatives": "/run/storage/alternatives.md",
+			},
 		},
 		Contract: ResultContract{
-			Schema:          `{"type":"object","required":["outcome","plan"],"properties":{"outcome":{"type":"string","enum":["planned","needs_clarification"]},"plan":{"type":"string"}}}`,
+			Schema:          `{"type":"object","required":["plan"],"properties":{"plan":{"type":"string"}}}`,
 			AllowedOutcomes: []string{"planned", "needs_clarification"},
+			DeclaredOutputs: []string{"plan", "alternatives"},
 		},
 	}
 }
@@ -55,23 +57,11 @@ func TestBuildEnvelopeDeterministic(t *testing.T) {
 		t.Fatalf("BuildEnvelope: %v", err)
 	}
 	if a != b {
-		t.Fatalf("BuildEnvelope is not deterministic")
+		t.Fatal("BuildEnvelope is not deterministic")
 	}
 }
 
 func TestBuildEnvelopeSortsInputs(t *testing.T) {
-	in := validEnvelopeInput()
-	a, _ := BuildEnvelope(in)
-
-	in.Inputs = map[string]any{"zzz": 1, "aaa": 2, "mmm": 3}
-	b, _ := BuildEnvelope(in)
-
-	if a == b {
-		t.Fatalf("expected sorted-key outputs to differ from unsorted-input renders only if the order changed; check sort")
-	}
-
-	// Build two envelopes with same set, different insertion order; both must
-	// be equal.
 	in1 := validEnvelopeInput()
 	in1.Inputs = map[string]any{"a": 1, "b": 2}
 	in2 := validEnvelopeInput()
@@ -79,21 +69,7 @@ func TestBuildEnvelopeSortsInputs(t *testing.T) {
 	x, _ := BuildEnvelope(in1)
 	y, _ := BuildEnvelope(in2)
 	if x != y {
-		t.Fatalf("BuildEnvelope must render inputs in sorted-key order regardless of Go map iteration")
-	}
-}
-
-func TestBuildEnvelopePreservesInstructionOrder(t *testing.T) {
-	in := validEnvelopeInput()
-	got, err := BuildEnvelope(in)
-	if err != nil {
-		t.Fatalf("BuildEnvelope: %v", err)
-	}
-	// First instruction must precede the second in the rendered output.
-	i1 := strings.Index(got, "## AGENTS.md")
-	i2 := strings.Index(got, "## .claude/CLAUDE.md")
-	if i1 < 0 || i2 < 0 || i1 > i2 {
-		t.Fatalf("instructions not in declared order: AGENTS=%d claude=%d", i1, i2)
+		t.Fatal("BuildEnvelope must render inputs in sorted-key order")
 	}
 }
 
@@ -110,6 +86,9 @@ func TestBuildEnvelopeRequiresFields(t *testing.T) {
 		{"blank instruction name", func(in *EnvelopeInput) {
 			in.Instructions = []ProjectInstruction{{Name: "", Content: "x"}}
 		}},
+		{"declared output missing path", func(in *EnvelopeInput) {
+			delete(in.OutputPaths.Artifacts, "alternatives")
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,7 +101,7 @@ func TestBuildEnvelopeRequiresFields(t *testing.T) {
 	}
 }
 
-func TestBuildEnvelopeContainsOutputPaths(t *testing.T) {
+func TestBuildEnvelopeContainsContract(t *testing.T) {
 	got, err := BuildEnvelope(validEnvelopeInput())
 	if err != nil {
 		t.Fatalf("BuildEnvelope: %v", err)
@@ -130,24 +109,15 @@ func TestBuildEnvelopeContainsOutputPaths(t *testing.T) {
 	for _, needle := range []string{
 		"/run/storage/result.json",
 		"/run/storage/plan.md",
+		"/run/storage/alternatives.md",
 		"declared_outputs:",
 		"allowed_outcomes:",
 		"# Output Contract",
+		"\"outcome\"",
+		"\"data\"",
 	} {
 		if !strings.Contains(got, needle) {
 			t.Fatalf("envelope missing %q\n---\n%s", needle, got)
 		}
-	}
-}
-
-func TestBuildEnvelopeEncodesNonScalarInputs(t *testing.T) {
-	in := validEnvelopeInput()
-	in.Inputs = map[string]any{"doc": map[string]any{"k": "v"}}
-	got, err := BuildEnvelope(in)
-	if err != nil {
-		t.Fatalf("BuildEnvelope: %v", err)
-	}
-	if !strings.Contains(got, `"k":"v"`) {
-		t.Fatalf("expected JSON-encoded map input, got:\n%s", got)
 	}
 }

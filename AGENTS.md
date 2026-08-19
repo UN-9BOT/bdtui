@@ -2,6 +2,7 @@
 
 **Generated:** 2026-03-12 **Stack:** Go 1.25 + Bubble Tea TUI
 
+(не трогать эти пути. убери потом)
 repo maki /home/unbot/code/opensource/maki_fork
 repo herdr /home/unbot/code/pets/work9flow_references/herdr
 

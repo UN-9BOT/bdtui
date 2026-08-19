@@ -1,45 +1,78 @@
 package agent
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
-// Adapter is the provider-agnostic boundary between the controller and a
-// concrete agent runner. Implementations hide the underlying CLI/protocol
-// (MakiAdapter hides `maki --print`, a future ALKAdapter would hide ALK's
-// SDK, etc.) and translate a controller-built Request into a single agent
-// invocation that returns a process-level Result.
+// Adapter is the provider-agnostic boundary that translates a controller-
+// built Request into a concrete agent invocation. It does NOT own the
+// process lifecycle; that belongs to the Runtime. Two responsibilities:
 //
-// The controller is responsible for assembling the deterministic prompt
-// envelope, assigning output paths, and validating completion. The adapter is
-// responsible for: launching the underlying process, capturing the process
-// exit code and any session/stop metadata, and reading the controller-assigned
-// result.json and declared artifacts from disk after process completion.
+//   - BuildInvocation: produce the protocol-specific command (args, stdin,
+//     working dir) for the runtime to execute. For Maki this means building
+//     the SDK-mode invocation with the right resume flags.
+//   - ParseResult: turn the runtime-captured stdout into a normalized
+//     Result (session id, stop reason, error flag, raw text). File-system
+//     side effects (result.json, declared artifacts) are read by RunAgent,
+//     not here.
+//
+// Session reuse is an adapter concern: the adapter knows how its underlying
+// agent protocol resumes sessions and how to look up the prior session id.
 type Adapter interface {
-	// Run executes the agent invocation described by req. It returns when the
-	// underlying process completes (cleanly or otherwise). Result.Artifacts is
-	// populated for every role-declared output whose assigned path exists and
-	// is readable after process completion; missing artifacts are simply absent.
-	// Result.ResultJSON is populated from OutputPaths.Result when present.
-	Run(ctx context.Context, req Request) (Result, error)
+	BuildInvocation(ctx context.Context, req Request) (Invocation, error)
+	ParseResult(ctx context.Context, req Request, raw RuntimeResult) (Result, error)
 }
 
-// RunOpts are the per-invocation options for a CommandRunner.
-type RunOpts struct {
-	// Dir is the working directory for the spawned process. Empty means
-	// inherit the runner's current directory.
-	Dir string
-	// Stdin is the data piped to the process on its standard input. Empty
-	// means no stdin.
-	Stdin []byte
+// RunAgent is the composition facade: it builds the invocation via the
+// adapter, drives the runtime lifecycle, parses the protocol output, and
+// reads the controller-assigned result.json and declared artifacts from
+// disk. Empty ExecutionID is allocated by the runtime.
+func RunAgent(ctx context.Context, adapter Adapter, runtime Runtime, req Request) (Result, error) {
+	if adapter == nil {
+		return Result{IsError: true}, errors.New("agent: RunAgent: adapter is nil")
+	}
+	if runtime == nil {
+		return Result{IsError: true}, errors.New("agent: RunAgent: runtime is nil")
+	}
+
+	inv, err := adapter.BuildInvocation(ctx, req)
+	if err != nil {
+		return Result{IsError: true, ExecutionID: req.ExecutionID}, err
+	}
+
+	exec, err := runtime.Spawn(ctx, inv)
+	if err != nil {
+		return Result{IsError: true, ExecutionID: req.ExecutionID}, err
+	}
+
+	raw, waitErr := runtime.Wait(ctx, exec)
+	res, parseErr := adapter.ParseResult(ctx, req, raw)
+	res.ExecutionID = exec.ID
+
+	if waitErr != nil && !res.IsError {
+		res.IsError = true
+		if parseErr == nil {
+			return res, waitErr
+		}
+	}
+
+	if res.IsError {
+		return res, firstErr(parseErr, waitErr)
+	}
+
+	res.ResultJSON = readFile(req.OutputPaths.Result)
+	res.Artifacts = readArtifacts(req.OutputPaths.Artifacts)
+	if parseErr != nil {
+		res.IsError = true
+		return res, parseErr
+	}
+	return res, nil
 }
 
-// CommandRunner is the low-level exec abstraction used by concrete adapters.
-// It exists so MakiAdapter (and any future adapter) can be unit-tested with a
-// fake runner without spawning a real binary.
-type CommandRunner interface {
-	// Run executes the given binary with args under opts. It returns the
-	// captured stdout, stderr, and a non-nil error if the process exited
-	// non-zero or could not be started. Callers should not interpret the
-	// error; they should consult the captured output and decide based on its
-	// structured contents.
-	Run(ctx context.Context, bin string, args []string, opts RunOpts) (stdout, stderr []byte, err error)
+func firstErr(a, b error) error {
+	if a != nil {
+		return a
+	}
+	return b
 }

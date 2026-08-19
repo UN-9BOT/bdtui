@@ -3,6 +3,16 @@
 // plus the deterministic prompt envelope and the completion checks that gate a
 // step attempt on machine-verifiable evidence.
 //
+// The boundary has three layers so a future runtime (HerdrRuntime) can own the
+// process lifecycle without changing the controller or the adapter:
+//
+//	Controller -> RunAgent(adapter, runtime, req)
+//	             |                       |
+//	          MakiAdapter             Runtime (HerdrRuntime / ExecRuntime)
+//	             |                       |
+//	      build invocation        spawn / wait / stop / reattach
+//	      parse wire format       (durable ExecutionID)
+//
 // Workflow authoring is human-driven: this package only reads and validates
 // definitions; it never creates or edits them. Agents do not create or edit
 // workflows either; they execute a fully rendered prompt and produce a
@@ -13,10 +23,19 @@ import "bdtui/internal/workflow"
 
 // Request is a provider-agnostic request to run a single agent step. The
 // controller builds the deterministic prompt envelope and assigns the output
-// paths; the adapter only translates this into the underlying CLI/protocol.
+// paths; the runtime owns the process lifecycle; the adapter only translates
+// the request into the underlying CLI/protocol.
 type Request struct {
-	// SessionKey identifies a reusable agent session. MVP keeps one session per
-	// (run, role) so revise/review loops for the same role may reuse context.
+	// ExecutionID is the durable runtime-side identity for this attempt. The
+	// runtime uses it to spawn/inspect/reattach/stop the underlying process.
+	// Empty means "allocate one". Pass an existing ID on reattach after a
+	// daemon restart.
+	ExecutionID string
+
+	// SessionKey identifies a reusable agent session. MVP keeps one session
+	// per (run, role) so revise/review loops for the same role may reuse the
+	// agent's conversation context. The adapter maps this to the underlying
+	// agent protocol's resume primitive.
 	SessionKey string
 
 	// Prompt is the deterministic, fully-rendered prompt envelope.
@@ -29,14 +48,15 @@ type Request struct {
 	// where the agent must write its structured result and declared artifacts.
 	OutputPaths OutputPaths
 
-	// Contract describes the shape of result.json and the semantic outcomes
-	// the role may report.
+	// Contract describes the shape of the result `data` and the control-plane
+	// invariants the completion check enforces. DeclaredOutputs is the
+	// resolved set of role-declared artifact names; BuildEnvelope rejects if
+	// any of them is missing a controller-assigned path.
 	Contract ResultContract
 }
 
 // OutputPaths are the controller-assigned absolute paths inside Run storage
 // where the agent must write its structured result and declared artifacts.
-// Path values are opaque to the adapter; only Result and Artifacts are read.
 type OutputPaths struct {
 	// Result is the absolute path of result.json.
 	Result string
@@ -47,21 +67,26 @@ type OutputPaths struct {
 	Artifacts map[string]string
 }
 
-// ResultContract describes the result.json shape (a JSON Schema) and the
-// semantic outcomes the role may report. The completion check enforces both.
+// ResultContract is the single, resolved contract for a step attempt. It
+// combines the role-declared schema, the allowed control-plane outcomes, and
+// the declared artifact names so the mandatory-artifact invariant cannot be
+// bypassed by the caller omitting an argument.
+//
+// The JSON Schema validates the result `data` object only; the `outcome`
+// field is a control-plane concern validated separately by the controller.
 type ResultContract struct {
-	// Schema is the raw JSON Schema text. The agent is expected to write a
-	// result.json that satisfies it; the completion check re-validates.
+	// Schema is the JSON Schema for the result.json `data` object.
 	Schema string
 
 	// AllowedOutcomes is the set of semantic outcomes the role may report.
-	// The result.json must carry exactly one of these as its outcome.
 	AllowedOutcomes []string
+
+	// DeclaredOutputs is the resolved set of role-declared output names. The
+	// completion check requires every name to have a non-empty artifact.
+	DeclaredOutputs []string
 }
 
 // TaskSnapshot is the immutable snapshot of the source Kanban task for a run.
-// The controller captures it at Run start; the envelope embeds it verbatim so
-// the agent sees the same task description the human author reviewed.
 type TaskSnapshot struct {
 	ID          string
 	Title       string
@@ -69,8 +94,7 @@ type TaskSnapshot struct {
 }
 
 // ProjectInstruction is a snapshotted project instruction file
-// (AGENTS.md/CLAUDE.md/known skills where applicable). Snapshotted content is
-// embedded in the envelope so the agent cannot be confused by later edits.
+// (AGENTS.md/CLAUDE.md/known skills where applicable).
 type ProjectInstruction struct {
 	Name    string
 	Content string
@@ -91,39 +115,40 @@ type EnvelopeInput struct {
 }
 
 // Result is the raw outcome of a single agent invocation. It carries the
-// process-level facts the controller needs (session id, stop reason, error
-// flag) and the bytes the completion check validates (result.json, artifacts).
-// Result does not carry the semantic outcome; that is extracted and validated
-// by the completion check.
+// runtime/process-level facts the controller needs (session id, stop reason,
+// error flag) and the bytes the completion check validates (result.json,
+// artifacts). Result does not carry the semantic outcome; that is extracted
+// and validated by the completion check.
 type Result struct {
-	// SessionID is the underlying agent session id; the controller persists it
+	// ExecutionID echoes the durable runtime-side identity for this attempt.
+	ExecutionID string
+
+	// SessionID is the underlying agent session id; the adapter persists it
 	// per SessionKey so the next invocation for the same role may resume.
 	SessionID string
 
-	// StopReason is the underlying agent stop reason (e.g. end_turn, tool_use).
+	// StopReason is the underlying agent stop reason.
 	StopReason string
 
-	// IsError is true if the underlying process signalled a failure (Maki
-	// `is_error=true`, non-zero exit, or unparseable output).
+	// IsError is true if the underlying process signalled a failure (agent
+	// reported is_error=true, non-zero exit, or unparseable output).
 	IsError bool
 
 	// ResultJSON is the raw bytes of result.json as read from OutputPaths.Result
-	// after process completion. It is empty if the file is missing.
+	// after process completion. Empty if the file is missing.
 	ResultJSON []byte
 
 	// Artifacts maps a role-declared output name to its raw bytes as read from
 	// the assigned path. Missing artifacts are simply absent from the map.
 	Artifacts map[string][]byte
 
-	// Raw is the raw text/stdout from the agent for diagnostics. The completion
-	// check does not inspect it.
+	// Raw is the raw agent output text for diagnostics. The completion check
+	// does not inspect it.
 	Raw string
 }
 
-// Completion is the validated completion of a step attempt. It is produced by
-// the completion check after the adapter reports process completion.
+// Completion is the validated completion of a step attempt. Outcome is
+// guaranteed to be in Contract.AllowedOutcomes.
 type Completion struct {
-	// Outcome is the validated semantic outcome selected by the agent. It is
-	// guaranteed to be in Contract.AllowedOutcomes.
 	Outcome string
 }
