@@ -96,7 +96,13 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 			return opMsg{err: err}
 		}
 
-		projectID := m.projectIDForBeadsDir()
+		projectID, err := m.projectIDForBeadsDir()
+		if err != nil {
+			return opMsg{err: fmt.Errorf("project id: %w", err)}
+		}
+		if projectID == "" {
+			return opMsg{err: fmt.Errorf("project id unavailable")}
+		}
 		run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{
 			ProjectId:          projectID,
 			TaskId:             taskID,
@@ -115,32 +121,62 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 // (no dashes) on first use. The id is opaque, machine-independent, and
 // survives moves of the workspace directory (since it lives inside it).
 //
+// The file is created winner-safe via O_CREATE|O_EXCL: at most one concurrent
+// caller can write the file, all others observe the winner's value. A read
+// failure (e.g. missing/unreadable beads-dir) surfaces as an error so the
+// caller never sends a daemon call with a "this-session only" id that
+// silently won't survive a restart.
+//
 // Returning "" on a missing / unreadable beads-dir is a soft failure — the
 // caller surfaces it as "no project configured" and we never round-trip
 // to the daemon with an empty id (the daemon rejects that with InvalidArgument).
-func (m model) projectIDForBeadsDir() string {
+func (m model) projectIDForBeadsDir() (string, error) {
 	beadsDir := strings.TrimSpace(m.BeadsDir)
 	if beadsDir == "" {
-		return ""
+		return "", fmt.Errorf("no beads-dir configured")
 	}
 	path := filepath.Join(beadsDir, projectIDFilename)
 
 	if data, err := os.ReadFile(path); err == nil {
 		id := strings.TrimSpace(string(data))
 		if validProjectID(id) {
-			return id
+			return id, nil
 		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 
 	id, err := generateProjectID()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("generate project id: %w", err)
 	}
-	// Best-effort persistence: if writing fails (read-only fs, etc.) we still
-	// return the id for this session — uniqueness across restarts will lapse
-	// but the daemon call itself remains valid.
-	_ = os.WriteFile(path, []byte(id), 0o600)
-	return id
+
+	// Winner-safe create: O_CREATE|O_EXCL fails if the file already exists
+	// between our ReadFile and our WriteFile (another caller wrote first).
+	// On that path we re-read and trust the winner.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return "", fmt.Errorf("re-read winner %s: %w", path, rerr)
+			}
+			winner := strings.TrimSpace(string(data))
+			if validProjectID(winner) {
+				return winner, nil
+			}
+			return "", fmt.Errorf("winner %s has invalid id", path)
+		}
+		return "", fmt.Errorf("persist %s: %w", path, err)
+	}
+	if _, err := f.WriteString(id); err != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("close %s: %w", path, err)
+	}
+	return id, nil
 }
 
 // generateProjectID returns a fresh 32-char hex UUIDv4 suitable for use as

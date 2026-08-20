@@ -91,14 +91,14 @@ steps:
 func TestProjectIDForBeadsDirIsStable(t *testing.T) {
 	dir := t.TempDir()
 	m := model{BeadsDir: dir}
-	id1 := m.projectIDForBeadsDir()
+	id1, _ := m.projectIDForBeadsDir()
 	if id1 == "" {
 		t.Fatal("project id is empty")
 	}
 	if !validProjectID(id1) {
 		t.Fatalf("project id %q is not a valid uuid hex", id1)
 	}
-	if id2 := m.projectIDForBeadsDir(); id2 != id1 {
+	if id2, _ := m.projectIDForBeadsDir(); id2 != id1 {
 		t.Fatalf("project id not stable: %q vs %q", id1, id2)
 	}
 	// The id must be persisted to disk and survive a "restart".
@@ -111,8 +111,8 @@ func TestProjectIDForBeadsDirIsStable(t *testing.T) {
 func TestProjectIDForBeadsDirDistinguishesWorkspaces(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()
-	idA := model{BeadsDir: dirA}.projectIDForBeadsDir()
-	idB := model{BeadsDir: dirB}.projectIDForBeadsDir()
+	idA, _ := model{BeadsDir: dirA}.projectIDForBeadsDir()
+	idB, _ := model{BeadsDir: dirB}.projectIDForBeadsDir()
 	if idA == idB {
 		t.Fatalf("distinct beads dirs must produce distinct project ids, both = %q", idA)
 	}
@@ -164,8 +164,44 @@ func TestProjectIDRegeneratesOnCorruptFile(t *testing.T) {
 		t.Fatalf("write corrupt file: %v", err)
 	}
 	m := model{BeadsDir: dir}
-	id := m.projectIDForBeadsDir()
-	if !validProjectID(id) {
-		t.Fatalf("regenerated id %q is not valid", id)
+	// A corrupt file already on disk must surface as an error rather than
+	// silently overwrite or return a fresh in-memory id: both would let
+	// two concurrent launches disagree on the project scope.
+	if _, err := m.projectIDForBeadsDir(); err == nil {
+		t.Fatal("expected error for corrupt persisted id file")
+	}
+}
+
+func TestProjectIDAtomicOnConcurrentFirstCall(t *testing.T) {
+	// Two concurrent projectIDForBeadsDir() calls on a fresh dir must
+	// agree on the same id (the O_CREATE|O_EXCL winner is read back by
+	// the loser). N concurrent goroutines on the same empty dir produce
+	// exactly the same project_id.
+	dir := t.TempDir()
+	m := model{BeadsDir: dir}
+	const N = 16
+	results := make([]string, N)
+	errs := make([]error, N)
+	done := make(chan struct{}, N)
+	for i := 0; i < N; i++ {
+		go func(i int) {
+			results[i], errs[i] = m.projectIDForBeadsDir()
+			done <- struct{}{}
+		}(i)
+	}
+	for i := 0; i < N; i++ {
+		<-done
+	}
+	first := results[0]
+	if errs[0] != nil {
+		t.Fatalf("first call err: %v", errs[0])
+	}
+	for i := 1; i < N; i++ {
+		if errs[i] != nil {
+			t.Fatalf("call %d err: %v", i, errs[i])
+		}
+		if results[i] != first {
+			t.Fatalf("call %d returned %q, want %q (winner)", i, results[i], first)
+		}
 	}
 }
