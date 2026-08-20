@@ -144,7 +144,22 @@ const (
 	ModeDepList                   Mode = "dep_list"
 	ModeConfirmDelete             Mode = "confirm_delete"
 	ModeConfirmClosedParentCreate Mode = "confirm_closed_parent_create"
+	ModeWorkflowPicker            Mode = "workflow_picker"
 )
+
+// WorkflowOption is a single workflow available for Run launch.
+type WorkflowOption struct {
+	Name   string
+	Origin string // "project" or "global"
+}
+
+// WorkflowPickerState holds the workflow list shown when the user picks a
+// workflow to launch a Run for the selected task.
+type WorkflowPickerState struct {
+	TargetIssueID string
+	Options       []WorkflowOption
+	Index         int
+}
 
 type PromptAction string
 

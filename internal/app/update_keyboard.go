@@ -40,6 +40,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleMuxPickerKey(msg)
 	case ModeBlockerPicker:
 		return m.handleBlockerPickerKey(msg)
+	case ModeWorkflowPicker:
+		return m.handleWorkflowPickerKey(msg)
 	case ModeDepList:
 		return m.handleDepListKey(msg)
 	case ModeConfirmDelete:
@@ -580,6 +582,50 @@ func (m model) handleParentPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleWorkflowPickerKey navigates the workflow list and submits a CreateRun
+// through the daemon on Enter. The submit cmd also marks the task as locally
+// claimed (status -> in_progress) so the board reflects the active run.
+func (m model) handleWorkflowPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.WorkflowPicker == nil {
+		m.Mode = ModeBoard
+		return m, nil
+	}
+
+	key := msg.String()
+	switch key {
+	case "esc", "q":
+		m.WorkflowPicker = nil
+		m.Mode = ModeBoard
+		return m, nil
+	case "j", "down":
+		if len(m.WorkflowPicker.Options) > 0 {
+			m.WorkflowPicker.Index = (m.WorkflowPicker.Index + 1) % len(m.WorkflowPicker.Options)
+		}
+		return m, nil
+	case "k", "up":
+		if len(m.WorkflowPicker.Options) > 0 {
+			m.WorkflowPicker.Index--
+			if m.WorkflowPicker.Index < 0 {
+				m.WorkflowPicker.Index = len(m.WorkflowPicker.Options) - 1
+			}
+		}
+		return m, nil
+	case "enter":
+		if len(m.WorkflowPicker.Options) == 0 {
+			m.setToast("warning", "no workflows available")
+			m.WorkflowPicker = nil
+			m.Mode = ModeBoard
+			return m, nil
+		}
+		selected := m.WorkflowPicker.Options[m.WorkflowPicker.Index]
+		targetID := m.WorkflowPicker.TargetIssueID
+		m.WorkflowPicker = nil
+		m.Mode = ModeBoard
+		return m, m.launchRunCmd(targetID, selected.Name)
+	}
+	return m, nil
+}
+
 func (m model) handleDepListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.DepList == nil {
 		m.Mode = ModeBoard
@@ -1061,6 +1107,32 @@ func (m model) handleBoardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "r":
 		return m, m.loadCmd("manual")
+	case "R":
+		issue := m.currentIssue()
+		if issue == nil {
+			m.setToast("warning", "no issue selected")
+			return m, nil
+		}
+		if issue.Status == StatusClosed {
+			m.setToast("warning", "cannot run a closed issue")
+			return m, nil
+		}
+		options, err := m.loadWorkflowOptions()
+		if err != nil {
+			m.setToast("error", "load workflows: "+err.Error())
+			return m, nil
+		}
+		if len(options) == 0 {
+			m.setToast("warning", "no workflows available")
+			return m, nil
+		}
+		m.WorkflowPicker = &WorkflowPickerState{
+			TargetIssueID: issue.ID,
+			Options:       options,
+			Index:         0,
+		}
+		m.Mode = ModeWorkflowPicker
+		return m, nil
 	case "n":
 		m.CreateBlockerID = ""
 		m.Form = newIssueFormCreate(m.Issues)

@@ -789,6 +789,8 @@ func (m model) renderModal() string {
 		return m.renderDeleteModal()
 	case ModeConfirmClosedParentCreate:
 		return m.renderConfirmClosedParentCreateModal()
+	case ModeWorkflowPicker:
+		return m.renderWorkflowPickerModal()
 	default:
 		return ""
 	}
@@ -1324,6 +1326,56 @@ func (m model) renderParentPickerModal() string {
 	}
 
 	lines = append(lines, "", m.Styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
+	return strings.Join(lines, "\n")
+}
+
+// renderWorkflowPickerModal lists available workflows for the selected task.
+// Project workflows are listed first (with a "project" tag), then globals so
+// users reach the most-specific option without scrolling.
+func (m model) renderWorkflowPickerModal() string {
+	if m.WorkflowPicker == nil {
+		return "Workflow Picker\n\nloading..."
+	}
+
+	total := len(m.WorkflowPicker.Options)
+	if total == 0 {
+		return "Workflow Picker\n\nNo workflows available\n\nEsc close"
+	}
+
+	target := strings.TrimSpace(m.WorkflowPicker.TargetIssueID)
+	lines := []string{
+		statusHeaderStyle(StatusInProgress).Render("Workflow Picker (R)"),
+		"",
+		m.Styles.Warning.Render("Pick a workflow: ↑/↓ (or j/k), Enter launch, Esc cancel"),
+		m.Styles.Dim.Render(fmt.Sprintf("task: %s", target)),
+		"",
+	}
+
+	idx := m.WorkflowPicker.Index
+	if idx < 0 || idx >= total {
+		idx = 0
+	}
+	start := max(0, idx-5)
+	end := min(total, start+11)
+	if end-start < 11 {
+		start = max(0, end-11)
+	}
+
+	for i := start; i < end; i++ {
+		opt := m.WorkflowPicker.Options[i]
+		prefix := "  "
+		if i == idx {
+			prefix = m.Styles.Warning.Render("▶ ")
+		}
+		originTag := m.Styles.Dim.Render(fmt.Sprintf("[%s]", opt.Origin))
+		body := fmt.Sprintf("%s %s", opt.Name, originTag)
+		if i == idx {
+			body = m.Styles.Selected.Render(body)
+		}
+		lines = append(lines, prefix+body)
+	}
+
+	lines = append(lines, "", m.Styles.Dim.Render(fmt.Sprintf("option %d/%d", idx+1, total)))
 	return strings.Join(lines, "\n")
 }
 

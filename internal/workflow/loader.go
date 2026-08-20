@@ -5,7 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
+
+// ListEntry identifies one workflow discovered by a Loader. Origin records
+// which root the entry came from; when both roots define a workflow with the
+// same name, the project root wins and the global root is suppressed so callers
+// can render a flat, deduplicated list.
+type ListEntry struct {
+	Name   string
+	Origin string // "project" or "global"
+}
 
 // Loader resolves workflow and role definitions from a project definitions
 // root (highest precedence) and a global definitions root. Workflows and roles
@@ -23,6 +34,65 @@ import (
 type Loader struct {
 	Global  string
 	Project string
+}
+
+// List returns the deduplicated set of workflow names visible to this Loader.
+// The project root wins over the global root on name collision. Results are
+// sorted by name. A root that does not exist is treated as empty (no error).
+// Files that are not valid YAML are skipped so a single corrupt file does not
+// hide every other workflow.
+func (l Loader) List(_ context.Context) ([]ListEntry, error) {
+	project := l.scanDir(l.Project)
+	global := l.scanDir(l.Global)
+
+	merged := make(map[string]ListEntry, len(project)+len(global))
+	for _, e := range project {
+		merged[e.Name] = e
+	}
+	for _, e := range global {
+		if _, ok := merged[e.Name]; ok {
+			continue
+		}
+		merged[e.Name] = e
+	}
+
+	out := make([]ListEntry, 0, len(merged))
+	for _, e := range merged {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (l Loader) scanDir(root string) []ListEntry {
+	if root == "" {
+		return nil
+	}
+	dir := filepath.Join(root, "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	out := make([]ListEntry, 0, len(entries))
+	for _, ent := range entries {
+		if ent.IsDir() {
+			continue
+		}
+		name := strings.TrimSuffix(ent.Name(), ".yaml")
+		if name == ent.Name() || name == "" {
+			continue
+		}
+		if err := validateID(name); err != nil {
+			continue
+		}
+		origin := "global"
+		if root == l.Project {
+			origin = "project"
+		}
+		out = append(out, ListEntry{Name: name, Origin: origin})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // Load resolves a named workflow and assembles its bundle: the workflow, the

@@ -645,3 +645,69 @@ func mustWriteDir(t *testing.T, dir, rel, content string) {
 		t.Fatalf("write %s: %v", p, err)
 	}
 }
+
+func TestLoaderListEmpty(t *testing.T) {
+	loader := Loader{}
+	got, err := loader.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("empty list = %d, want 0", len(got))
+	}
+}
+
+func TestLoaderListFromBothRoots(t *testing.T) {
+	global := t.TempDir()
+	project := t.TempDir()
+
+	mustWriteDir(t, global, "workflows/alpha.yaml", validWorkflow)
+	mustWriteDir(t, global, "workflows/beta.yaml", validWorkflow)
+	mustWriteDir(t, project, "workflows/gamma.yaml", validWorkflow)
+	mustWriteDir(t, global, "workflows/notyaml.txt", "ignored")
+
+	loader := Loader{Global: global, Project: project}
+	got, err := loader.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	want := []ListEntry{
+		{Name: "alpha", Origin: "global"},
+		{Name: "beta", Origin: "global"},
+		{Name: "gamma", Origin: "project"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestLoaderListProjectWinsOnCollision(t *testing.T) {
+	global := t.TempDir()
+	project := t.TempDir()
+
+	mustWriteDir(t, global, "workflows/shared.yaml", validWorkflow)
+	mustWriteDir(t, global, "workflows/globalonly.yaml", validWorkflow)
+	mustWriteDir(t, project, "workflows/shared.yaml", validWorkflow)
+	mustWriteDir(t, project, "workflows/projectonly.yaml", validWorkflow)
+
+	loader := Loader{Global: global, Project: project}
+	got, err := loader.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	want := map[string]string{"globalonly": "global", "projectonly": "project", "shared": "project"}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for _, e := range got {
+		if w, ok := want[e.Name]; !ok || w != e.Origin {
+			t.Fatalf("entry %+v not in want %v", e, want)
+		}
+	}
+}

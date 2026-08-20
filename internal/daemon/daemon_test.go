@@ -394,3 +394,96 @@ func TestEnsureDaemonAutoStart(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGTERM) })
 }
+
+// startBareTestServer starts a daemon whose store has zero projects. Used to
+// exercise the default-project fallback on CreateRun.
+func startBareTestServer(t *testing.T) (*orch.Store, *Client) {
+	t.Helper()
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "orch.db")
+	socketPath := filepath.Join(dir, "daemon.sock")
+
+	store, err := orch.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := NewServer(store, socketPath)
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		srv.Stop()
+		<-done
+	})
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !socketAlive(context.Background(), socketPath) {
+		if time.Now().After(deadline) {
+			t.Fatal("daemon socket did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	client, err := Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial daemon: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	return store, client
+}
+
+func TestCreateRunAutoBootstrapsDefaultProject(t *testing.T) {
+	store, client := startBareTestServer(t)
+
+	r, err := client.CreateRun(context.Background(), &daemonpb.CreateRunRequest{
+		TaskId:             "task-x",
+		WorkflowSnapshot:   "{}",
+		WorkflowSnapshotRef: "ref-x",
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if r.Id == "" {
+		t.Fatal("empty run id")
+	}
+	if r.ProjectId == "" {
+		t.Fatal("empty project_id")
+	}
+
+	projects := listAllProjects(t, store)
+	if len(projects) != 1 {
+		t.Fatalf("projects = %d, want 1", len(projects))
+	}
+	if projects[0].ID != r.ProjectId {
+		t.Fatalf("run project %q != default project %q", r.ProjectId, projects[0].ID)
+	}
+	if projects[0].Name != "default" {
+		t.Fatalf("default project name = %q", projects[0].Name)
+	}
+}
+
+func TestCreateRunRejectsMissingTaskID(t *testing.T) {
+	_, client := startBareTestServer(t)
+	_, err := client.CreateRun(context.Background(), &daemonpb.CreateRunRequest{})
+	if err == nil {
+		t.Fatal("expected error for empty task_id")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.InvalidArgument {
+		t.Fatalf("code = %v, want InvalidArgument", st.Code())
+	}
+}
+
+func listAllProjects(t *testing.T, store *orch.Store) []orch.Project {
+	t.Helper()
+	projects, err := store.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	return projects
+}
