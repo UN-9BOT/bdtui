@@ -106,7 +106,7 @@ func statusTransitionValid(from, to string) bool {
 	case "running":
 		return to == "waiting_human" || to == "needs_attention" || to == "completed" || to == "failed" || to == "cancelled"
 	case "waiting_human":
-		return to == "running" || to == "needs_attention" || to == "failed" || to == "cancelled"
+		return to == "running" || to == "needs_attention" || to == "completed" || to == "failed" || to == "cancelled"
 	case "needs_attention":
 		return to == "running" || to == "completed" || to == "failed" || to == "cancelled"
 	case "completed", "failed", "cancelled":
