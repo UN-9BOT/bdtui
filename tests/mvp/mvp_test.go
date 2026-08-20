@@ -521,17 +521,16 @@ func TestMVPVerticalSlice(t *testing.T) {
 
 	traceA := <-results
 	traceB := <-results
-	if traceA.err != nil || traceB.err != nil {
-		// Unblock any pending barrier waiter before failing.
-		barrier.Cancel()
-		// Drain the second result so the goroutine doesn't leak.
-		<-results
-		if traceA.err != nil {
-			t.Fatalf("smooth path: %v", traceA.err)
-		}
-		if traceB.err != nil {
-			t.Fatalf("human path: %v", traceB.err)
-		}
+	// Both drivers always send exactly one result. Cancel the barrier so
+	// any driver still parked in Arrive() returns false and surfaces an
+	// error to the main goroutine before sending. Don't try a third
+	// receive -- the channel only ever holds two sends.
+	barrier.Cancel()
+	if traceA.err != nil {
+		t.Fatalf("smooth path: %v", traceA.err)
+	}
+	if traceB.err != nil {
+		t.Fatalf("human path: %v", traceB.err)
 	}
 
 	verifyFinalState(t, h.store, traceA.trace.runID, orch.RunCompleted)

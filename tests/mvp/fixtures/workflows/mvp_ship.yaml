@@ -73,7 +73,30 @@ steps:
         step: ask_replan
         output: response
     on:
-      planned: review_replan
+      planned: review_after_question
+  - id: review_after_question
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: replan_after_question
+        output: plan
+    on:
+      approved: implement_after_question
+      revise: replan_after_question
+      question: ask_replan
+  - id: implement_after_question
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: replan_after_question
+        output: plan
+      review:
+        step: review_after_question
+        output: review
+    on:
+      done: end
   - id: implement_replan
     type: agent
     role: implementer
