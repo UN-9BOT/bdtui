@@ -51,19 +51,14 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 }
 
 // resolveOrCreateProject treats project_id as the canonical project handle.
-// If the row exists it is reused so different workspaces with distinct IDs
-// never share an active-run uniqueness scope. If the row is missing it is
-// created with the id used as both primary key and name, so the same client
-// always resolves to the same project on subsequent calls.
+// Idempotent: on a fresh id the row is created; on a repeat call the existing
+// row is returned without modification.
 func (s *Service) resolveOrCreateProject(ctx context.Context, id string) error {
-	_, err := s.store.GetProject(ctx, id)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, orch.ErrNotFound) {
-		return err
-	}
-	return s.store.CreateProject(ctx, &orch.Project{ID: id, Name: id})
+	_, err := s.store.EnsureProject(ctx, &orch.Project{
+		ID:   id,
+		Name: id,
+	})
+	return err
 }
 
 func (s *Service) ListRuns(ctx context.Context, req *daemonpb.ListRunsRequest) (*daemonpb.ListRunsResponse, error) {

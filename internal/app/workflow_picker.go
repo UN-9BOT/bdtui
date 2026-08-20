@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -22,6 +22,12 @@ import (
 // contract, the loader appends "/workflows/<name>.yaml" internally, so this
 // must be the layout root, not the workflows directory itself.
 const defaultGlobalWorkflowsRoot = "/usr/local/share/bdtui"
+
+// projectIDFilename is the per-beads-dir file that stores the durable project
+// identity handed to the daemon. Generated on first use and reused forever so
+// the same workspace keeps the same project_id across moves, clones of other
+// repos get distinct ids, and active-run uniqueness is preserved.
+const projectIDFilename = ".bdtui-project-id"
 
 // projectWorkflowsRoot is the project layout root for workflow.Loader. Per
 // the Loader contract, roots are layout directories and the loader appends
@@ -104,21 +110,81 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 	}
 }
 
-// projectIDForBeadsDir returns a stable, content-addressable project ID
-// derived from the configured beads directory. The daemon resolves this ID
-// into a project row (creating it on first call), so different workspaces
-// never share an active-run uniqueness scope.
+// projectIDForBeadsDir returns the durable project_id stored in
+// <beads-dir>/.bdtui-project-id, generating + persisting a fresh UUID hex
+// (no dashes) on first use. The id is opaque, machine-independent, and
+// survives moves of the workspace directory (since it lives inside it).
 //
-// Using a hash keeps the ID opaque (no fs_path leaks over the wire) and
-// stable across restarts and machines, so the same workspace on different
-// runs of the same TUI maps to the same project row.
+// Returning "" on a missing / unreadable beads-dir is a soft failure — the
+// caller surfaces it as "no project configured" and we never round-trip
+// to the daemon with an empty id (the daemon rejects that with InvalidArgument).
 func (m model) projectIDForBeadsDir() string {
-	root, err := filepath.Abs(strings.TrimSpace(m.BeadsDir))
-	if err != nil || root == "" {
+	beadsDir := strings.TrimSpace(m.BeadsDir)
+	if beadsDir == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(root))
-	return hex.EncodeToString(sum[:8])
+	path := filepath.Join(beadsDir, projectIDFilename)
+
+	if data, err := os.ReadFile(path); err == nil {
+		id := strings.TrimSpace(string(data))
+		if validProjectID(id) {
+			return id
+		}
+	}
+
+	id, err := generateProjectID()
+	if err != nil {
+		return ""
+	}
+	// Best-effort persistence: if writing fails (read-only fs, etc.) we still
+	// return the id for this session — uniqueness across restarts will lapse
+	// but the daemon call itself remains valid.
+	_ = os.WriteFile(path, []byte(id), 0o600)
+	return id
+}
+
+// generateProjectID returns a fresh 32-char hex UUIDv4 suitable for use as
+// a stable opaque project id.
+func generateProjectID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	// RFC 4122 v4: set version + variant bits so downstream tooling can
+	// recognize the id as a UUID if it ever needs to.
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	out := make([]byte, 36)
+	hex.Encode(out, b[:4])
+	out[8] = '-'
+	hex.Encode(out[9:13], b[4:6])
+	out[13] = '-'
+	hex.Encode(out[14:18], b[6:8])
+	out[18] = '-'
+	hex.Encode(out[19:23], b[8:10])
+	out[23] = '-'
+	hex.Encode(out[24:], b[10:])
+	return strings.ReplaceAll(string(out), "-", ""), nil
+}
+
+// validProjectID returns true for non-empty ASCII hex ids of 32 chars (UUID
+// without dashes) or 36 chars (with dashes). Anything else is treated as a
+// corrupt file and regenerated.
+func validProjectID(s string) bool {
+	if len(s) != 32 && len(s) != 36 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		case r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // snapshotWorkflow loads the named workflow bundle and compiles a canonical

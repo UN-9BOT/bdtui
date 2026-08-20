@@ -95,11 +95,16 @@ func TestProjectIDForBeadsDirIsStable(t *testing.T) {
 	if id1 == "" {
 		t.Fatal("project id is empty")
 	}
-	if len(id1) != 16 {
-		t.Fatalf("project id len = %d, want 16 hex chars", len(id1))
+	if !validProjectID(id1) {
+		t.Fatalf("project id %q is not a valid uuid hex", id1)
 	}
 	if id2 := m.projectIDForBeadsDir(); id2 != id1 {
 		t.Fatalf("project id not stable: %q vs %q", id1, id2)
+	}
+	// The id must be persisted to disk and survive a "restart".
+	path := filepath.Join(dir, projectIDFilename)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("persisted id file missing: %v", err)
 	}
 }
 
@@ -110,5 +115,57 @@ func TestProjectIDForBeadsDirDistinguishesWorkspaces(t *testing.T) {
 	idB := model{BeadsDir: dirB}.projectIDForBeadsDir()
 	if idA == idB {
 		t.Fatalf("distinct beads dirs must produce distinct project ids, both = %q", idA)
+	}
+}
+
+func TestGenerateProjectIDIsUniqueAndValid(t *testing.T) {
+	seen := make(map[string]struct{}, 100)
+	for i := 0; i < 100; i++ {
+		id, err := generateProjectID()
+		if err != nil {
+			t.Fatalf("generateProjectID: %v", err)
+		}
+		if !validProjectID(id) {
+			t.Fatalf("invalid id: %q", id)
+		}
+		if _, ok := seen[id]; ok {
+			t.Fatalf("duplicate id %q on iteration %d", id, i)
+		}
+		seen[id] = struct{}{}
+	}
+}
+
+func TestValidProjectIDAcceptsHexVariants(t *testing.T) {
+	for _, valid := range []string{
+		"0123456789abcdef0123456789abcdef",
+		"0123456789abcdef0123456789ABCDEF",
+		"01234567-89ab-cdef-0123-456789abcdef",
+	} {
+		if !validProjectID(valid) {
+			t.Fatalf("expected %q to be valid", valid)
+		}
+	}
+	for _, bad := range []string{
+		"",
+		"not-hex",
+		"0123456789abcdef0123456789abcde",  // 31 chars
+		"0123456789abcdef0123456789abcdef0", // 33 chars
+		"0123456789abcdef0123456789abcdeg",  // g is invalid
+	} {
+		if validProjectID(bad) {
+			t.Fatalf("expected %q to be invalid", bad)
+		}
+	}
+}
+
+func TestProjectIDRegeneratesOnCorruptFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, projectIDFilename), []byte("not-a-uuid"), 0o600); err != nil {
+		t.Fatalf("write corrupt file: %v", err)
+	}
+	m := model{BeadsDir: dir}
+	id := m.projectIDForBeadsDir()
+	if !validProjectID(id) {
+		t.Fatalf("regenerated id %q is not valid", id)
 	}
 }

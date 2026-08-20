@@ -37,6 +37,57 @@ func (s *Store) CreateProject(ctx context.Context, p *Project) error {
 	return tx.Commit()
 }
 
+// EnsureProject is the canonical resolve-or-create for the daemon. It runs an
+// INSERT OR IGNORE followed by a SELECT in a single transaction so concurrent
+// callers cannot both observe ErrNotFound and then race the unique-id INSERT.
+// The returned Project is whatever currently exists for that id; fs_path and
+// other mutable attributes are NOT updated on an existing row (callers that
+// need to refresh those use UpdateProject).
+func (s *Store) EnsureProject(ctx context.Context, p *Project) (*Project, error) {
+	if p == nil || p.ID == "" {
+		return nil, errors.New("orch: project id is required")
+	}
+	if p.Name == "" {
+		p.Name = p.ID
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR IGNORE INTO projects(id, name, fs_path, git_remote, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.FsPath, p.GitRemote, timeString(nowUTC()), timeString(nowUTC()),
+	); err != nil {
+		return nil, err
+	}
+
+	row := tx.QueryRowContext(ctx,
+		`SELECT id, name, fs_path, git_remote, created_at, updated_at
+		 FROM projects WHERE id = ?`, p.ID)
+	got := &Project{}
+	var created, updated string
+	if err := row.Scan(&got.ID, &got.Name, &got.FsPath, &got.GitRemote, &created, &updated); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if got.CreatedAt, err = parseTime(created); err != nil {
+		return nil, err
+	}
+	if got.UpdatedAt, err = parseTime(updated); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return got, nil
+}
+
 func (s *Store) GetProject(ctx context.Context, id string) (*Project, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, fs_path, git_remote, created_at, updated_at FROM projects WHERE id = ?`, id)
