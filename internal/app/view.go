@@ -745,6 +745,9 @@ func (m model) renderFooter() string {
 	}
 
 	right := ""
+	if m.LoadedLimit > 0 && len(m.Issues) == m.LoadedLimit {
+		right = fmt.Sprintf("loaded %d (capped at %d)", len(m.Issues), m.LoadedLimit)
+	}
 	if m.Toast != "" {
 		switch m.ToastKind {
 		case "error":

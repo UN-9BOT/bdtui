@@ -22,8 +22,10 @@ type Model struct {
 	RepoDir  string
 	Client   *BdClient
 
-	Issues []Issue
-	ByID   map[string]*Issue
+	Issues      []Issue
+	ByID        map[string]*Issue
+	TotalIssues int
+	LoadedLimit int
 
 	Columns      map[Status][]Issue
 	ColumnDepths map[Status]map[string]int
@@ -202,6 +204,8 @@ func (m *model) applyLoadedIssues(issues []Issue, hash string) {
 	selectedID := m.currentIssueID()
 
 	m.Issues = issues
+	m.TotalIssues = 0 // bd list has no total in local CLI mode.
+	m.LoadedLimit = issueLoadPageLimit
 	m.ByID = make(map[string]*Issue, len(issues))
 	for i := range m.Issues {
 		m.ByID[m.Issues[i].ID] = &m.Issues[i]
