@@ -21,27 +21,43 @@ import (
 // Reattach can still retrieve the buffered result. After a daemon restart
 // the in-memory map is empty and Reattach returns ErrLostExecution; that
 // is the crash-recovery signal the controller resolves per bdtui-6pc.
+//
+// Durable-ID atomicity: Spawn reserves inv.ExecutionID in the map (with a
+// "reserved" placeholder) BEFORE calling cmd.Start(). Two concurrent
+// Spawn calls with the same ID race on the mutex; the loser sees the
+// reservation and returns ErrDuplicateExecution. Only one cmd.Start() ever
+// runs per ID, so a writer execution cannot be duplicated.
 type ExecRuntime struct {
 	mu    sync.Mutex
 	procs map[string]*execHandle
 }
 
+type handleState int
+
+const (
+	handleReserved handleState = iota // ID claimed, cmd.Start() not yet called
+	handleStarted                      // cmd.Start() succeeded, process is running
+)
+
 type execHandle struct {
-	cmd        *exec.Cmd
-	stdoutBuf  bytes.Buffer
-	stderrBuf  bytes.Buffer
-	done       chan struct{}
-	exitErr    error
-	finishOnce sync.Once
+	state       handleState
+	cmd         *exec.Cmd
+	stdoutBuf   bytes.Buffer
+	stderrBuf   bytes.Buffer
+	done        chan struct{}
+	exitErr     error
+	finishOnce  sync.Once
 }
 
 func NewExecRuntime() *ExecRuntime {
 	return &ExecRuntime{procs: map[string]*execHandle{}}
 }
 
-// Spawn uses inv.ExecutionID as the durable Execution.ID. The caller must
-// pre-allocate that ID; Spawn rejects empty or duplicate IDs so the
-// controller can rely on the persisted ID matching the live process.
+// Spawn atomically reserves inv.ExecutionID and then starts the child
+// process. The reservation is committed before cmd.Start() so concurrent
+// Spawn calls with the same ID cannot both reach Start. If Start fails the
+// reservation is rolled back; if it succeeds the handle is moved to
+// handleStarted and a goroutine waits for completion.
 func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error) {
 	if inv.ExecutionID == "" {
 		return Execution{}, errors.New("agent: ExecRuntime: Invocation.ExecutionID is required")
@@ -49,11 +65,17 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 	if inv.Bin == "" {
 		return Execution{}, errors.New("agent: ExecRuntime: Invocation.Bin is required")
 	}
+
 	r.mu.Lock()
 	if _, exists := r.procs[inv.ExecutionID]; exists {
 		r.mu.Unlock()
 		return Execution{}, ErrDuplicateExecution
 	}
+	h := &execHandle{
+		state: handleReserved,
+		done:  make(chan struct{}),
+	}
+	r.procs[inv.ExecutionID] = h
 	r.mu.Unlock()
 
 	cmd := exec.Command(inv.Bin, inv.Args...)
@@ -65,17 +87,23 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 	} else {
 		cmd.Stdin = io.NopCloser(bytes.NewReader(nil))
 	}
-
-	h := &execHandle{cmd: cmd, done: make(chan struct{})}
 	cmd.Stdout = &h.stdoutBuf
 	cmd.Stderr = &h.stderrBuf
 
 	if err := cmd.Start(); err != nil {
+		// Roll back the reservation and unblock any waiters with the
+		// start error so they do not deadlock on h.done.
+		r.mu.Lock()
+		delete(r.procs, inv.ExecutionID)
+		r.mu.Unlock()
+		h.exitErr = err
+		h.finishOnce.Do(func() { close(h.done) })
 		return Execution{}, err
 	}
 
 	r.mu.Lock()
-	r.procs[inv.ExecutionID] = h
+	h.cmd = cmd
+	h.state = handleStarted
 	r.mu.Unlock()
 
 	go func() {
@@ -114,8 +142,7 @@ func (r *ExecRuntime) Inspect(_ context.Context, exec Execution) (InspectResult,
 }
 
 // Wait blocks until the execution completes. Repeated calls on the same ID
-// return the same buffered result (the handle is retained until process
-// exit; the map is the source of truth).
+// return the same buffered result.
 func (r *ExecRuntime) Wait(ctx context.Context, exec Execution) (RuntimeResult, error) {
 	h, ok := r.lookup(exec.ID)
 	if !ok {
@@ -124,7 +151,7 @@ func (r *ExecRuntime) Wait(ctx context.Context, exec Execution) (RuntimeResult, 
 	return r.waitHandle(ctx, exec.ID, h)
 }
 
-func (r *ExecRuntime) waitHandle(_ context.Context, id string, h *execHandle) (RuntimeResult, error) {
+func (r *ExecRuntime) waitHandle(_ context.Context, _ string, h *execHandle) (RuntimeResult, error) {
 	<-h.done
 	return RuntimeResult{
 		Stdout:  append([]byte(nil), h.stdoutBuf.Bytes()...),
@@ -140,10 +167,14 @@ func (r *ExecRuntime) Stop(_ context.Context, exec Execution) error {
 	if !ok {
 		return nil
 	}
-	if h.cmd.Process == nil {
+	r.mu.Lock()
+	state := h.state
+	proc := h.cmd.Process
+	r.mu.Unlock()
+	if state != handleStarted || proc == nil {
 		return nil
 	}
-	return h.cmd.Process.Kill()
+	return proc.Kill()
 }
 
 func (r *ExecRuntime) lookup(id string) (*execHandle, bool) {
@@ -154,8 +185,7 @@ func (r *ExecRuntime) lookup(id string) (*execHandle, bool) {
 }
 
 // AllocateExecutionID returns a new UUID suitable as a controller-side
-// durable execution identity. It is a convenience wrapper around the
-// uuid package so callers do not import github.com/google/uuid directly.
+// durable execution identity.
 func AllocateExecutionID() string {
 	return uuid.NewString()
 }

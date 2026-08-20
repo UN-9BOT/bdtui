@@ -12,6 +12,7 @@ const dataSchemaText = `{"type":"object","required":["plan"],"properties":{"plan
 func validCompletionRole() workflow.RoleContract {
 	return workflow.RoleContract{
 		ID:           "impl",
+		Prompt:       "prompts/impl.md",
 		Workspace:    workflow.WorkspaceWrite,
 		Outcomes:     []string{"planned", "needs_clarification"},
 		Outputs:      []string{"plan"},

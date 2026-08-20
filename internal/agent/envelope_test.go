@@ -22,6 +22,7 @@ func validRole() workflow.RoleContract {
 	return workflow.RoleContract{
 		ID:           "planner",
 		Description:  "Plans the work",
+		Prompt:       "prompts/planner.md",
 		Workspace:    workflow.WorkspaceWrite,
 		Outcomes:     []string{"planned", "needs_clarification"},
 		Outputs:      []string{"plan", "alternatives"},
@@ -176,5 +177,35 @@ func TestResolveContractRejectsMismatch(t *testing.T) {
 	}
 	if err := bypass2.consistentWith(role); err == nil {
 		t.Fatal("expected mismatch error for empty AllowedOutcomes vs role.Outcomes")
+	}
+}
+
+// TestBuildEnvelopeRejectsCrossRoleContract is the production regression
+// test for the second hole the reviewer flagged: ResolveContract for one
+// role paired with a different role in BuildEnvelope. consistentWith must
+// be called on the production path, not just by tests, so this case is
+// rejected at the envelope boundary.
+func TestBuildEnvelopeRejectsCrossRoleContract(t *testing.T) {
+	plannerRole := validRole()
+	reviewerRole := workflow.RoleContract{
+		ID:           "reviewer",
+		Prompt:       "prompts/reviewer.md",
+		Workspace:    workflow.WorkspaceRead,
+		Outcomes:     []string{"approved", "revise", "question"},
+		Outputs:      []string{"review"},
+		ResultSchema: "schemas/review.json",
+	}
+	reviewerContract, err := ResolveContract(reviewerRole, testDataSchema)
+	if err != nil {
+		t.Fatalf("ResolveContract reviewer: %v", err)
+	}
+
+	in := validEnvelopeInput()
+	in.Role = plannerRole
+	in.Contract = reviewerContract // intentionally wrong
+
+	_, err = BuildEnvelope(in)
+	if err == nil {
+		t.Fatal("expected BuildEnvelope to reject planner role paired with reviewer contract")
 	}
 }

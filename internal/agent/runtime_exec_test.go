@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -114,6 +115,93 @@ func TestExecRuntimeSpawnRejectsDuplicate(t *testing.T) {
 		ExecutionID: id, Bin: "/bin/sh", Args: []string{"-c", "true"},
 	}); err != ErrDuplicateExecution {
 		t.Fatalf("expected ErrDuplicateExecution, got %v", err)
+	}
+}
+
+// TestExecRuntimeSpawnConcurrentDuplicateAtomic is the concurrent
+// regression test the reviewer demanded: N goroutines race to Spawn the
+// same ExecutionID behind a barrier. Exactly one must succeed; every
+// other must get ErrDuplicateExecution. The atomic-reservation guarantee
+// means at most one cmd.Start() ever runs per ID, so the map holds a
+// single handle and no orphan process is left behind.
+func TestExecRuntimeSpawnConcurrentDuplicateAtomic(t *testing.T) {
+	const n = 16
+	r := NewExecRuntime()
+	id := AllocateExecutionID()
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := r.Spawn(context.Background(), Invocation{
+				ExecutionID: id,
+				Bin:         "/bin/sh",
+				Args:        []string{"-c", "sleep 0.2"},
+			})
+			results[i] = err
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var ok, dup, other int
+	for _, err := range results {
+		switch {
+		case err == nil:
+			ok++
+		case err == ErrDuplicateExecution:
+			dup++
+		default:
+			other++
+			t.Logf("unexpected spawn error: %v", err)
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("expected exactly 1 successful Spawn, got %d (dup=%d other=%d)", ok, dup, other)
+	}
+	if dup != n-1 {
+		t.Fatalf("expected %d ErrDuplicateExecution, got %d (ok=%d other=%d)", n-1, dup, ok, other)
+	}
+
+	r.mu.Lock()
+	size := len(r.procs)
+	r.mu.Unlock()
+	if size != 1 {
+		t.Fatalf("runtime map must hold exactly 1 handle, got %d", size)
+	}
+}
+
+// TestExecRuntimeSpawnRollbackOnStartFailure verifies that if cmd.Start()
+// fails the reservation is rolled back, so a later Spawn with the same
+// ID can proceed.
+func TestExecRuntimeSpawnRollbackOnStartFailure(t *testing.T) {
+	r := NewExecRuntime()
+	id := AllocateExecutionID()
+	_, err := r.Spawn(context.Background(), Invocation{
+		ExecutionID: id,
+		Bin:         "/nonexistent/binary/path/that/does/not/exist",
+	})
+	if err == nil {
+		t.Fatal("expected start error")
+	}
+	r.mu.Lock()
+	size := len(r.procs)
+	r.mu.Unlock()
+	if size != 0 {
+		t.Fatalf("reservation must be rolled back, map size=%d", size)
+	}
+	// A fresh Spawn with the same ID must succeed (reservation gone).
+	if _, err := r.Spawn(context.Background(), Invocation{
+		ExecutionID: id,
+		Bin:         "/bin/sh",
+		Args:        []string{"-c", "true"},
+	}); err != nil {
+		t.Fatalf("re-Spawn after rollback: %v", err)
 	}
 }
 

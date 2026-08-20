@@ -21,6 +21,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"bdtui/internal/workflow"
@@ -90,10 +91,14 @@ type OutputPaths struct {
 // The JSON Schema validates the result `data` object only; the `outcome`
 // field is a control-plane concern validated separately by the controller.
 type ResultContract struct {
+	roleID          string
 	schema          string
 	allowedOutcomes []string
 	declaredOutputs []string
 }
+
+// RoleID returns the role id this contract was resolved for.
+func (c ResultContract) RoleID() string { return c.roleID }
 
 // Schema returns the JSON Schema text for the result.json `data` object.
 func (c ResultContract) Schema() string { return c.schema }
@@ -112,9 +117,11 @@ func (c ResultContract) DeclaredOutputs() []string {
 // from the resolved role contract and the result_schema content. Outcomes
 // and Outputs are taken from the role; the controller cannot supply its own
 // disjoint lists, so the mandatory-artifact invariant cannot be bypassed.
+// role.Validate() is enforced first, so a malformed role (e.g. nil
+// Outputs) cannot mint a contract without mandatory artifacts.
 func ResolveContract(role workflow.RoleContract, schemaContent string) (ResultContract, error) {
-	if role.ID == "" {
-		return ResultContract{}, errors.New("agent: ResolveContract: role id is required")
+	if err := role.Validate(); err != nil {
+		return ResultContract{}, fmt.Errorf("agent: ResolveContract: role: %w", err)
 	}
 	if strings.TrimSpace(schemaContent) == "" {
 		return ResultContract{}, errors.New("agent: ResolveContract: schema is required")
@@ -144,16 +151,22 @@ func ResolveContract(role workflow.RoleContract, schemaContent string) (ResultCo
 	}
 
 	return ResultContract{
+		roleID:          role.ID,
 		schema:          schemaContent,
 		allowedOutcomes: outcomes,
 		declaredOutputs: outputs,
 	}, nil
 }
 
-// consistentWith reports whether c agrees with role on outcomes and outputs.
-// It is a defense-in-depth check used by tests; production code always
-// builds c via ResolveContract so this holds by construction.
+// consistentWith reports whether c was resolved for the exact same role it
+// is being paired with. It checks the role id, allowed outcomes, and
+// declared outputs. BuildEnvelope and the production reconciler MUST call
+// this before using a ResultContract; ResolveContract makes it hold by
+// construction for the originating role.
 func (c ResultContract) consistentWith(role workflow.RoleContract) error {
+	if c.roleID != role.ID {
+		return fmt.Errorf("agent: ResultContract: role_id mismatch (contract=%q, role=%q)", c.roleID, role.ID)
+	}
 	if !sameStringSet(c.allowedOutcomes, role.Outcomes) {
 		return errors.New("agent: ResultContract: allowed_outcomes do not match role.outcomes")
 	}

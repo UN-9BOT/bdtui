@@ -22,6 +22,9 @@ func BuildEnvelope(in EnvelopeInput) (string, error) {
 	if in.Role.ID == "" {
 		return "", errors.New("agent: envelope: role id is required")
 	}
+	if err := in.Contract.consistentWith(in.Role); err != nil {
+		return "", fmt.Errorf("agent: envelope: contract/role mismatch: %w", err)
+	}
 	if in.RolePrompt == "" {
 		return "", errors.New("agent: envelope: role prompt is required")
 	}
