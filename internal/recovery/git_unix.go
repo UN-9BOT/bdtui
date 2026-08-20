@@ -84,18 +84,28 @@ func (g *GitWorktree) DiffEmpty(ctx context.Context, workdir string) (bool, erro
 }
 
 // diffExitClean returns true when `git diff --exit-code` exits 0 (no diff).
-// --exit-code guarantees 0 when the working tree matches HEAD, 1 when there
-// is any difference, and propagates stderr for actual git errors.
+// `git diff --exit-code` always exits 1 when there is a real diff and 128
+// for actual git failures (missing object, bad reference, etc.). We must
+// classify on ExitCode rather than stderr because runGitRaw already
+// captured stderr into its own buffer, leaving ExitError.Stderr empty.
 func diffExitClean(ctx context.Context, workdir string, args ...string) (bool, error) {
 	full := append(append([]string{}, args...), "--exit-code")
-	_, _, err := runGitRaw(ctx, workdir, full...)
+	_, stderr, err := runGitRaw(ctx, workdir, full...)
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			if len(ee.Stderr) == 0 {
+			switch code := ee.ExitCode(); code {
+			case 0:
+				return true, nil
+			case 1:
 				return false, nil
+			default:
+				msg := strings.TrimSpace(stderr)
+				if msg == "" {
+					msg = strings.TrimSpace(string(ee.Stderr))
+				}
+				return false, fmt.Errorf("git diff (exit %d): %s", code, msg)
 			}
-			return false, fmt.Errorf("git diff: %s", strings.TrimSpace(string(ee.Stderr)))
 		}
 		return false, err
 	}
@@ -117,9 +127,19 @@ func (g *GitWorktree) Commit(ctx context.Context, workdir, subject, body string)
 	if strings.TrimSpace(body) != "" {
 		fullMsg = subject + "\n\n" + body
 	}
-	if _, stderr, err := runGitRaw(ctx, workdir, "commit", "--allow-empty", "-m", fullMsg); err != nil {
-		if strings.TrimSpace(stderr) == "" {
-			return "", fmt.Errorf("%w: commit failed", ErrCheckpointNotGitRepo)
+	stdout, stderr, err := runGitRaw(ctx, workdir, "commit", "-m", fullMsg)
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			code := ee.ExitCode()
+			msg := strings.TrimSpace(stderr)
+			if msg == "" {
+				msg = strings.TrimSpace(stdout)
+			}
+			if code == 1 && (strings.Contains(msg, "nothing to commit") || strings.Contains(msg, "nothing added to commit")) {
+				return "", ErrCheckpointNoOp
+			}
+			return "", fmt.Errorf("git commit (exit %d): %s", code, msg)
 		}
 		return "", err
 	}

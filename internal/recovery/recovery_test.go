@@ -243,6 +243,26 @@ func TestGitWorktree_DirtyTreeBlocked(t *testing.T) {
 	}
 }
 
+// TestGitWorktree_UnstagedOnlyDiff_RejectsEmptyCommit verifies that an
+// unstaged-only change (no staged content) does NOT create an empty
+// checkpoint commit: `git commit` without `--allow-empty` returns
+// "nothing to commit", which the Worktree surfaces as ErrCheckpointNoOp.
+func TestGitWorktree_UnstagedOnlyDiff_RejectsEmptyCommit(t *testing.T) {
+	dir := t.TempDir()
+	runCmd(t, dir, "git", "init", "-q")
+	runCmd(t, dir, "git", "config", "user.email", "test@example.com")
+	runCmd(t, dir, "git", "config", "user.name", "test")
+	runCmd(t, dir, "git", "commit", "--allow-empty", "-q", "-m", "init")
+	if err := os_WriteFile(dir, "a.txt", "change\n"); err != nil {
+		t.Fatal(err)
+	}
+	// No `git add` — change is unstaged only.
+	g := NewGitWorktree()
+	if _, err := g.Commit(context.Background(), dir, "checkpoint", ""); !errors.Is(err, ErrCheckpointNoOp) {
+		t.Fatalf("expected ErrCheckpointNoOp for unstaged-only diff, got %v", err)
+	}
+}
+
 func TestGitWorktree_RealCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	runCmd(t, dir, "git", "init", "-q")
