@@ -121,15 +121,17 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 // (no dashes) on first use. The id is opaque, machine-independent, and
 // survives moves of the workspace directory (since it lives inside it).
 //
-// The file is created winner-safe via O_CREATE|O_EXCL: at most one concurrent
-// caller can write the file, all others observe the winner's value. A read
-// failure (e.g. missing/unreadable beads-dir) surfaces as an error so the
-// caller never sends a daemon call with a "this-session only" id that
-// silently won't survive a restart.
+// Concurrent first calls agree on a single id: at most one caller wins the
+// O_CREATE|O_EXCL create (returns its own freshly generated id); all losers
+// observe IsExist and re-read the winner's id (with a tiny retry loop to
+// cover the brief window between create and fsync). A corrupt persisted
+// file or any other write failure surfaces as an error — we never silently
+// send a daemon call with a "this-session only" id that wouldn't survive
+// a restart.
 //
-// Returning "" on a missing / unreadable beads-dir is a soft failure — the
-// caller surfaces it as "no project configured" and we never round-trip
-// to the daemon with an empty id (the daemon rejects that with InvalidArgument).
+// Returning "" with a non-nil error on a missing/unreadable beads-dir is a
+// hard failure; the daemon rejects an empty project_id, so the caller must
+// surface the error rather than round-trip.
 func (m model) projectIDForBeadsDir() (string, error) {
 	beadsDir := strings.TrimSpace(m.BeadsDir)
 	if beadsDir == "" {
@@ -137,9 +139,13 @@ func (m model) projectIDForBeadsDir() (string, error) {
 	}
 	path := filepath.Join(beadsDir, projectIDFilename)
 
+	// Probe: read once. We never treat empty/invalid content as a hard
+	// error here, because a concurrent first-time publisher may have
+	// created the file but not yet flushed its bytes. Falling through to
+	// the publish path keeps the file self-healing and lets concurrent
+	// callers re-discover the winner via O_EXCL.
 	if data, err := os.ReadFile(path); err == nil {
-		id := strings.TrimSpace(string(data))
-		if validProjectID(id) {
+		if id := strings.TrimSpace(string(data)); validProjectID(id) {
 			return id, nil
 		}
 	} else if !os.IsNotExist(err) {
@@ -151,32 +157,61 @@ func (m model) projectIDForBeadsDir() (string, error) {
 		return "", fmt.Errorf("generate project id: %w", err)
 	}
 
-	// Winner-safe create: O_CREATE|O_EXCL fails if the file already exists
-	// between our ReadFile and our WriteFile (another caller wrote first).
-	// On that path we re-read and trust the winner.
+	// Publish atomically: O_CREATE|O_EXCL guarantees that at most one
+	// concurrent caller creates the file. A loser observes IsExist, then
+	// re-reads (with a tiny backoff loop so the winner has time to flush
+	// its contents) and returns the winner's id. Once published, the
+	// contents are stable for the lifetime of the file.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		if os.IsExist(err) {
-			data, rerr := os.ReadFile(path)
-			if rerr != nil {
-				return "", fmt.Errorf("re-read winner %s: %w", path, rerr)
-			}
-			winner := strings.TrimSpace(string(data))
-			if validProjectID(winner) {
-				return winner, nil
-			}
-			return "", fmt.Errorf("winner %s has invalid id", path)
+			return readPublishedProjectID(path)
 		}
-		return "", fmt.Errorf("persist %s: %w", path, err)
+		return "", fmt.Errorf("create %s: %w", path, err)
 	}
+	wrote := false
 	if _, err := f.WriteString(id); err != nil {
 		_ = f.Close()
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := f.Close(); err != nil {
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("fsync %s: %w", path, err)
+	}
+	if err := f.Close(); err == nil {
+		wrote = true
+	}
+	if !wrote {
+		// Close failed mid-flush; remove the partial file so a future call
+		// can retry rather than seeing a corrupt id.
+		_ = os.Remove(path)
 		return "", fmt.Errorf("close %s: %w", path, err)
 	}
 	return id, nil
+}
+
+// readPublishedProjectID polls for a non-empty file with a valid id.
+// A concurrent caller may have O_CREAT|O_EXCL'd the file but not yet
+// flushed the id bytes; a few short retries give the writer time to
+// complete while keeping the per-call latency bounded.
+func readPublishedProjectID(path string) (string, error) {
+	const maxAttempts = 16
+	delay := 200 * time.Microsecond
+	for i := 0; i < maxAttempts; i++ {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("re-read %s: %w", path, err)
+		}
+		id := strings.TrimSpace(string(data))
+		if validProjectID(id) {
+			return id, nil
+		}
+		time.Sleep(delay)
+		if delay < 2*time.Millisecond {
+			delay *= 2
+		}
+	}
+	return "", fmt.Errorf("winner %s has invalid id after %d attempts", path, maxAttempts)
 }
 
 // generateProjectID returns a fresh 32-char hex UUIDv4 suitable for use as
