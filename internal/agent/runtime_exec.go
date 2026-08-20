@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -44,6 +45,7 @@ type execHandle struct {
 	cmd        *exec.Cmd
 	stdoutBuf  bytes.Buffer
 	stderrBuf  bytes.Buffer
+	startDone  chan struct{}
 	done       chan struct{}
 	exitErr    error
 	finishOnce sync.Once
@@ -72,8 +74,9 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 		return Execution{}, ErrDuplicateExecution
 	}
 	h := &execHandle{
-		state: handleReserved,
-		done:  make(chan struct{}),
+		state:     handleReserved,
+		startDone: make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 	r.procs[inv.ExecutionID] = h
 	r.mu.Unlock()
@@ -96,6 +99,7 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 		// start error so they do not deadlock on h.done.
 		r.mu.Lock()
 		delete(r.procs, inv.ExecutionID)
+		close(h.startDone)
 		r.mu.Unlock()
 		h.exitErr = err
 		h.finishOnce.Do(func() { close(h.done) })
@@ -105,6 +109,7 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 	r.mu.Lock()
 	h.cmd = cmd
 	h.state = handleStarted
+	close(h.startDone)
 	r.mu.Unlock()
 
 	go func() {
@@ -163,14 +168,30 @@ func (r *ExecRuntime) waitHandle(_ context.Context, _ string, h *execHandle) (Ru
 
 // Stop terminates a running execution. No-op if the ID is unknown or the
 // process already exited.
-func (r *ExecRuntime) Stop(_ context.Context, exec Execution) error {
+func (r *ExecRuntime) Stop(ctx context.Context, exec Execution) error {
 	h, ok := r.lookup(exec.ID)
 	if !ok {
 		return nil
 	}
+
 	r.mu.Lock()
 	state := h.state
-	proc := h.cmd.Process
+	startDone := h.startDone
+	r.mu.Unlock()
+	if state == handleReserved {
+		select {
+		case <-startDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	r.mu.Lock()
+	state = h.state
+	var proc *os.Process
+	if h.cmd != nil {
+		proc = h.cmd.Process
+	}
 	r.mu.Unlock()
 	if state != handleStarted || proc == nil {
 		return nil

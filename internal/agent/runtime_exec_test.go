@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -207,6 +208,23 @@ func TestExecRuntimeSpawnRollbackOnStartFailure(t *testing.T) {
 
 // TestExecRuntimeStop verifies Stop terminates a long-running child and
 // causes Wait to return with a non-nil ExitErr.
+func TestExecRuntimeStopReservedWaitsForStart(t *testing.T) {
+	r := NewExecRuntime()
+	execID := AllocateExecutionID()
+	h := &execHandle{
+		state:     handleReserved,
+		startDone: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+	r.procs[execID] = h
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := r.Stop(ctx, Execution{ID: execID}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop error = %v, want context deadline exceeded", err)
+	}
+}
+
 func TestExecRuntimeStop(t *testing.T) {
 	r := NewExecRuntime()
 	execID := AllocateExecutionID()
