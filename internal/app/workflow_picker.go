@@ -104,8 +104,8 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 			return opMsg{err: fmt.Errorf("project id unavailable")}
 		}
 		run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{
-			ProjectId:          projectID,
-			TaskId:             taskID,
+			ProjectId:           projectID,
+			TaskId:              taskID,
 			WorkflowSnapshotRef: snapshot.Ref,
 			WorkflowSnapshot:    snapshot.JSON,
 		})
@@ -157,36 +157,48 @@ func (m model) projectIDForBeadsDir() (string, error) {
 		return "", fmt.Errorf("generate project id: %w", err)
 	}
 
-	// Publish atomically: O_CREATE|O_EXCL guarantees that at most one
-	// concurrent caller creates the file. A loser observes IsExist, then
-	// re-reads (with a tiny backoff loop so the winner has time to flush
-	// its contents) and returns the winner's id. Once published, the
-	// contents are stable for the lifetime of the file.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	// Publish atomically via temp+link: build the final bytes in a
+	// sibling temp file (write + fsync + close), then hard-link it onto
+	// the canonical path. os.Link is no-clobber on POSIX: if the target
+	// already exists the call fails with EEXIST and we read the winner.
+	// Crucially, the final path is never observed in a partial state —
+	// a concurrent reader either sees no file or the fully written id.
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".bdtui-project-id.*.tmp")
 	if err != nil {
-		if os.IsExist(err) {
-			return readPublishedProjectID(path)
+		return "", fmt.Errorf("temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+	if _, err := tmp.WriteString(id); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return "", fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return "", fmt.Errorf("fsync temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return "", fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Link(tmpName, path); err != nil {
+		cleanup()
+		if !os.IsExist(err) {
+			return "", fmt.Errorf("link %s -> %s: %w", tmpName, path, err)
 		}
-		return "", fmt.Errorf("create %s: %w", path, err)
+		// Loser: a winner already linked the canonical path. Read it.
+		winner, err := readPublishedProjectID(path)
+		if err != nil {
+			return "", err
+		}
+		return winner, nil
 	}
-	wrote := false
-	if _, err := f.WriteString(id); err != nil {
-		_ = f.Close()
-		return "", fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return "", fmt.Errorf("fsync %s: %w", path, err)
-	}
-	if err := f.Close(); err == nil {
-		wrote = true
-	}
-	if !wrote {
-		// Close failed mid-flush; remove the partial file so a future call
-		// can retry rather than seeing a corrupt id.
-		_ = os.Remove(path)
-		return "", fmt.Errorf("close %s: %w", path, err)
-	}
+	// We won: the canonical path now points at the same inode as our
+	// temp file. Remove the temp to leave only the canonical entry.
+	cleanup()
 	return id, nil
 }
 
