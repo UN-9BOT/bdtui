@@ -36,17 +36,17 @@ type handleState int
 
 const (
 	handleReserved handleState = iota // ID claimed, cmd.Start() not yet called
-	handleStarted                      // cmd.Start() succeeded, process is running
+	handleStarted                     // cmd.Start() succeeded, process is running
 )
 
 type execHandle struct {
-	state       handleState
-	cmd         *exec.Cmd
-	stdoutBuf   bytes.Buffer
-	stderrBuf   bytes.Buffer
-	done        chan struct{}
-	exitErr     error
-	finishOnce  sync.Once
+	state      handleState
+	cmd        *exec.Cmd
+	stdoutBuf  bytes.Buffer
+	stderrBuf  bytes.Buffer
+	done       chan struct{}
+	exitErr    error
+	finishOnce sync.Once
 }
 
 func NewExecRuntime() *ExecRuntime {
@@ -79,6 +79,7 @@ func (r *ExecRuntime) Spawn(_ context.Context, inv Invocation) (Execution, error
 	r.mu.Unlock()
 
 	cmd := exec.Command(inv.Bin, inv.Args...)
+	configureProcess(cmd)
 	if inv.Dir != "" {
 		cmd.Dir = inv.Dir
 	}
@@ -174,7 +175,12 @@ func (r *ExecRuntime) Stop(_ context.Context, exec Execution) error {
 	if state != handleStarted || proc == nil {
 		return nil
 	}
-	return proc.Kill()
+	select {
+	case <-h.done:
+		return nil
+	default:
+	}
+	return stopProcess(proc)
 }
 
 func (r *ExecRuntime) lookup(id string) (*execHandle, bool) {
