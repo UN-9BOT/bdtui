@@ -187,15 +187,17 @@ type runTrace struct {
 	humanInputs  []string // ids, one per ask step
 }
 
-// startBarrier is a 2-party rendezvous: each goroutine calls Arrive()
-// after creating + activating its Run. Both goroutines wait until both
-// have arrived, then proceed to the rest of their steps. This guarantees
-// the test exercises the "two active Runs simultaneously" invariant
-// instead of running them sequentially by accident.
+// startBarrier is a 2-party rendezvous. Each goroutine calls Arrive()
+// after its Run has been created + transitioned to RunRunning. Both
+// goroutines wait until both have arrived, then proceed. Cancel() lets
+// the main goroutine unblock a surviving driver if the other side
+// errors out before reaching the barrier, so a pre-barrier failure does
+// not deadlock the surviving goroutine.
 type startBarrier struct {
-	mu      sync.Mutex
-	arrived int
-	cond    *sync.Cond
+	mu        sync.Mutex
+	arrived   int
+	cancelled bool
+	cond      *sync.Cond
 }
 
 func newStartBarrier() *startBarrier {
@@ -204,17 +206,30 @@ func newStartBarrier() *startBarrier {
 	return b
 }
 
-func (b *startBarrier) Arrive() {
+func (b *startBarrier) Arrive() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.cancelled {
+		return false
+	}
 	b.arrived++
 	if b.arrived >= 2 {
 		b.cond.Broadcast()
-		return
+		return true
 	}
-	for b.arrived < 2 {
+	for b.arrived < 2 && !b.cancelled {
 		b.cond.Wait()
 	}
+	return !b.cancelled
+}
+
+// Cancel releases all pending waiters. Used by the main goroutine to
+// unblock a surviving driver after the other side returns an error.
+func (b *startBarrier) Cancel() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cancelled = true
+	b.cond.Broadcast()
 }
 
 // driveResult bundles the trace and any error encountered by a driver
@@ -227,82 +242,63 @@ type driveResult struct {
 }
 
 // driveSmoothPath walks Run A through plan -> review -> implement -> end.
-// It reaches the startBarrier before advancing step attempts so the
-// parallel-isolation invariant is exercised against the live store.
-func driveSmoothPath(h *mvpHarness, snap workflow.Snapshot, taskID string, barrier *startBarrier) driveResult {
-	ctx := context.Background()
+// Both Runs have already been created and transitioned to RunRunning in
+// the main goroutine before this driver is launched -- the barrier that
+// follows ensures the two drivers advance their step phases in lock-step
+// so the parallel-isolation invariant is exercised against the live store.
+func driveSmoothPath(h *mvpHarness, snap workflow.Snapshot, runID, taskID string, barrier *startBarrier) driveResult {
+	_ = taskID
 
-	run, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
-		ProjectId:           h.project.ID,
-		TaskId:              taskID,
-		WorkflowSnapshotRef: snap.Ref,
-		WorkflowSnapshot:    snap.JSON,
-	})
-	if err != nil {
-		return driveResult{err: errors.New("CreateRun smooth: " + err.Error())}
-	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
-		return driveResult{err: errors.New("TransitionRun smooth: " + err.Error())}
+	if !barrier.Arrive() {
+		return driveResult{err: errors.New("barrier cancelled before smooth path arrived")}
 	}
 
-	barrier.Arrive() // both Runs are now active
-
-	trace := runTrace{runID: run.Id}
+	trace := runTrace{runID: runID}
 	for _, step := range []agentStepCall{
 		{stepID: "plan", inputs: `{"goal":"ship mvp","steps":["a","b"],"risks":["none"]}`, outcome: "planned", output: "plan"},
 		{stepID: "review", inputs: `{"plan":"x"}`, outcome: "approved", output: "review"},
 		{stepID: "implement", inputs: `{"plan":"x","review":"y"}`, outcome: "done", output: "patch"},
 	} {
-		if saID, err := advanceAgent(h.store, run.Id, step, &trace); err != nil {
+		if saID, err := advanceAgent(h.store, runID, step, &trace); err != nil {
 			return driveResult{err: errors.New("advanceAgent " + step.stepID + ": " + err.Error())}
 		} else {
 			trace.stepAttempts = append(trace.stepAttempts, saID)
 		}
 	}
 
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunCompleted); err != nil {
+	if err := h.store.TransitionRun(context.Background(), runID, orch.RunCompleted); err != nil {
 		return driveResult{err: errors.New("TransitionRun completed: " + err.Error())}
 	}
 	return driveResult{trace: trace}
 }
 
 // driveHumanAttentionPath walks Run B through plan -> review -> ask_initial
-// (human) -> replan -> review_replan -> ask_replan -> replan -> ...
-// through to a terminal implement_replan -> end. It arrives at the
-// startBarrier immediately after creating Run B and transitioning it to
-// RunRunning so the parallel-isolation invariant is exercised. Every
-// StepAttempt, Execution, Artifact, and HumanInput id is recorded in the
-// trace. ask_initial and ask_replan are explicit terminal transitions so
-// completed Runs never contain non-terminal StepAttempts.
-func driveHumanAttentionPath(h *mvpHarness, snap workflow.Snapshot, taskID string, barrier *startBarrier) driveResult {
+// (human) -> replan_initial -> review_replan -> implement_replan -> end.
+// Run creation + transition to RunRunning has already happened in the
+// main goroutine; the barrier rendezvous then starts the two step
+// phases simultaneously. Every StepAttempt, Execution, Artifact, and
+// HumanInput id is recorded in the trace. The ask_initial attempt is
+// explicitly transitioned StepWaitingHuman -> StepCompleted so completed
+// Runs never contain non-terminal StepAttempts.
+func driveHumanAttentionPath(h *mvpHarness, snap workflow.Snapshot, runID, taskID string, barrier *startBarrier) driveResult {
+	_ = taskID
+
+	if !barrier.Arrive() {
+		return driveResult{err: errors.New("barrier cancelled before human path arrived")}
+	}
+
 	ctx := context.Background()
-
-	run, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
-		ProjectId:           h.project.ID,
-		TaskId:              taskID,
-		WorkflowSnapshotRef: snap.Ref,
-		WorkflowSnapshot:    snap.JSON,
-	})
-	if err != nil {
-		return driveResult{err: errors.New("CreateRun human: " + err.Error())}
-	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
-		return driveResult{err: errors.New("TransitionRun human: " + err.Error())}
-	}
-
-	barrier.Arrive() // both Runs are now active
-
-	trace := runTrace{runID: run.Id}
+	trace := runTrace{runID: runID}
 
 	// plan produces a planned plan; review asks for clarification (notes
 	// describe the question); ask_initial receives the question and the
-	// human answers; replan produces a new plan; review_replan approves;
-	// implement_replan ships.
+	// human answers; replan_initial produces a new plan; review_replan
+	// approves; implement_replan ships.
 	for _, step := range []agentStepCall{
 		{stepID: "plan", inputs: `{"goal":"ship mvp","steps":["a"],"risks":["none"]}`, outcome: "planned", output: "plan"},
 		{stepID: "review", inputs: `{"plan":"x"}`, outcome: "question", output: "review"},
 	} {
-		if saID, err := advanceAgent(h.store, run.Id, step, &trace); err != nil {
+		if saID, err := advanceAgent(h.store, runID, step, &trace); err != nil {
 			return driveResult{err: errors.New("advanceAgent " + step.stepID + ": " + err.Error())}
 		} else {
 			trace.stepAttempts = append(trace.stepAttempts, saID)
@@ -313,17 +309,17 @@ func driveHumanAttentionPath(h *mvpHarness, snap workflow.Snapshot, taskID strin
 	// inputs: notes from review -- the workflow spec guarantees that
 	// review.notes actually reaches the human step, which is what the
 	// previous version of the harness skipped.
-	askSA, err := startHumanStep(ctx, h.store, run.Id, "ask_initial")
+	askSA, err := startHumanStep(ctx, h.store, runID, "ask_initial")
 	if err != nil {
 		return driveResult{err: errors.New("startHumanStep ask_initial: " + err.Error())}
 	}
 	trace.stepAttempts = append(trace.stepAttempts, askSA.ID)
-	hi, err := createHumanInput(ctx, h.store, run.Id, askSA.ID, "Please clarify: which scope, MVP-only or full feature?")
+	hi, err := createHumanInput(ctx, h.store, runID, askSA.ID, "Please clarify: which scope, MVP-only or full feature?")
 	if err != nil {
 		return driveResult{err: errors.New("createHumanInput ask_initial: " + err.Error())}
 	}
 	trace.humanInputs = append(trace.humanInputs, hi.ID)
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunWaitingHuman); err != nil {
+	if err := h.store.TransitionRun(ctx, runID, orch.RunWaitingHuman); err != nil {
 		return driveResult{err: errors.New("TransitionRun waiting_human: " + err.Error())}
 	}
 
@@ -336,23 +332,23 @@ func driveHumanAttentionPath(h *mvpHarness, snap workflow.Snapshot, taskID strin
 	if err := h.store.TransitionStepAttempt(ctx, askSA.ID, orch.StepCompleted); err != nil {
 		return driveResult{err: errors.New("TransitionStepAttempt ask_initial completed: " + err.Error())}
 	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
+	if err := h.store.TransitionRun(ctx, runID, orch.RunRunning); err != nil {
 		return driveResult{err: errors.New("TransitionRun resume: " + err.Error())}
 	}
 
 	for _, step := range []agentStepCall{
-		{stepID: "replan", inputs: `{"clarification":"x"}`, outcome: "planned", output: "plan"},
+		{stepID: "replan_initial", inputs: `{"clarification":"x"}`, outcome: "planned", output: "plan"},
 		{stepID: "review_replan", inputs: `{"plan":"y"}`, outcome: "approved", output: "review"},
 		{stepID: "implement_replan", inputs: `{"plan":"y","review":"z"}`, outcome: "done", output: "patch"},
 	} {
-		if saID, err := advanceAgent(h.store, run.Id, step, &trace); err != nil {
+		if saID, err := advanceAgent(h.store, runID, step, &trace); err != nil {
 			return driveResult{err: errors.New("advanceAgent " + step.stepID + ": " + err.Error())}
 		} else {
 			trace.stepAttempts = append(trace.stepAttempts, saID)
 		}
 	}
 
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunCompleted); err != nil {
+	if err := h.store.TransitionRun(ctx, runID, orch.RunCompleted); err != nil {
 		return driveResult{err: errors.New("TransitionRun completed: " + err.Error())}
 	}
 	return driveResult{trace: trace}
@@ -482,23 +478,60 @@ func TestMVPVerticalSlice(t *testing.T) {
 	h := newMVPHarness(t)
 	snap := loadMvpShip(t)
 
+	// Create both Runs and transition them to RunRunning in the main
+	// goroutine. Doing this BEFORE launching the driver goroutines
+	// guarantees both Runs are active simultaneously (parallel
+	// isolation), and any setup failure fails the test immediately
+	// instead of deadlocking a surviving driver at the barrier.
+	ctx := context.Background()
+	runA, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+		ProjectId:           h.project.ID,
+		TaskId:              "task-smooth",
+		WorkflowSnapshotRef: snap.Ref,
+		WorkflowSnapshot:    snap.JSON,
+	})
+	if err != nil {
+		t.Fatalf("CreateRun A: %v", err)
+	}
+	if err := h.store.TransitionRun(ctx, runA.Id, orch.RunRunning); err != nil {
+		t.Fatalf("TransitionRun A: %v", err)
+	}
+	runB, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+		ProjectId:           h.project.ID,
+		TaskId:              "task-human",
+		WorkflowSnapshotRef: snap.Ref,
+		WorkflowSnapshot:    snap.JSON,
+	})
+	if err != nil {
+		t.Fatalf("CreateRun B: %v", err)
+	}
+	if err := h.store.TransitionRun(ctx, runB.Id, orch.RunRunning); err != nil {
+		t.Fatalf("TransitionRun B: %v", err)
+	}
+
 	barrier := newStartBarrier()
 	results := make(chan driveResult, 2)
 
 	go func() {
-		results <- driveSmoothPath(h, snap, "task-smooth", barrier)
+		results <- driveSmoothPath(h, snap, runA.Id, "task-smooth", barrier)
 	}()
 	go func() {
-		results <- driveHumanAttentionPath(h, snap, "task-human", barrier)
+		results <- driveHumanAttentionPath(h, snap, runB.Id, "task-human", barrier)
 	}()
 
 	traceA := <-results
 	traceB := <-results
-	if traceA.err != nil {
-		t.Fatalf("smooth path: %v", traceA.err)
-	}
-	if traceB.err != nil {
-		t.Fatalf("human path: %v", traceB.err)
+	if traceA.err != nil || traceB.err != nil {
+		// Unblock any pending barrier waiter before failing.
+		barrier.Cancel()
+		// Drain the second result so the goroutine doesn't leak.
+		<-results
+		if traceA.err != nil {
+			t.Fatalf("smooth path: %v", traceA.err)
+		}
+		if traceB.err != nil {
+			t.Fatalf("human path: %v", traceB.err)
+		}
 	}
 
 	verifyFinalState(t, h.store, traceA.trace.runID, orch.RunCompleted)
