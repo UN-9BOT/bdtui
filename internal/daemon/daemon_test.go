@@ -294,14 +294,21 @@ func TestErrorMapping(t *testing.T) {
 		t.Fatalf("GetRun error = %v, want NotFound", err)
 	}
 
+	// CreateRun now resolves-or-creates project_id, so a missing project is
+	// not an error path anymore. Empty project_id stays an error.
 	_, err = client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: "missing-project", TaskId: "task-x"})
-	if status.Code(err) != codes.NotFound {
-		t.Fatalf("CreateRun error = %v, want NotFound", err)
+	if err != nil {
+		t.Fatalf("CreateRun with new project_id = %v, want nil (auto-create)", err)
 	}
 
 	_, err = client.CreateRun(ctx, &daemonpb.CreateRunRequest{ProjectId: "p"})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("CreateRun without task_id = %v, want InvalidArgument", err)
+	}
+
+	_, err = client.CreateRun(ctx, &daemonpb.CreateRunRequest{TaskId: "t"})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("CreateRun without project_id = %v, want InvalidArgument", err)
 	}
 }
 
@@ -437,10 +444,12 @@ func startBareTestServer(t *testing.T) (*orch.Store, *Client) {
 	return store, client
 }
 
-func TestCreateRunAutoBootstrapsDefaultProject(t *testing.T) {
+func TestCreateRunAutoBootstrapsProjectFromID(t *testing.T) {
 	store, client := startBareTestServer(t)
 
+	const id = "workspace-hash-abc"
 	r, err := client.CreateRun(context.Background(), &daemonpb.CreateRunRequest{
+		ProjectId:          id,
 		TaskId:             "task-x",
 		WorkflowSnapshot:   "{}",
 		WorkflowSnapshotRef: "ref-x",
@@ -451,19 +460,40 @@ func TestCreateRunAutoBootstrapsDefaultProject(t *testing.T) {
 	if r.Id == "" {
 		t.Fatal("empty run id")
 	}
-	if r.ProjectId == "" {
-		t.Fatal("empty project_id")
+	if r.ProjectId != id {
+		t.Fatalf("project_id = %q, want %q", r.ProjectId, id)
 	}
 
 	projects := listAllProjects(t, store)
 	if len(projects) != 1 {
 		t.Fatalf("projects = %d, want 1", len(projects))
 	}
-	if projects[0].ID != r.ProjectId {
-		t.Fatalf("run project %q != default project %q", r.ProjectId, projects[0].ID)
+	if projects[0].ID != id || projects[0].Name != id {
+		t.Fatalf("project = %+v, want id=name=%q", projects[0], id)
 	}
-	if projects[0].Name != "default" {
-		t.Fatalf("default project name = %q", projects[0].Name)
+
+	// Second CreateRun with the same project_id reuses the row, no duplicate.
+	if _, err := client.CreateRun(context.Background(), &daemonpb.CreateRunRequest{
+		ProjectId: id, TaskId: "task-y",
+		WorkflowSnapshot: "{}", WorkflowSnapshotRef: "ref-y",
+	}); err != nil {
+		t.Fatalf("second CreateRun: %v", err)
+	}
+	if projects := listAllProjects(t, store); len(projects) != 1 {
+		t.Fatalf("projects after reuse = %d, want 1", len(projects))
+	}
+
+	// Different workspace hash => distinct project row, distinct
+	// active-run uniqueness scope.
+	const other = "workspace-hash-def"
+	if _, err := client.CreateRun(context.Background(), &daemonpb.CreateRunRequest{
+		ProjectId: other, TaskId: "task-x",
+		WorkflowSnapshot: "{}", WorkflowSnapshotRef: "ref-z",
+	}); err != nil {
+		t.Fatalf("other CreateRun: %v", err)
+	}
+	if projects := listAllProjects(t, store); len(projects) != 2 {
+		t.Fatalf("projects after second workspace = %d, want 2", len(projects))
 	}
 }
 

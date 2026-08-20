@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,6 +60,13 @@ func (m model) loadWorkflowOptions() ([]WorkflowOption, error) {
 // launchRunCmd resolves the named workflow into a snapshot, sends CreateRun
 // to the daemon, then locally transitions the task to in_progress so the
 // board reflects the claim without depending on bd.
+//
+// Run creation is the sole side-effect: we deliberately do NOT push a status
+// change back to bd. The bead description states queued/running state is
+// surfaced by the orchestrator, not encoded into Beads. Adding a follow-up
+// bd update would split the operation into two non-atomic steps where a
+// failure of the second step leaves a queued Run with no Beads claim, and a
+// follow-up retry then hits ErrActiveRunExists.
 func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 	workflowName = strings.TrimSpace(workflowName)
 	taskID = strings.TrimSpace(taskID)
@@ -81,7 +90,9 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 			return opMsg{err: err}
 		}
 
+		projectID := m.projectIDForBeadsDir()
 		run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+			ProjectId:          projectID,
 			TaskId:             taskID,
 			WorkflowSnapshotRef: snapshot.Ref,
 			WorkflowSnapshot:    snapshot.JSON,
@@ -89,17 +100,25 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 		if err != nil {
 			return opMsg{err: fmt.Errorf("create run: %w", err)}
 		}
-
-		// Mark the task as locally claimed. The board reads Display +
-		// Status so this surfaces the active run without writing back to bd.
-		if err := m.Client.UpdateIssue(UpdateParams{
-			ID:     taskID,
-			Status: statusPtr(StatusInProgress),
-		}); err != nil {
-			return opMsg{err: fmt.Errorf("claim: %w", err), info: fmt.Sprintf("run %s created", run.Id)}
-		}
 		return opMsg{info: fmt.Sprintf("run %s started", run.Id)}
 	}
+}
+
+// projectIDForBeadsDir returns a stable, content-addressable project ID
+// derived from the configured beads directory. The daemon resolves this ID
+// into a project row (creating it on first call), so different workspaces
+// never share an active-run uniqueness scope.
+//
+// Using a hash keeps the ID opaque (no fs_path leaks over the wire) and
+// stable across restarts and machines, so the same workspace on different
+// runs of the same TUI maps to the same project row.
+func (m model) projectIDForBeadsDir() string {
+	root, err := filepath.Abs(strings.TrimSpace(m.BeadsDir))
+	if err != nil || root == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(root))
+	return hex.EncodeToString(sum[:8])
 }
 
 // snapshotWorkflow loads the named workflow bundle and compiles a canonical
@@ -143,5 +162,3 @@ func daemonDBPath(beadsDir string) string {
 	}
 	return daemon.DefaultDBPath()
 }
-
-func statusPtr(s Status) *Status { return &s }

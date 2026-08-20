@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"bdtui/internal/daemon/daemonpb"
@@ -15,21 +14,12 @@ import (
 
 const eventPollInterval = 100 * time.Millisecond
 
-// defaultProjectName is the name of the auto-created fallback project used
-// when a CreateRun request omits project_id. The single default project is
-// shared by all clients until a real multi-project flow lands.
-const defaultProjectName = "default"
-
 // Service implements the daemon gRPC API over an orch.Store. It is the only
 // writer to the store while the daemon is running, keeping concurrent clients
 // serialized through SQLite's write transactions.
 type Service struct {
 	daemonpb.UnimplementedOrchestratorServer
 	store *orch.Store
-
-	defaultProjectOnce sync.Once
-	defaultProjectID   string
-	defaultProjectErr  error
 }
 
 func NewService(store *orch.Store) *Service {
@@ -40,20 +30,15 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 	if req.TaskId == "" {
 		return nil, status.Error(codes.InvalidArgument, "task_id is required")
 	}
-	projectID := req.ProjectId
-	if projectID == "" {
-		id, err := s.ensureDefaultProject(ctx)
-		if err != nil {
-			return nil, toStatus(err)
-		}
-		projectID = id
+	if req.ProjectId == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id is required")
 	}
-	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+	if err := s.resolveOrCreateProject(ctx, req.ProjectId); err != nil {
 		return nil, toStatus(err)
 	}
 
 	r := &orch.Run{
-		ProjectID:           projectID,
+		ProjectID:           req.ProjectId,
 		TaskID:              req.TaskId,
 		Status:              orch.RunQueued,
 		WorkflowSnapshotRef: req.WorkflowSnapshotRef,
@@ -65,19 +50,20 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 	return runToProto(r), nil
 }
 
-// ensureDefaultProject lazily creates the singleton fallback project used by
-// CreateRun when no project_id is supplied. Concurrent first calls serialize
-// through sync.Once; later calls reuse the cached id.
-func (s *Service) ensureDefaultProject(ctx context.Context) (string, error) {
-	s.defaultProjectOnce.Do(func() {
-		id, err := s.store.GetOrCreateDefaultProject(ctx, defaultProjectName)
-		if err != nil {
-			s.defaultProjectErr = err
-			return
-		}
-		s.defaultProjectID = id
-	})
-	return s.defaultProjectID, s.defaultProjectErr
+// resolveOrCreateProject treats project_id as the canonical project handle.
+// If the row exists it is reused so different workspaces with distinct IDs
+// never share an active-run uniqueness scope. If the row is missing it is
+// created with the id used as both primary key and name, so the same client
+// always resolves to the same project on subsequent calls.
+func (s *Service) resolveOrCreateProject(ctx context.Context, id string) error {
+	_, err := s.store.GetProject(ctx, id)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, orch.ErrNotFound) {
+		return err
+	}
+	return s.store.CreateProject(ctx, &orch.Project{ID: id, Name: id})
 }
 
 func (s *Service) ListRuns(ctx context.Context, req *daemonpb.ListRunsRequest) (*daemonpb.ListRunsResponse, error) {

@@ -60,7 +60,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (*Project, error) {
 
 // ListProjects returns every project in the store, ordered by created_at then
 // id. Intended for client-side resolution; callers that need a specific row
-// should prefer GetProject or GetOrCreateDefaultProject.
+// should prefer GetProject.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, name, fs_path, git_remote, created_at, updated_at
@@ -85,63 +85,6 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
-}
-
-// GetOrCreateDefaultProject returns the existing project named name, creating
-// it on first call. Used by Service.ensureDefaultProject so the daemon can
-// fall back to a singleton workspace when clients omit project_id.
-//
-// Name uniqueness is not enforced at the schema layer (projects.id is the
-// only unique key), so this method does a SELECT-or-INSERT in a single
-// transaction. Two concurrent callers may both attempt the INSERT; the
-// loser receives the existing row on a follow-up SELECT. Empty FsPath/GitRemote
-// are acceptable — the fallback project is workspace-agnostic.
-func (s *Store) GetOrCreateDefaultProject(ctx context.Context, name string) (string, error) {
-	if name == "" {
-		return "", errors.New("orch: default project name is required")
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback()
-
-	var id string
-	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM projects WHERE name = ? ORDER BY created_at LIMIT 1`, name,
-	).Scan(&id)
-	if err == nil {
-		return id, tx.Commit()
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-
-	id = uuid.NewString()
-	now := nowUTC()
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO projects(id, name, fs_path, git_remote, created_at, updated_at)
-		 VALUES(?, ?, '', '', ?, ?)`,
-		id, name, timeString(now), timeString(now),
-	); err != nil {
-		// Lost the race: another writer created the same-named project between
-		// the SELECT and the INSERT. Read the canonical id and return it.
-		if rerow := tx.QueryRowContext(ctx,
-			`SELECT id FROM projects WHERE name = ? ORDER BY created_at LIMIT 1`, name,
-		).Scan(&id); rerow == nil {
-			return id, tx.Commit()
-		} else {
-			return "", err
-		}
-	}
-	if err := appendEventMapTx(ctx, tx, nil, EventProjectUpserted, map[string]any{"project_id": id}); err != nil {
-		return "", err
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
-	}
-	return id, nil
 }
 
 // UpdateProject mutates the project's movable attributes (name, fs_path,

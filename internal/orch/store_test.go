@@ -561,36 +561,5 @@ func TestHumanInputAnswer(t *testing.T) {
 	}
 }
 
+
 func strPtrTo(s string) *string { return &s }
-
-func TestGetOrCreateDefaultProjectIsIdempotent(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	id1, err := s.GetOrCreateDefaultProject(ctx, "default")
-	if err != nil {
-		t.Fatalf("first create: %v", err)
-	}
-	if id1 == "" {
-		t.Fatal("first id is empty")
-	}
-
-	id2, err := s.GetOrCreateDefaultProject(ctx, "default")
-	if err != nil {
-		t.Fatalf("second call: %v", err)
-	}
-	if id1 != id2 {
-		t.Fatalf("second id = %q, want %q", id2, id1)
-	}
-
-	p, err := s.GetProject(ctx, id1)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if p.Name != "default" {
-		t.Fatalf("name = %q, want default", p.Name)
-	}
-	if p.FsPath != "" {
-		t.Fatalf("fs_path = %q, want empty", p.FsPath)
-	}
-}

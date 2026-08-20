@@ -87,3 +87,28 @@ steps:
     on:
       planned: end
 `
+
+func TestProjectIDForBeadsDirIsStable(t *testing.T) {
+	dir := t.TempDir()
+	m := model{BeadsDir: dir}
+	id1 := m.projectIDForBeadsDir()
+	if id1 == "" {
+		t.Fatal("project id is empty")
+	}
+	if len(id1) != 16 {
+		t.Fatalf("project id len = %d, want 16 hex chars", len(id1))
+	}
+	if id2 := m.projectIDForBeadsDir(); id2 != id1 {
+		t.Fatalf("project id not stable: %q vs %q", id1, id2)
+	}
+}
+
+func TestProjectIDForBeadsDirDistinguishesWorkspaces(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	idA := model{BeadsDir: dirA}.projectIDForBeadsDir()
+	idB := model{BeadsDir: dirB}.projectIDForBeadsDir()
+	if idA == idB {
+		t.Fatalf("distinct beads dirs must produce distinct project ids, both = %q", idA)
+	}
+}
