@@ -42,6 +42,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBlockerPickerKey(msg)
 	case ModeWorkflowPicker:
 		return m.handleWorkflowPickerKey(msg)
+	case ModeRuns:
+		return m.handleRunsKey(msg)
 	case ModeDepList:
 		return m.handleDepListKey(msg)
 	case ModeConfirmDelete:
@@ -580,6 +582,50 @@ func (m model) handleParentPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 	}
 	return m, nil
+}
+
+// handleRunsKey handles navigation and actions inside the Runs tab.
+// j/k move the selection; r retries the selected run; x cancels it;
+// R reloads; Esc / q closes the tab and returns to the board.
+func (m model) handleRunsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Mode = ModeBoard
+		m.Runs = nil
+		return m, nil
+	case "j", "down":
+		m.moveRunSelection(1)
+		return m, nil
+	case "k", "up":
+		m.moveRunSelection(-1)
+		return m, nil
+	case "r":
+		return m.retrySelectedRun()
+	case "x":
+		return m.cancelSelectedRun()
+	case "R":
+		if m.Daemon == nil {
+			m.setToast("warning", "daemon not running")
+			return m, nil
+		}
+		if m.Runs != nil {
+			m.Runs.LoadingMsg = "refreshing..."
+		}
+		return m, loadRunsCmd(m.Daemon)
+	}
+	return m, nil
+}
+
+// handleRunsLoadedMsg is dispatched from Update when the async run
+// load completes.
+func (m model) handleRunsLoadedMsg(msg runsLoadedMsg) (tea.Model, tea.Cmd) {
+	return m.handleRunsLoaded(msg)
+}
+
+// handleRunsActionMsg is dispatched from Update when an RPC (retry or
+// cancel) returns.
+func (m model) handleRunsActionMsg(msg runsActionMsg) (tea.Model, tea.Cmd) {
+	return m.handleRunsAction(msg)
 }
 
 // handleWorkflowPickerKey navigates the workflow list and submits a CreateRun
@@ -1335,6 +1381,13 @@ func (m model) handleDefaultLeaderCombo(key string) (tea.Model, tea.Cmd) {
 		m.BlockerPicker = newBlockerPickerState(m.Issues, issue.ID, issue.BlockedBy, m.SortMode)
 		m.Mode = ModeBlockerPicker
 		return m, nil
+	case "R":
+		// Switch to the Runs tab. The daemon client is opened on demand
+		// inside openRunsTab; if the user has never launched a run, the
+		// daemon may not be running and the call returns a warning toast
+		// instead of an empty tab.
+		model, cmd := m.openRunsTab()
+		return model, cmd
 	case "p":
 		m.ParentPicker = newParentPickerState(m.Issues, issue.ID, issue.Parent)
 		m.Mode = ModeParentPicker

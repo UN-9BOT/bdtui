@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"bdtui/internal/daemon"
 	"bdtui/internal/logger"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -60,6 +61,8 @@ type Model struct {
 	MuxPicker       *MuxPickerState
 	BlockerPicker   *BlockerPickerState
 	WorkflowPicker  *WorkflowPickerState
+	Runs            *RunsTabState
+	Daemon          *daemon.Client // cached gRPC client for the Runs tab; nil when not yet opened.
 
 	DepList *DepListState
 
@@ -191,6 +194,7 @@ func (m *model) clearTransientUI() {
 	m.MuxPicker = nil
 	m.BlockerPicker = nil
 	m.WorkflowPicker = nil
+	m.Runs = nil
 	m.DepList = nil
 	m.DescriptionPreview = nil
 	m.ConfirmDelete = nil

@@ -150,6 +150,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Mode = ModeDepList
 		return m, nil
 
+	case runsLoadedMsg:
+		return m.handleRunsLoadedMsg(msg)
+
+	case runsActionMsg:
+		return m.handleRunsActionMsg(msg)
+
 	case deletePreviewMsg:
 		if msg.err != nil {
 			m.setToast("error", msg.err.Error())

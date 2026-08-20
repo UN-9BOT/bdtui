@@ -335,6 +335,20 @@ func (m Model) RenderWorkflowPickerModal() string {
 	return m.renderWorkflowPickerModal()
 }
 
+// RenderRunsModal exposes the Runs tab so black-box tests in tests/
+// can assert the rendered output without depending on unexported
+// fields.
+func (m Model) RenderRunsModal() string {
+	return m.renderRunsModal()
+}
+
+// SetRuns is a small test helper that primes the Runs tab with a
+// synthetic row list and selects index 0. Use it from tests/ to
+// avoid driving the daemon over gRPC just to assert render output.
+func (m *Model) SetRuns(rows []RunRow) {
+	m.Runs = &RunsTabState{Loaded: true, Rows: rows, Index: 0}
+}
+
 func (m Model) RenderConfirmClosedParentCreateModal() string {
 	return m.renderConfirmClosedParentCreateModal()
 }
