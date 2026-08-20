@@ -318,12 +318,15 @@ func (m model) snapshotWorkflow(ctx context.Context, name string) (workflow.Snap
 
 // ensureDaemon returns a daemon client, starting one if no live socket is
 // present. Returns an error if the daemon binary is unavailable.
+//
+// m.BeadsDir is already validated by findBeadsDir() to be the absolute
+// path of the .beads directory (not its parent), so we just stat it
+// directly to make sure the configured directory is still on disk at
+// launch time — appending ".beads" here would look for .beads/.beads
+// which never exists in a real workspace.
 func (m model) ensureDaemon(ctx context.Context) (*daemon.Client, error) {
-	if m.BeadsDir == "" {
-		return nil, fmt.Errorf("no beads-dir configured")
-	}
-	if _, err := os.Stat(filepath.Join(m.BeadsDir, ".beads")); err != nil {
-		return nil, fmt.Errorf("beads-dir %q has no .beads: %w", m.BeadsDir, err)
+	if err := validateBeadsDir(m.BeadsDir); err != nil {
+		return nil, err
 	}
 	opts := daemon.Options{
 		SocketPath: daemonSocketPath(),
@@ -344,4 +347,23 @@ func daemonDBPath(beadsDir string) string {
 		return v
 	}
 	return daemon.DefaultDBPath()
+}
+
+// validateBeadsDir checks that the configured BeadsDir points at an
+// existing directory. m.BeadsDir is the absolute path of the .beads
+// directory itself (validated by findBeadsDir); we must NOT append
+// another ".beads" here or we end up checking .beads/.beads, which
+// never exists in a real workspace. Exposed for testing.
+func validateBeadsDir(beadsDir string) error {
+	if beadsDir == "" {
+		return fmt.Errorf("no beads-dir configured")
+	}
+	st, err := os.Stat(beadsDir)
+	if err != nil {
+		return fmt.Errorf("beads-dir %q: %w", beadsDir, err)
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("beads-dir %q is not a directory", beadsDir)
+	}
+	return nil
 }

@@ -173,6 +173,40 @@ func mustGitRepoWithBeads(t *testing.T) (repoDir, beadsDir string) {
 	return repoDir, beadsDir
 }
 
+// TestValidateBeadsDirIsAdirectory: regression for the bug where
+// ensureDaemon checked <beads-dir>/.beads but BeadsDir is already the
+// .beads directory, so the check always failed in real workspaces.
+func TestValidateBeadsDirIsAdirectory(t *testing.T) {
+	dir := t.TempDir()
+	beads := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beads, 0o700); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+	if err := validateBeadsDir(beads); err != nil {
+		t.Fatalf("validateBeadsDir(%q) = %v, want nil", beads, err)
+	}
+
+	// Missing directory must error, not silently pass.
+	missing := filepath.Join(dir, "nope")
+	if err := validateBeadsDir(missing); err == nil {
+		t.Fatalf("validateBeadsDir(%q) = nil, want error", missing)
+	}
+
+	// A regular file (not a directory) must error.
+	notDir := filepath.Join(dir, "file")
+	if err := os.WriteFile(notDir, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := validateBeadsDir(notDir); err == nil {
+		t.Fatalf("validateBeadsDir(%q) = nil, want error", notDir)
+	}
+
+	// Empty config must error.
+	if err := validateBeadsDir(""); err == nil {
+		t.Fatal("validateBeadsDir(\"\") = nil, want error")
+	}
+}
+
 func TestGenerateProjectIDIsUniqueAndValid(t *testing.T) {
 	seen := make(map[string]struct{}, 100)
 	for i := 0; i < 100; i++ {
