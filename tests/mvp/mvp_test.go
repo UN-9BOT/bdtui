@@ -8,17 +8,22 @@
 // The test does NOT actually execute agent processes (no real Maki/Herdr
 // binary is required). It drives the orchestrator state machine directly
 // via the public Store APIs -- CreateRun, StartStepAttempt,
-// TransitionStepAttempt, CreateExecution, CreateArtifact, CreateHumanInput,
-// AnswerHumanInput -- simulating what a controller would do. The contract
-// under test is the state machine itself: legal transitions, the unique
-// active-run constraint, and durability across daemon restarts.
+// TransitionStepAttempt, CreateExecution, TransitionExecution, CreateArtifact,
+// CompleteStepAttempt, CreateHumanInput, AnswerHumanInput -- simulating what
+// a controller would do. The contract under test is the state machine
+// itself: legal transitions, the unique active-run constraint, the human
+// step completion invariant (terminal Runs must not contain non-terminal
+// StepAttempts), and durability across daemon restarts.
 package mvp_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -169,128 +174,208 @@ func socketAlive(socketPath string) bool {
 	return true
 }
 
-// runSmoothPath walks Run A through plan -> review -> implement -> end. The
-// "smooth" path produces no human input and reaches RunCompleted in a single
-// happy pass. It validates that the orchestrator accepts and persists the
-// state machine transitions end-to-end without a controller.
-func runSmoothPath(t *testing.T, h *mvpHarness, snap workflow.Snapshot, taskID string) string {
-	t.Helper()
-	ctx := context.Background()
-
-	run, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
-		ProjectId:           h.project.ID,
-		TaskId:              taskID,
-		WorkflowSnapshotRef: snap.Ref,
-		WorkflowSnapshot:    snap.JSON,
-	})
-	if err != nil {
-		t.Fatalf("CreateRun(%s): %v", taskID, err)
-	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
-		t.Fatalf("TransitionRun %s: %v", taskID, err)
-	}
-
-	advanceAgent(t, h.store, run.Id, "plan", `{"goal":"ship mvp","steps":["a","b"],"risks":["none"]}`, "planned", "plan")
-	advanceAgent(t, h.store, run.Id, "review", `{"plan":"x"}`, "approved", "review")
-	advanceAgent(t, h.store, run.Id, "implement", `{"plan":"x","review":"y"}`, "done", "patch")
-
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunCompleted); err != nil {
-		t.Fatalf("TransitionRun %s -> completed: %v", taskID, err)
-	}
-	return run.Id
+// runTrace is the per-Run persisted record collected by the driver paths.
+// Every id captured here is later re-read by verifyPersistedAcrossRestart,
+// so the harness can prove the daemon restart survived the entire graph
+// (Runs, StepAttempts, Executions, Artifacts, HumanInputs) -- not just the
+// top-level Run row.
+type runTrace struct {
+	runID        string
+	stepAttempts []string // ids, in driver order
+	executions   []string // ids, one per agent step attempt
+	artifacts    []string // ids, one per agent step attempt
+	humanInputs  []string // ids, one per ask step
 }
 
-// runHumanAttentionPath walks Run B through plan -> review -> ask (human) ->
-// replan -> review -> implement -> end. The human step pauses the run with a
-// HumanInput; we then answer it and continue. Validates the human-attention
-// branch produces a terminal RunCompleted after the response, and that the
-// intermediate waiting_human / answered transitions are correctly persisted.
-func runHumanAttentionPath(t *testing.T, h *mvpHarness, snap workflow.Snapshot, taskID string) string {
-	t.Helper()
+// startBarrier is a 2-party rendezvous. Each goroutine calls Arrive()
+// after its Run has been created + transitioned to RunRunning. Both
+// goroutines wait until both have arrived, then proceed. Cancel() lets
+// the main goroutine unblock a surviving driver if the other side
+// errors out before reaching the barrier, so a pre-barrier failure does
+// not deadlock the surviving goroutine.
+type startBarrier struct {
+	mu        sync.Mutex
+	arrived   int
+	cancelled bool
+	cond      *sync.Cond
+}
+
+func newStartBarrier() *startBarrier {
+	b := &startBarrier{}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
+func (b *startBarrier) Arrive() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cancelled {
+		return false
+	}
+	b.arrived++
+	if b.arrived >= 2 {
+		b.cond.Broadcast()
+		return true
+	}
+	for b.arrived < 2 && !b.cancelled {
+		b.cond.Wait()
+	}
+	return !b.cancelled
+}
+
+// Cancel releases all pending waiters. Used by the main goroutine to
+// unblock a surviving driver after the other side returns an error.
+func (b *startBarrier) Cancel() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cancelled = true
+	b.cond.Broadcast()
+}
+
+// driveResult bundles the trace and any error encountered by a driver
+// goroutine. Errors are returned through the channel so the test main
+// goroutine -- the only one allowed to call t.Fatalf -- is the sole
+// arbiter of pass/fail.
+type driveResult struct {
+	trace runTrace
+	err   error
+}
+
+// driveSmoothPath walks Run A through plan -> review -> implement -> end.
+// Both Runs have already been created and transitioned to RunRunning in
+// the main goroutine before this driver is launched -- the barrier that
+// follows ensures the two drivers advance their step phases in lock-step
+// so the parallel-isolation invariant is exercised against the live store.
+func driveSmoothPath(h *mvpHarness, snap workflow.Snapshot, runID, taskID string, barrier *startBarrier) driveResult {
+	_ = taskID
+
+	if !barrier.Arrive() {
+		return driveResult{err: errors.New("barrier cancelled before smooth path arrived")}
+	}
+
+	trace := runTrace{runID: runID}
+	for _, step := range []agentStepCall{
+		{stepID: "plan", inputs: `{"goal":"ship mvp","steps":["a","b"],"risks":["none"]}`, outcome: "planned", output: "plan"},
+		{stepID: "review", inputs: `{"plan":"x"}`, outcome: "approved", output: "review"},
+		{stepID: "implement", inputs: `{"plan":"x","review":"y"}`, outcome: "done", output: "patch"},
+	} {
+		if saID, err := advanceAgent(h.store, runID, step, &trace); err != nil {
+			return driveResult{err: errors.New("advanceAgent " + step.stepID + ": " + err.Error())}
+		} else {
+			trace.stepAttempts = append(trace.stepAttempts, saID)
+		}
+	}
+
+	if err := h.store.TransitionRun(context.Background(), runID, orch.RunCompleted); err != nil {
+		return driveResult{err: errors.New("TransitionRun completed: " + err.Error())}
+	}
+	return driveResult{trace: trace}
+}
+
+// driveHumanAttentionPath walks Run B through plan -> review -> ask_initial
+// (human) -> replan_initial -> review_replan -> implement_replan -> end.
+// Run creation + transition to RunRunning has already happened in the
+// main goroutine; the barrier rendezvous then starts the two step
+// phases simultaneously. Every StepAttempt, Execution, Artifact, and
+// HumanInput id is recorded in the trace. The ask_initial attempt is
+// explicitly transitioned StepWaitingHuman -> StepCompleted so completed
+// Runs never contain non-terminal StepAttempts.
+func driveHumanAttentionPath(h *mvpHarness, snap workflow.Snapshot, runID, taskID string, barrier *startBarrier) driveResult {
+	_ = taskID
+
+	if !barrier.Arrive() {
+		return driveResult{err: errors.New("barrier cancelled before human path arrived")}
+	}
+
 	ctx := context.Background()
+	trace := runTrace{runID: runID}
 
-	run, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
-		ProjectId:           h.project.ID,
-		TaskId:              taskID,
-		WorkflowSnapshotRef: snap.Ref,
-		WorkflowSnapshot:    snap.JSON,
-	})
+	// plan produces a planned plan; review asks for clarification (notes
+	// describe the question); ask_initial receives the question and the
+	// human answers; replan_initial produces a new plan; review_replan
+	// approves; implement_replan ships.
+	for _, step := range []agentStepCall{
+		{stepID: "plan", inputs: `{"goal":"ship mvp","steps":["a"],"risks":["none"]}`, outcome: "planned", output: "plan"},
+		{stepID: "review", inputs: `{"plan":"x"}`, outcome: "question", output: "review"},
+	} {
+		if saID, err := advanceAgent(h.store, runID, step, &trace); err != nil {
+			return driveResult{err: errors.New("advanceAgent " + step.stepID + ": " + err.Error())}
+		} else {
+			trace.stepAttempts = append(trace.stepAttempts, saID)
+		}
+	}
+
+	// Park in waiting_human on the ask_initial step. ask_initial has
+	// inputs: notes from review -- the workflow spec guarantees that
+	// review.notes actually reaches the human step, which is what the
+	// previous version of the harness skipped.
+	askSA, err := startHumanStep(ctx, h.store, runID, "ask_initial")
 	if err != nil {
-		t.Fatalf("CreateRun(%s): %v", taskID, err)
+		return driveResult{err: errors.New("startHumanStep ask_initial: " + err.Error())}
 	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
-		t.Fatalf("TransitionRun %s: %v", taskID, err)
-	}
-
-	advanceAgent(t, h.store, run.Id, "plan", `{"goal":"ship mvp","steps":["a"],"risks":["none"]}`, "planned", "plan")
-	advanceAgent(t, h.store, run.Id, "review", `{"plan":"x"}`, "question", "review")
-
-	// Park the run in waiting_human. The ask step is a human step in the
-	// workflow, so we allocate a StepAttempt for it (the orchestrator
-	// schema requires every human_input to reference a step_attempt) and
-	// transition that attempt to waiting_human before persisting the
-	// HumanInput record.
-	askSA, err := h.store.StartStepAttempt(ctx, run.Id, "ask", "")
+	trace.stepAttempts = append(trace.stepAttempts, askSA.ID)
+	hi, err := createHumanInput(ctx, h.store, runID, askSA.ID, "Please clarify: which scope, MVP-only or full feature?")
 	if err != nil {
-		t.Fatalf("StartStepAttempt ask: %v", err)
+		return driveResult{err: errors.New("createHumanInput ask_initial: " + err.Error())}
 	}
-	// The shared state machine allows queued -> running -> waiting_human,
-	// not a direct queued -> waiting_human jump. Step the attempt through
-	// running first so the controller-allocated record matches what a
-	// real worker would do.
-	if err := h.store.TransitionStepAttempt(ctx, askSA.ID, orch.StepRunning); err != nil {
-		t.Fatalf("TransitionStepAttempt ask running: %v", err)
-	}
-	if err := h.store.TransitionStepAttempt(ctx, askSA.ID, orch.StepWaitingHuman); err != nil {
-		t.Fatalf("TransitionStepAttempt ask waiting_human: %v", err)
-	}
-	hi := &orch.HumanInput{
-		RunID:         run.Id,
-		StepAttemptID: askSA.ID,
-		Prompt:        "Please clarify the goal",
-		Status:        orch.HumanPending,
-	}
-	if err := h.store.CreateHumanInput(ctx, hi); err != nil {
-		t.Fatalf("CreateHumanInput: %v", err)
-	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunWaitingHuman); err != nil {
-		t.Fatalf("TransitionRun waiting_human: %v", err)
+	trace.humanInputs = append(trace.humanInputs, hi.ID)
+	if err := h.store.TransitionRun(ctx, runID, orch.RunWaitingHuman); err != nil {
+		return driveResult{err: errors.New("TransitionRun waiting_human: " + err.Error())}
 	}
 
-	// Resume by answering the human input.
+	// Resume by answering the human input, then explicitly transition the
+	// ask_initial StepAttempt to StepCompleted before continuing. A
+	// terminal Run must not contain a non-terminal StepAttempt.
 	if err := h.store.AnswerHumanInput(ctx, hi.ID, "ship only the parse phase"); err != nil {
-		t.Fatalf("AnswerHumanInput: %v", err)
+		return driveResult{err: errors.New("AnswerHumanInput: " + err.Error())}
 	}
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunRunning); err != nil {
-		t.Fatalf("TransitionRun resume: %v", err)
+	if err := h.store.TransitionStepAttempt(ctx, askSA.ID, orch.StepCompleted); err != nil {
+		return driveResult{err: errors.New("TransitionStepAttempt ask_initial completed: " + err.Error())}
+	}
+	if err := h.store.TransitionRun(ctx, runID, orch.RunRunning); err != nil {
+		return driveResult{err: errors.New("TransitionRun resume: " + err.Error())}
 	}
 
-	advanceAgent(t, h.store, run.Id, "replan", `{"clarification":"x"}`, "planned", "plan")
-	advanceAgent(t, h.store, run.Id, "review", `{"plan":"x"}`, "approved", "review")
-	advanceAgent(t, h.store, run.Id, "implement", `{"plan":"x","review":"y"}`, "done", "patch")
-
-	if err := h.store.TransitionRun(ctx, run.Id, orch.RunCompleted); err != nil {
-		t.Fatalf("TransitionRun %s -> completed: %v", taskID, err)
+	for _, step := range []agentStepCall{
+		{stepID: "replan_initial", inputs: `{"clarification":"x"}`, outcome: "planned", output: "plan"},
+		{stepID: "review_replan", inputs: `{"plan":"y"}`, outcome: "approved", output: "review"},
+		{stepID: "implement_replan", inputs: `{"plan":"y","review":"z"}`, outcome: "done", output: "patch"},
+	} {
+		if saID, err := advanceAgent(h.store, runID, step, &trace); err != nil {
+			return driveResult{err: errors.New("advanceAgent " + step.stepID + ": " + err.Error())}
+		} else {
+			trace.stepAttempts = append(trace.stepAttempts, saID)
+		}
 	}
-	return run.Id
+
+	if err := h.store.TransitionRun(ctx, runID, orch.RunCompleted); err != nil {
+		return driveResult{err: errors.New("TransitionRun completed: " + err.Error())}
+	}
+	return driveResult{trace: trace}
 }
 
-// advanceAgent simulates a single agent step attempt for the MVP harness:
-// it allocates a queued StepAttempt, walks it through queued -> running ->
-// completed, records the agent Execution with the provided result JSON and
-// artifact, and records a StepAttempt result that names the produced output.
-// The helper is intentionally minimal: real controllers will replace each
-// of these calls with concrete agent-runtime wiring.
-func advanceAgent(t *testing.T, store *orch.Store, runID, stepID, inputs, outcome, output string) {
-	t.Helper()
+// agentStepCall groups the parameters for a single simulated agent step.
+type agentStepCall struct {
+	stepID  string
+	inputs  string
+	outcome string
+	output  string
+}
+
+// advanceAgent simulates a single agent step attempt: allocates a queued
+// StepAttempt, walks it through queued -> running -> completed (recording
+// the result string), records the agent Execution and its result JSON +
+// artifact. Returns the StepAttempt id; the trace is mutated to append
+// the Execution and Artifact ids as a side effect.
+func advanceAgent(store *orch.Store, runID string, step agentStepCall, trace *runTrace) (string, error) {
 	ctx := context.Background()
 
-	sa, err := store.StartStepAttempt(ctx, runID, stepID, inputs)
+	sa, err := store.StartStepAttempt(ctx, runID, step.stepID, step.inputs)
 	if err != nil {
-		t.Fatalf("StartStepAttempt %s/%s: %v", runID, stepID, err)
+		return "", err
 	}
 	if err := store.TransitionStepAttempt(ctx, sa.ID, orch.StepRunning); err != nil {
-		t.Fatalf("TransitionStepAttempt %s running: %v", sa.ID, err)
+		return "", err
 	}
 
 	exec := &orch.Execution{
@@ -298,74 +383,187 @@ func advanceAgent(t *testing.T, store *orch.Store, runID, stepID, inputs, outcom
 		StepAttemptID: sa.ID,
 		Kind:          orch.KindAgent,
 		Status:        orch.ExecQueued,
-		PromptRef:     "roles/" + stepID + "/prompt",
+		PromptRef:     "roles/" + step.stepID + "/prompt",
 		PromptHash:    "deadbeef",
 	}
 	if err := store.CreateExecution(ctx, exec); err != nil {
-		t.Fatalf("CreateExecution: %v", err)
+		return "", err
 	}
 	if err := store.TransitionExecution(ctx, exec.ID, orch.ExecRunning); err != nil {
-		t.Fatalf("TransitionExecution running: %v", err)
+		return "", err
 	}
-
-	resultJSON := `{"step":"` + stepID + `","outcome":"` + outcome + `"}`
+	resultJSON := `{"step":"` + step.stepID + `","outcome":"` + step.outcome + `"}`
 	if err := store.TransitionExecution(ctx, exec.ID, orch.ExecCompleted); err != nil {
-		t.Fatalf("TransitionExecution completed: %v", err)
+		return "", err
 	}
-	execResultJSON := resultJSON
-	if err := execSetResult(store, exec.ID, execResultJSON); err != nil {
-		t.Fatalf("set exec result: %v", err)
+	if err := store.SetExecutionResultJSON(ctx, exec.ID, resultJSON); err != nil {
+		return "", err
 	}
 	if err := store.CreateArtifact(ctx, &orch.Artifact{
 		ExecutionID: exec.ID,
-		Name:        output,
-		Path:        "/tmp/mvp/" + runID + "/" + stepID + "/" + output + ".json",
-		Hash:        "sha256:" + stepID + ":" + outcome,
+		Name:        step.output,
+		Path:        "/tmp/mvp/" + runID + "/" + step.stepID + "/" + step.output + ".json",
+		Hash:        "sha256:" + step.stepID + ":" + step.outcome,
 	}); err != nil {
-		t.Fatalf("CreateArtifact: %v", err)
+		return "", err
 	}
+	trace.executions = append(trace.executions, exec.ID)
+	trace.artifacts = append(trace.artifacts, latestArtifactID(store, exec.ID))
 
-	result := outcome + ":" + output
-	if err := store.CompleteStepAttempt(ctx, sa.ID, result); err != nil {
-		t.Fatalf("CompleteStepAttempt %s: %v", sa.ID, err)
+	if err := store.CompleteStepAttempt(ctx, sa.ID, step.outcome+":"+step.output); err != nil {
+		return "", err
 	}
+	return sa.ID, nil
 }
 
-// execSetResult is a small bridge that records the JSON result of an
-// Execution via the orch.Store API. It exists to keep the advanceAgent
-// helper readable; the actual call is a thin wrapper around
-// Store.SetExecutionResultJSON.
-func execSetResult(store *orch.Store, id, jsonResult string) error {
-	return store.SetExecutionResultJSON(context.Background(), id, jsonResult)
+// startHumanStep allocates a queued StepAttempt for a human step and walks
+// it through the shared queued -> running -> waiting_human sequence (the
+// state machine forbids a direct queued -> waiting_human jump). Returns
+// the attempt so the caller can attach a HumanInput record to it.
+func startHumanStep(ctx context.Context, store *orch.Store, runID, stepID string) (*orch.StepAttempt, error) {
+	sa, err := store.StartStepAttempt(ctx, runID, stepID, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := store.TransitionStepAttempt(ctx, sa.ID, orch.StepRunning); err != nil {
+		return nil, err
+	}
+	if err := store.TransitionStepAttempt(ctx, sa.ID, orch.StepWaitingHuman); err != nil {
+		return nil, err
+	}
+	return sa, nil
+}
+
+// createHumanInput persists a pending HumanInput row pointing at the
+// given StepAttempt and returns the populated record (with its assigned
+// ID). The caller is responsible for transitioning the Run to
+// RunWaitingHuman.
+func createHumanInput(ctx context.Context, store *orch.Store, runID, stepAttemptID, prompt string) (*orch.HumanInput, error) {
+	hi := &orch.HumanInput{
+		RunID:         runID,
+		StepAttemptID: stepAttemptID,
+		Prompt:        prompt,
+		Status:        orch.HumanPending,
+	}
+	if err := store.CreateHumanInput(ctx, hi); err != nil {
+		return nil, err
+	}
+	return hi, nil
+}
+
+// latestArtifactID is a tiny helper used during agent-step simulation to
+// append the just-created artifact id to the run trace without forcing
+// the driver to track it locally.
+func latestArtifactID(store *orch.Store, executionID string) string {
+	arts, err := store.ListArtifactsByExecution(context.Background(), executionID)
+	if err != nil || len(arts) == 0 {
+		return ""
+	}
+	return arts[len(arts)-1].ID
 }
 
 // TestMVPVerticalSlice is the acceptance milestone for BIR-51.
 //
-// It launches the daemon in-process, creates two Runs against two distinct
-// Beads tasks in the same project, drives them through different workflow
-// branches (smooth and human-attention), restarts the daemon, and verifies
-// that all durable state survives the restart with correct terminal
-// statuses.
+// Two Runs are launched against two distinct Beads tasks in the same
+// project. A startBarrier rendezvous ensures both Runs are in
+// RunRunning before either advances to step attempts, so the
+// parallel-isolation invariant is exercised on the live store. Run A
+// walks the smooth path; Run B walks the human-attention path
+// (ask_initial -> replan -> review_replan -> implement_replan). After
+// both complete, the daemon is restarted and the harness verifies
+// every persisted entity (Runs + StepAttempts + Executions + Artifacts +
+// HumanInputs) survives intact, AND that every StepAttempt in a
+// completed Run is terminal.
 func TestMVPVerticalSlice(t *testing.T) {
 	h := newMVPHarness(t)
 	snap := loadMvpShip(t)
 
-	runA := runSmoothPath(t, h, snap, "task-smooth")
-	runB := runHumanAttentionPath(t, h, snap, "task-human")
+	// Create both Runs and transition them to RunRunning in the main
+	// goroutine. Doing this BEFORE launching the driver goroutines
+	// guarantees both Runs are active simultaneously (parallel
+	// isolation), and any setup failure fails the test immediately
+	// instead of deadlocking a surviving driver at the barrier.
+	ctx := context.Background()
+	runA, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+		ProjectId:           h.project.ID,
+		TaskId:              "task-smooth",
+		WorkflowSnapshotRef: snap.Ref,
+		WorkflowSnapshot:    snap.JSON,
+	})
+	if err != nil {
+		t.Fatalf("CreateRun A: %v", err)
+	}
+	if err := h.store.TransitionRun(ctx, runA.Id, orch.RunRunning); err != nil {
+		t.Fatalf("TransitionRun A: %v", err)
+	}
+	runB, err := h.client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+		ProjectId:           h.project.ID,
+		TaskId:              "task-human",
+		WorkflowSnapshotRef: snap.Ref,
+		WorkflowSnapshot:    snap.JSON,
+	})
+	if err != nil {
+		t.Fatalf("CreateRun B: %v", err)
+	}
+	if err := h.store.TransitionRun(ctx, runB.Id, orch.RunRunning); err != nil {
+		t.Fatalf("TransitionRun B: %v", err)
+	}
 
-verifyFinalState(t, h.store, runA, orch.RunCompleted)
-	verifyFinalState(t, h.store, runB, orch.RunCompleted)
-	// Daemon restart: every persisted entity (Runs, StepAttempts, Executions,
-	// Artifacts, HumanInputs) must survive intact.
+	barrier := newStartBarrier()
+	results := make(chan driveResult, 2)
+
+	go func() {
+		results <- driveSmoothPath(h, snap, runA.Id, "task-smooth", barrier)
+	}()
+	go func() {
+		results <- driveHumanAttentionPath(h, snap, runB.Id, "task-human", barrier)
+	}()
+
+	traceA := <-results
+	traceB := <-results
+	// Both drivers always send exactly one result. Cancel the barrier so
+	// any driver still parked in Arrive() returns false and surfaces an
+	// error to the main goroutine before sending. Don't try a third
+	// receive -- the channel only ever holds two sends.
+	barrier.Cancel()
+	if traceA.err != nil {
+		t.Fatalf("smooth path: %v", traceA.err)
+	}
+	if traceB.err != nil {
+		t.Fatalf("human path: %v", traceB.err)
+	}
+
+	verifyFinalState(t, h.store, traceA.trace.runID, orch.RunCompleted)
+	verifyFinalState(t, h.store, traceB.trace.runID, orch.RunCompleted)
+	verifyNoNonTerminalStepAttempts(t, h.store, traceA.trace)
+	verifyNoNonTerminalStepAttempts(t, h.store, traceB.trace)
+
+	// Daemon restart: every persisted entity must survive intact.
 	h.restart(t)
 
-	verifyFinalState(t, h.store, runA, orch.RunCompleted)
-	verifyFinalState(t, h.store, runB, orch.RunCompleted)
-	verifyProjectScopedRuns(t, h.client, h.project.ID, []string{runA, runB})
+	verifyFinalState(t, h.store, traceA.trace.runID, orch.RunCompleted)
+	verifyFinalState(t, h.store, traceB.trace.runID, orch.RunCompleted)
+	verifyNoNonTerminalStepAttempts(t, h.store, traceA.trace)
+	verifyNoNonTerminalStepAttempts(t, h.store, traceB.trace)
+	verifyTracesAcrossRestart(t, h.store, traceA.trace)
+	verifyTracesAcrossRestart(t, h.store, traceB.trace)
+	verifyProjectScopedRuns(t, h.client, h.project.ID, []string{traceA.trace.runID, traceB.trace.runID})
+
+	// Smoke check: the events emitted for Run A include an explicit
+	// transition from queued -> running for the plan step (proves the
+	// event stream recorded the parallel start, not just the final
+	// terminal transitions). The previous harness shipped with this
+	// assertion removed; we keep a small sample to catch regressions
+	// where the driver accidentally sequences the two paths.
+	if !hasTransition(t, h.store, traceA.trace, orch.EventStepTransition, "queued", "running") {
+		t.Fatalf("Run A missing queued->running step transition event")
+	}
+	if !hasTransition(t, h.store, traceB.trace, orch.EventStepTransition, "queued", "running") {
+		t.Fatalf("Run B missing queued->running step transition event")
+	}
 }
 
-// verifyFinalState asserts the run exists and has the expected terminal
-// status, plus that it has at least one persisted StepAttempt.
+// verifyFinalState asserts the run exists and has the expected status.
 func verifyFinalState(t *testing.T, store *orch.Store, runID string, want orch.RunStatus) {
 	t.Helper()
 	r, err := store.GetRun(context.Background(), runID)
@@ -374,6 +572,69 @@ func verifyFinalState(t *testing.T, store *orch.Store, runID string, want orch.R
 	}
 	if r.Status != want {
 		t.Fatalf("run %s status = %s, want %s", runID, r.Status, want)
+	}
+}
+
+// verifyNoNonTerminalStepAttempts asserts every StepAttempt recorded in the
+// trace reached a terminal status. Terminal Runs holding non-terminal
+// children is a real durability bug (we'd persist inconsistency), so the
+// harness explicitly fails on it instead of letting it pass.
+func verifyNoNonTerminalStepAttempts(t *testing.T, store *orch.Store, trace runTrace) {
+	t.Helper()
+	for _, saID := range trace.stepAttempts {
+		sa, err := store.GetStepAttempt(context.Background(), saID)
+		if err != nil {
+			t.Fatalf("GetStepAttempt(%s): %v", saID, err)
+		}
+		if !sa.Status.Terminal() {
+			t.Fatalf("run %s step attempt %s status = %s, want terminal (run is %s)",
+				trace.runID, saID, sa.Status, orch.RunCompleted)
+		}
+	}
+}
+
+// verifyTracesAcrossRestart re-reads every recorded id (StepAttempt,
+// Execution, Artifact, HumanInput) by its dedicated store API, after the
+// daemon has been restarted. This is the regression test that would have
+// caught a stuck waiting_human child or a dropped artifact in earlier
+// rounds.
+func verifyTracesAcrossRestart(t *testing.T, store *orch.Store, trace runTrace) {
+	t.Helper()
+	ctx := context.Background()
+	for _, saID := range trace.stepAttempts {
+		if _, err := store.GetStepAttempt(ctx, saID); err != nil {
+			t.Fatalf("restart: GetStepAttempt(%s): %v", saID, err)
+		}
+	}
+	for _, execID := range trace.executions {
+		if _, err := store.GetExecution(ctx, execID); err != nil {
+			t.Fatalf("restart: GetExecution(%s): %v", execID, err)
+		}
+	}
+	for _, artID := range trace.artifacts {
+		if artID == "" {
+			continue
+		}
+		present := false
+		for _, execID := range trace.executions {
+			arts, err := store.ListArtifactsByExecution(ctx, execID)
+			if err != nil {
+				t.Fatalf("restart: ListArtifactsByExecution(%s): %v", execID, err)
+			}
+			for _, a := range arts {
+				if a.ID == artID {
+					present = true
+				}
+			}
+		}
+		if !present {
+			t.Fatalf("restart: artifact %s not found under any execution", artID)
+		}
+	}
+	for _, hiID := range trace.humanInputs {
+		if _, err := store.GetHumanInput(ctx, hiID); err != nil {
+			t.Fatalf("restart: GetHumanInput(%s): %v", hiID, err)
+		}
 	}
 }
 
@@ -397,4 +658,30 @@ func verifyProjectScopedRuns(t *testing.T, client *daemon.Client, projectID stri
 			t.Fatalf("ListRuns missing %s; got %v", id, resp.Runs)
 		}
 	}
+}
+
+// hasTransition scans the trace's run events (re-fetched post-restart)
+// for a step.transition event with the given from/to pair.
+func hasTransition(t *testing.T, store *orch.Store, trace runTrace, eventType, from, to string) bool {
+	t.Helper()
+	rows, err := store.ListEventsByRun(context.Background(), trace.runID)
+	if err != nil {
+		t.Fatalf("ListEventsByRun(%s): %v", trace.runID, err)
+	}
+	for _, r := range rows {
+		if r.Type != eventType {
+			continue
+		}
+		var p struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}
+		if err := json.Unmarshal([]byte(r.Payload), &p); err != nil {
+			continue
+		}
+		if p.From == from && p.To == to {
+			return true
+		}
+	}
+	return false
 }
