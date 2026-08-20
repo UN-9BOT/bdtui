@@ -216,7 +216,9 @@ func TestGitWorktree_EmptyRepo_ResolveHead(t *testing.T) {
 func TestGitWorktree_NoOpCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	runCmd(t, dir, "git", "init", "-q")
-	runCmd(t, dir, "git", "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--allow-empty", "-q", "-m", "init")
+	runCmd(t, dir, "git", "config", "user.email", "test@example.com")
+	runCmd(t, dir, "git", "config", "user.name", "test")
+	runCmd(t, dir, "git", "commit", "--allow-empty", "-q", "-m", "init")
 	cp, err := WriteCheckpoint(context.Background(), NewGitWorktree(), dir, "run-1", "step-1", "subject", "")
 	if !errors.Is(err, ErrCheckpointNoOp) {
 		t.Fatalf("expected ErrCheckpointNoOp on clean tree, got %v", err)
@@ -229,7 +231,9 @@ func TestGitWorktree_NoOpCheckpoint(t *testing.T) {
 func TestGitWorktree_DirtyTreeBlocked(t *testing.T) {
 	dir := t.TempDir()
 	runCmd(t, dir, "git", "init", "-q")
-	runCmd(t, dir, "git", "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--allow-empty", "-q", "-m", "init")
+	runCmd(t, dir, "git", "config", "user.email", "test@example.com")
+	runCmd(t, dir, "git", "config", "user.name", "test")
+	runCmd(t, dir, "git", "commit", "--allow-empty", "-q", "-m", "init")
 	if err := os_WriteFile(dir, "b.txt", "uncommitted\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -242,12 +246,17 @@ func TestGitWorktree_DirtyTreeBlocked(t *testing.T) {
 func TestGitWorktree_RealCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	runCmd(t, dir, "git", "init", "-q")
-	runCmd(t, dir, "git", "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--allow-empty", "-q", "-m", "init")
+	// Make the test repository self-contained: commit identity is local
+	// so the production Worktree.Commit can succeed without per-call
+	// user.email/user.name flags.
+	runCmd(t, dir, "git", "config", "user.email", "test@example.com")
+	runCmd(t, dir, "git", "config", "user.name", "test")
+	runCmd(t, dir, "git", "commit", "--allow-empty", "-q", "-m", "init")
 	if err := os_WriteFile(dir, "a.txt", "first\n"); err != nil {
 		t.Fatal(err)
 	}
 	runCmd(t, dir, "git", "add", "a.txt")
-	runCmd(t, dir, "git", "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-q", "-m", "seed")
+	runCmd(t, dir, "git", "commit", "-q", "-m", "seed")
 	before, err := NewGitWorktree().ResolveHead(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
