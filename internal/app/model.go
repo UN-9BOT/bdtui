@@ -59,6 +59,7 @@ type Model struct {
 	ParentPicker    *ParentPickerState
 	MuxPicker       *MuxPickerState
 	BlockerPicker   *BlockerPickerState
+	WorkflowPicker  *WorkflowPickerState
 
 	DepList *DepListState
 
@@ -189,6 +190,7 @@ func (m *model) clearTransientUI() {
 	m.ParentPicker = nil
 	m.MuxPicker = nil
 	m.BlockerPicker = nil
+	m.WorkflowPicker = nil
 	m.DepList = nil
 	m.DescriptionPreview = nil
 	m.ConfirmDelete = nil

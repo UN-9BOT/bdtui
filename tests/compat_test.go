@@ -16,6 +16,8 @@ type ParentOption = b.ParentOption
 type ParentPickerState = b.ParentPickerState
 type MuxPickerState = b.MuxPickerState
 type BlockerPickerState = b.BlockerPickerState
+type WorkflowOption = b.WorkflowOption
+type WorkflowPickerState = b.WorkflowPickerState
 type FilterForm = b.FilterForm
 type DeleteMode = b.DeleteMode
 type ConfirmDelete = b.ConfirmDelete
@@ -55,6 +57,7 @@ const (
 	ModeDepList                   = b.ModeDepList
 	ModeConfirmDelete             = b.ModeConfirmDelete
 	ModeConfirmClosedParentCreate = b.ModeConfirmClosedParentCreate
+	ModeWorkflowPicker            = b.ModeWorkflowPicker
 
 	PromptAssignee  = b.PromptAssignee
 	PromptLabels    = b.PromptLabels

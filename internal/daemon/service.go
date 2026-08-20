@@ -33,7 +33,7 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 	if req.ProjectId == "" {
 		return nil, status.Error(codes.InvalidArgument, "project_id is required")
 	}
-	if _, err := s.store.GetProject(ctx, req.ProjectId); err != nil {
+	if err := s.resolveOrCreateProject(ctx, req.ProjectId); err != nil {
 		return nil, toStatus(err)
 	}
 
@@ -48,6 +48,17 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 		return nil, toStatus(err)
 	}
 	return runToProto(r), nil
+}
+
+// resolveOrCreateProject treats project_id as the canonical project handle.
+// Idempotent: on a fresh id the row is created; on a repeat call the existing
+// row is returned without modification.
+func (s *Service) resolveOrCreateProject(ctx context.Context, id string) error {
+	_, err := s.store.EnsureProject(ctx, &orch.Project{
+		ID:   id,
+		Name: id,
+	})
+	return err
 }
 
 func (s *Service) ListRuns(ctx context.Context, req *daemonpb.ListRunsRequest) (*daemonpb.ListRunsResponse, error) {

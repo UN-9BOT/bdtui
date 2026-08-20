@@ -561,4 +561,78 @@ func TestHumanInputAnswer(t *testing.T) {
 	}
 }
 
+
 func strPtrTo(s string) *string { return &s }
+
+func TestEnsureProjectIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	const id = "ws-stable-id"
+	p1, err := s.EnsureProject(ctx, &Project{ID: id, Name: id, FsPath: "/tmp/foo"})
+	if err != nil {
+		t.Fatalf("first EnsureProject: %v", err)
+	}
+	if p1.ID != id {
+		t.Fatalf("id = %q, want %q", p1.ID, id)
+	}
+	if p1.FsPath != "/tmp/foo" {
+		t.Fatalf("fs_path = %q, want /tmp/foo", p1.FsPath)
+	}
+
+	// Second call with different FsPath must NOT mutate existing row.
+	p2, err := s.EnsureProject(ctx, &Project{ID: id, Name: id, FsPath: "/tmp/bar"})
+	if err != nil {
+		t.Fatalf("second EnsureProject: %v", err)
+	}
+	if p2.FsPath != "/tmp/foo" {
+		t.Fatalf("second call mutated fs_path to %q; want /tmp/foo (idempotent)", p2.FsPath)
+	}
+
+	// EnsureProject refuses an empty id.
+	if _, err := s.EnsureProject(ctx, &Project{ID: "", Name: "x"}); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}
+
+func TestEnsureProjectNoTOCTOUBetweenConcurrentEnsure(t *testing.T) {
+	// Two concurrent EnsureProject calls for the same id must both succeed
+	// and end with a single row. We previously had a TOCTOU between
+	// GetProject (read outside tx) and CreateProject (write inside tx) that
+	// could leave the second caller with a unique-constraint error.
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	const id = "ws-concurrent"
+	const N = 8
+	done := make(chan error, N)
+	for i := 0; i < N; i++ {
+		go func(i int) {
+			_, err := s.EnsureProject(ctx, &Project{
+				ID:     id,
+				Name:   id,
+				FsPath: "/tmp/conc",
+			})
+			done <- err
+		}(i)
+	}
+	for i := 0; i < N; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("concurrent EnsureProject %d: %v", i, err)
+		}
+	}
+
+	rows, err := s.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	count := 0
+	for _, p := range rows {
+		if p.ID == id {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("projects with id=%q: %d, want 1", id, count)
+	}
+}

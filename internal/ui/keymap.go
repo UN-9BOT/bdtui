@@ -33,6 +33,7 @@ func DefaultKeymap() Keymap {
 			"z: toggle hide/show children",
 			"y: copy selected issue id",
 			"r: refresh",
+			"R: launch Run via workflow picker (daemon-backed)",
 			"g: dependency/display leader combos",
 			"t: herdr leader combos",
 			"?: help",

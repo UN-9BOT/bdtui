@@ -331,6 +331,10 @@ func (m Model) RenderBlockerPickerModal() string {
 	return m.renderBlockerPickerModal()
 }
 
+func (m Model) RenderWorkflowPickerModal() string {
+	return m.renderWorkflowPickerModal()
+}
+
 func (m Model) RenderConfirmClosedParentCreateModal() string {
 	return m.renderConfirmClosedParentCreateModal()
 }
