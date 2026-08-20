@@ -20,7 +20,10 @@ type BdClient struct {
 	RepoDir string
 }
 
-const sortModeKVKey = "bdtui.sort_mode"
+const (
+	sortModeKVKey      = "bdtui.sort_mode"
+	issueLoadPageLimit = 200
+)
 
 func NewBdClient(repoDir string) *BdClient {
 	return &BdClient{RepoDir: repoDir}
@@ -123,7 +126,21 @@ func stripJSONPrefix(s string) string {
 }
 
 func (c *BdClient) ListIssues() ([]Issue, string, error) {
-	out, err := c.run("list", "--json", "--all", "-n", "0")
+	return c.ListIssuesPage(issueLoadPageLimit, "")
+}
+
+// ListIssuesPage returns one bounded page. Local bd does not support offsets;
+// server-side pagination can use this API when a proxied server is available.
+func (c *BdClient) ListIssuesPage(limit int, statusFilter string) ([]Issue, string, error) {
+	if limit <= 0 {
+		limit = issueLoadPageLimit
+	}
+
+	args := []string{"list", "--json", "--all", "--limit", strconv.Itoa(limit)}
+	if statusFilter != "" {
+		args = append(args, "--status", statusFilter)
+	}
+	out, err := c.run(args...)
 	if err != nil {
 		return nil, "", err
 	}
