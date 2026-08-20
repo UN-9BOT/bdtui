@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "required": ["decision", "notes"],
+  "properties": {
+    "decision": {"type": "string", "enum": ["approved", "revise", "question"]},
+    "notes": {"type": "string"}
+  }
+}

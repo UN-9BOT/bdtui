@@ -1,0 +1,7 @@
+id: reviewer
+description: Reviewer agent role for the MVP orchestrator acceptance test.
+prompt: prompts/reviewer.md
+outcomes: [approved, revise, question]
+outputs: [review]
+result_schema: schemas/review.json
+workspace: read

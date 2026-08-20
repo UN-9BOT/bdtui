@@ -151,6 +151,24 @@ func (s *Store) TransitionExecution(ctx context.Context, id string, to Execution
 	return tx.Commit()
 }
 
+// SetExecutionResultJSON records the structured result JSON on a completed
+// (or otherwise terminal) Execution. The caller is responsible for first
+// transitioning the execution to its terminal status via TransitionExecution;
+// this method only persists the result body.
+func (s *Store) SetExecutionResultJSON(ctx context.Context, id, jsonResult string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE executions SET result_json = ?, updated_at = ? WHERE id = ?`,
+		jsonResult, timeString(nowUTC()), id,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // CreateArtifact records an immutable execution artifact.
 func (s *Store) CreateArtifact(ctx context.Context, a *Artifact) error {
 	if a.ID == "" {

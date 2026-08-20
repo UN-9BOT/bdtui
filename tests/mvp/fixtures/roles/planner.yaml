@@ -1,0 +1,7 @@
+id: planner
+description: Planner agent role for the MVP orchestrator acceptance test.
+prompt: prompts/planner.md
+outcomes: [planned]
+outputs: [plan]
+result_schema: schemas/plan.json
+workspace: read

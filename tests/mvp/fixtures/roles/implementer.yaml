@@ -1,0 +1,7 @@
+id: implementer
+description: Implementer agent role for the MVP orchestrator acceptance test.
+prompt: prompts/implementer.md
+outcomes: [done]
+outputs: [patch]
+result_schema: schemas/patch.json
+workspace: write

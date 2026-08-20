@@ -1,0 +1,113 @@
+version: 1
+name: mvp_ship
+steps:
+  - id: plan
+    type: agent
+    role: planner
+    on:
+      planned: review
+  - id: review
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+    on:
+      approved: implement
+      revise: plan
+      question: ask_initial
+  - id: implement
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+      review:
+        step: review
+        output: review
+    on:
+      done: end
+  - id: ask_initial
+    type: human
+    inputs:
+      notes:
+        step: review
+        output: review
+    on:
+      answered: replan_initial
+  - id: replan_initial
+    type: agent
+    role: planner
+    inputs:
+      clarification:
+        step: ask_initial
+        output: response
+    on:
+      planned: review_replan
+  - id: review_replan
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: replan_initial
+        output: plan
+    on:
+      approved: implement_replan
+      revise: replan_initial
+      question: ask_replan
+  - id: ask_replan
+    type: human
+    inputs:
+      notes:
+        step: review_replan
+        output: review
+    on:
+      answered: replan_after_question
+  - id: replan_after_question
+    type: agent
+    role: planner
+    inputs:
+      clarification:
+        step: ask_replan
+        output: response
+    on:
+      planned: review_after_question
+  - id: review_after_question
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: replan_after_question
+        output: plan
+    on:
+      approved: implement_after_question
+      revise: replan_after_question
+      question: ask_replan
+  - id: implement_after_question
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: replan_after_question
+        output: plan
+      review:
+        step: review_after_question
+        output: review
+    on:
+      done: end
+  - id: implement_replan
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: replan_initial
+        output: plan
+      review:
+        step: review_replan
+        output: review
+    on:
+      done: end
+  - id: end
+    type: end

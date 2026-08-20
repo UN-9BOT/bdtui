@@ -189,3 +189,69 @@ func (s *Store) TransitionStepAttempt(ctx context.Context, id string, to StepAtt
 	}
 	return tx.Commit()
 }
+
+// SetStepAttemptResult records the result string for a StepAttempt. The
+// caller is responsible for first transitioning the attempt into a terminal
+// status (StepCompleted / StepFailed / StepCancelled) via
+// TransitionStepAttempt. Use CompleteStepAttempt for the common
+// "running -> completed" path that needs both operations in one transaction.
+func (s *Store) SetStepAttemptResult(ctx context.Context, id, result string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE step_attempts SET result = ?, updated_at = ? WHERE id = ?`,
+		result, timeString(nowUTC()), id,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CompleteStepAttempt transitions the StepAttempt to StepCompleted and
+// records the result string atomically. If the transition is illegal it
+// returns ErrInvalidTransition and leaves the attempt untouched.
+func (s *Store) CompleteStepAttempt(ctx context.Context, id, result string) error {
+	now := nowUTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var cur StepAttemptStatus
+	var runID string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT status, run_id FROM step_attempts WHERE id = ?`, id,
+	).Scan(&cur, &runID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if !CanTransitionStepAttempt(cur, StepCompleted) {
+		return ErrInvalidTransition
+	}
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE step_attempts
+		 SET status = ?, result = ?, updated_at = ?, completed_at = ?
+		 WHERE id = ? AND status = ?`,
+		string(StepCompleted), result, timeString(now), timeString(now), id, cur,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrInvalidTransition
+	}
+
+	if err := appendEventMapTx(ctx, tx, &runID, EventStepTransition, map[string]any{
+		"run_id": runID, "step_attempt_id": id, "from": cur, "to": StepCompleted, "result": result,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
