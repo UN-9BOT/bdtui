@@ -16,7 +16,7 @@ steps:
     on:
       approved: implement
       revise: plan
-      question: ask
+      question: ask_initial
   - id: implement
     type: agent
     role: implementer
@@ -29,9 +29,12 @@ steps:
         output: review
     on:
       done: end
-  - id: ask
+  - id: ask_initial
     type: human
-    prompt: "Clarification needed for the plan"
+    inputs:
+      notes:
+        step: review
+        output: review
     on:
       answered: replan
   - id: replan
@@ -39,7 +42,7 @@ steps:
     role: planner
     inputs:
       clarification:
-        step: ask
+        step: ask_initial
         output: response
     on:
       planned: review_replan
@@ -53,7 +56,15 @@ steps:
     on:
       approved: implement_replan
       revise: replan
-      question: ask
+      question: ask_replan
+  - id: ask_replan
+    type: human
+    inputs:
+      notes:
+        step: review_replan
+        output: review
+    on:
+      answered: replan
   - id: implement_replan
     type: agent
     role: implementer
