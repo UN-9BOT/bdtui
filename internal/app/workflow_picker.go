@@ -15,19 +15,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// defaultGlobalWorkflowsRoot is the fallback path the TUI scans for global
-// workflow/role definitions when no override is configured. It mirrors the
-// layout documented on workflow.Loader: <root>/workflows/<name>.yaml.
-const defaultGlobalWorkflowsRoot = "/usr/local/share/bdtui/workflows"
+// defaultGlobalWorkflowsRoot is the fallback layout root the TUI passes to
+// workflow.Loader for global workflow/role definitions. Per the Loader
+// contract, the loader appends "/workflows/<name>.yaml" internally, so this
+// must be the layout root, not the workflows directory itself.
+const defaultGlobalWorkflowsRoot = "/usr/local/share/bdtui"
 
-// projectWorkflowsRoot derives the project-level workflow root from the
-// configured beads directory. The directory is created on first successful
-// resolve so callers can drop overrides into it without manual setup.
+// projectWorkflowsRoot is the project layout root for workflow.Loader. Per
+// the Loader contract, roots are layout directories and the loader appends
+// "/workflows/<name>.yaml" internally — passing <beads-dir>/workflows here
+// would lead to a double "workflows" path and miss every file.
 func (m model) projectWorkflowsRoot() string {
 	if strings.TrimSpace(m.BeadsDir) == "" {
 		return ""
 	}
-	return filepath.Join(m.BeadsDir, "workflows")
+	return m.BeadsDir
 }
 
 // resolveWorkflowsRoots returns (global, project) roots the TUI should pass
