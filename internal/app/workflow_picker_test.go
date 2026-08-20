@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,33 +90,87 @@ steps:
 `
 
 func TestProjectIDForBeadsDirIsStable(t *testing.T) {
-	dir := t.TempDir()
-	m := model{BeadsDir: dir}
-	id1, _ := m.projectIDForBeadsDir()
+	repo, beads := mustGitRepoWithBeads(t)
+	m := model{RepoDir: repo, BeadsDir: beads}
+	id1, err := m.projectIDForBeadsDir()
+	if err != nil {
+		t.Fatalf("first projectIDForBeadsDir: %v", err)
+	}
 	if id1 == "" {
 		t.Fatal("project id is empty")
 	}
 	if !validProjectID(id1) {
 		t.Fatalf("project id %q is not a valid uuid hex", id1)
 	}
-	if id2, _ := m.projectIDForBeadsDir(); id2 != id1 {
+	id2, err := m.projectIDForBeadsDir()
+	if err != nil {
+		t.Fatalf("second projectIDForBeadsDir: %v", err)
+	}
+	if id2 != id1 {
 		t.Fatalf("project id not stable: %q vs %q", id1, id2)
 	}
-	// The id must be persisted to disk and survive a "restart".
-	path := filepath.Join(dir, projectIDFilename)
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("persisted id file missing: %v", err)
+	// The id must be persisted to git config and survive a "restart" (a
+	// fresh model that just reads the same repo).
+	id3, err := model{RepoDir: repo, BeadsDir: beads}.projectIDForBeadsDir()
+	if err != nil {
+		t.Fatalf("restart projectIDForBeadsDir: %v", err)
+	}
+	if id3 != id1 {
+		t.Fatalf("restart project id drift: %q vs %q", id1, id3)
+	}
+	// And it must NOT have leaked into the worktree as a tracked or
+	// untracked file.
+	cmd := exec.Command("git", "-C", repo, "ls-files", "--others", "--exclude-standard")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files: %v", err)
+	}
+	if strings.Contains(string(out), "bdtui-project-id") {
+		t.Fatalf("project id leaked into worktree: %s", out)
 	}
 }
 
 func TestProjectIDForBeadsDirDistinguishesWorkspaces(t *testing.T) {
-	dirA := t.TempDir()
-	dirB := t.TempDir()
-	idA, _ := model{BeadsDir: dirA}.projectIDForBeadsDir()
-	idB, _ := model{BeadsDir: dirB}.projectIDForBeadsDir()
-	if idA == idB {
-		t.Fatalf("distinct beads dirs must produce distinct project ids, both = %q", idA)
+	repoA, beadsA := mustGitRepoWithBeads(t)
+	repoB, beadsB := mustGitRepoWithBeads(t)
+	idA, errA := model{RepoDir: repoA, BeadsDir: beadsA}.projectIDForBeadsDir()
+	if errA != nil {
+		t.Fatalf("workspace A: %v", errA)
 	}
+	idB, errB := model{RepoDir: repoB, BeadsDir: beadsB}.projectIDForBeadsDir()
+	if errB != nil {
+		t.Fatalf("workspace B: %v", errB)
+	}
+	if idA == idB {
+		t.Fatalf("distinct repos must produce distinct project ids, both = %q", idA)
+	}
+}
+
+// mustGitRepoWithBeads returns a (repoDir, beadsDir) pair where repoDir is
+// a fresh `git init` directory and beadsDir is repoDir/.beads. project id
+// tests need a real git workspace because the id lives in git config.
+func mustGitRepoWithBeads(t *testing.T) (repoDir, beadsDir string) {
+	t.Helper()
+	repoDir = t.TempDir()
+	beadsDir = filepath.Join(repoDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o700); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+	cmd := exec.Command("git", "-C", repoDir, "init", "-q", "--initial-branch=main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	// git refuses to write local config until identity is configured, which
+	// would break our `git config --local bdtui.project-id ...` writes.
+	cmd = exec.Command("git", "-C", repoDir, "config", "user.email", "bdtui-test@example.com")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config user.email: %v: %s", err, out)
+	}
+	cmd = exec.Command("git", "-C", repoDir, "config", "user.name", "bdtui-test")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config user.name: %v: %s", err, out)
+	}
+	return repoDir, beadsDir
 }
 
 func TestGenerateProjectIDIsUniqueAndValid(t *testing.T) {
@@ -148,7 +203,7 @@ func TestValidProjectIDAcceptsHexVariants(t *testing.T) {
 	for _, bad := range []string{
 		"",
 		"not-hex",
-		"0123456789abcdef0123456789abcde",  // 31 chars
+		"0123456789abcdef0123456789abcde",   // 31 chars
 		"0123456789abcdef0123456789abcdef0", // 33 chars
 		"0123456789abcdef0123456789abcdeg",  // g is invalid
 	} {
@@ -158,27 +213,13 @@ func TestValidProjectIDAcceptsHexVariants(t *testing.T) {
 	}
 }
 
-func TestProjectIDRegeneratesOnCorruptFile(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, projectIDFilename), []byte("not-a-uuid"), 0o600); err != nil {
-		t.Fatalf("write corrupt file: %v", err)
-	}
-	m := model{BeadsDir: dir}
-	// A corrupt file already on disk must surface as an error rather than
-	// silently overwrite or return a fresh in-memory id: both would let
-	// two concurrent launches disagree on the project scope.
-	if _, err := m.projectIDForBeadsDir(); err == nil {
-		t.Fatal("expected error for corrupt persisted id file")
-	}
-}
-
 func TestProjectIDAtomicOnConcurrentFirstCall(t *testing.T) {
-	// Two concurrent projectIDForBeadsDir() calls on a fresh dir must
-	// agree on the same id (the O_CREATE|O_EXCL winner is read back by
-	// the loser). N concurrent goroutines on the same empty dir produce
-	// exactly the same project_id.
-	dir := t.TempDir()
-	m := model{BeadsDir: dir}
+	// Two concurrent projectIDForBeadsDir() calls on a fresh git repo
+	// must agree on the same id. git's lock on .git/config.lock
+	// serializes the writes; whichever writer lands last owns the
+	// canonical value, and every other goroutine re-reads that value.
+	repo, beads := mustGitRepoWithBeads(t)
+	m := model{RepoDir: repo, BeadsDir: beads}
 	const N = 16
 	results := make([]string, N)
 	errs := make([]error, N)
@@ -195,6 +236,9 @@ func TestProjectIDAtomicOnConcurrentFirstCall(t *testing.T) {
 	first := results[0]
 	if errs[0] != nil {
 		t.Fatalf("first call err: %v", errs[0])
+	}
+	if first == "" {
+		t.Fatal("first call returned empty id")
 	}
 	for i := 1; i < N; i++ {
 		if errs[i] != nil {

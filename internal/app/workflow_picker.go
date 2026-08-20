@@ -1,11 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,11 +25,14 @@ import (
 // must be the layout root, not the workflows directory itself.
 const defaultGlobalWorkflowsRoot = "/usr/local/share/bdtui"
 
-// projectIDFilename is the per-beads-dir file that stores the durable project
-// identity handed to the daemon. Generated on first use and reused forever so
-// the same workspace keeps the same project_id across moves, clones of other
-// repos get distinct ids, and active-run uniqueness is preserved.
-const projectIDFilename = ".bdtui-project-id"
+// gitProjectIDFilename is the file inside the repo's git directory that
+// stores the durable project_id. Placing it under `<git-dir>/` rather than
+// inside the tracked worktree guarantees the id is never visible in
+// `git status` / `git diff` / `git ls-files` (git treats .git/ as its own
+// metadata and never lists it), and survives workspace moves because the
+// .git/ directory moves with the repo. A fresh clone gets a fresh id,
+// which is the correct semantics for "different project".
+const gitProjectIDFilename = ".bdtui-project-id"
 
 // projectWorkflowsRoot is the project layout root for workflow.Loader. Per
 // the Loader contract, roots are layout directories and the loader appends
@@ -116,34 +121,40 @@ func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 	}
 }
 
-// projectIDForBeadsDir returns the durable project_id stored in
-// <beads-dir>/.bdtui-project-id, generating + persisting a fresh UUID hex
+// projectIDForBeadsDir returns the durable project_id stored at
+// `<git-dir>/.bdtui-project-id`, generating + persisting a fresh UUID hex
 // (no dashes) on first use. The id is opaque, machine-independent, and
-// survives moves of the workspace directory (since it lives inside it).
+// survives moves of the workspace directory (since .git/ moves with the
+// repo and the file lives inside it, not in the tracked worktree).
 //
-// Concurrent first calls agree on a single id: at most one caller wins the
-// O_CREATE|O_EXCL create (returns its own freshly generated id); all losers
-// observe IsExist and re-read the winner's id (with a tiny retry loop to
-// cover the brief window between create and fsync). A corrupt persisted
-// file or any other write failure surfaces as an error — we never silently
-// send a daemon call with a "this-session only" id that wouldn't survive
-// a restart.
+// Concurrency: the file lives inside .git/ (which is git-local metadata
+// and never tracked). We publish it atomically via a sibling temp file +
+// os.Link — same pattern as before. At most one concurrent caller wins
+// the link (returns its own id); all losers observe EEXIST and re-read
+// the winner's fully-flushed bytes via a tiny backoff loop. This is
+// strictly stronger than `git config --local` because that approach lets
+// concurrent writers race sequential reads during the same window.
 //
-// Returning "" with a non-nil error on a missing/unreadable beads-dir is a
-// hard failure; the daemon rejects an empty project_id, so the caller must
-// surface the error rather than round-trip.
+// On any error we surface it to the caller rather than silently round-trip
+// with a fresh id — sending a daemon call with a non-durable id would defeat
+// the active-run uniqueness guarantee.
 func (m model) projectIDForBeadsDir() (string, error) {
-	beadsDir := strings.TrimSpace(m.BeadsDir)
-	if beadsDir == "" {
-		return "", fmt.Errorf("no beads-dir configured")
+	repoDir := strings.TrimSpace(m.RepoDir)
+	if repoDir == "" {
+		return "", fmt.Errorf("no repo-dir configured (project id needs a git workspace)")
 	}
-	path := filepath.Join(beadsDir, projectIDFilename)
+
+	gitDir, err := resolveGitDir(repoDir)
+	if err != nil {
+		return "", fmt.Errorf("project id requires a git workspace: %w", err)
+	}
+	path := filepath.Join(gitDir, gitProjectIDFilename)
 
 	// Probe: read once. We never treat empty/invalid content as a hard
 	// error here, because a concurrent first-time publisher may have
 	// created the file but not yet flushed its bytes. Falling through to
 	// the publish path keeps the file self-healing and lets concurrent
-	// callers re-discover the winner via O_EXCL.
+	// callers re-discover the winner via EEXIST.
 	if data, err := os.ReadFile(path); err == nil {
 		if id := strings.TrimSpace(string(data)); validProjectID(id) {
 			return id, nil
@@ -203,9 +214,9 @@ func (m model) projectIDForBeadsDir() (string, error) {
 }
 
 // readPublishedProjectID polls for a non-empty file with a valid id.
-// A concurrent caller may have O_CREAT|O_EXCL'd the file but not yet
-// flushed the id bytes; a few short retries give the writer time to
-// complete while keeping the per-call latency bounded.
+// A concurrent caller may have created the file but not yet flushed the
+// id bytes; a few short retries give the writer time to complete while
+// keeping the per-call latency bounded.
 func readPublishedProjectID(path string) (string, error) {
 	const maxAttempts = 16
 	delay := 200 * time.Microsecond
@@ -224,6 +235,29 @@ func readPublishedProjectID(path string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("winner %s has invalid id after %d attempts", path, maxAttempts)
+}
+
+// resolveGitDir returns the absolute path of the git directory for repoDir,
+// handling normal repos, worktrees (where .git is a file pointing into
+// .git/worktrees/<name>) and submodules. We use this to put the project-id
+// file inside .git/ so it never appears in the tracked worktree.
+func resolveGitDir(repoDir string) (string, error) {
+	cmd := exec.Command("git", "-C", repoDir, "rev-parse", "--absolute-git-dir")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		stderrStr := strings.TrimSpace(stderr.String())
+		if stderrStr == "" {
+			stderrStr = "exit " + err.Error()
+		}
+		return "", fmt.Errorf("%s", stderrStr)
+	}
+	out := strings.TrimSpace(stdout.String())
+	if out == "" {
+		return "", fmt.Errorf("git rev-parse returned empty path")
+	}
+	return out, nil
 }
 
 // generateProjectID returns a fresh 32-char hex UUIDv4 suitable for use as

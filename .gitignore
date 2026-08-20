@@ -18,6 +18,3 @@
 # Review state (local-only ChatGPT review marker log + snapshot dumps)
 .beads/.review-state.jsonl
 .beads/.review-snapshots/
-
-# Per-workspace durable project id (runtime file, generated on first use)
-.bdtui-project-id
