@@ -1,0 +1,47 @@
+version: 1
+name: mvp_ship
+steps:
+  - id: plan
+    type: agent
+    role: planner
+    on:
+      planned: review
+  - id: review
+    type: agent
+    role: reviewer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+    on:
+      approved: implement
+      revise: plan
+      question: ask
+  - id: implement
+    type: agent
+    role: implementer
+    inputs:
+      plan:
+        step: plan
+        output: plan
+      review:
+        step: review
+        output: review
+    on:
+      done: end
+  - id: ask
+    type: human
+    prompt: "Clarification needed for the plan"
+    on:
+      answered: replan
+  - id: replan
+    type: agent
+    role: planner
+    inputs:
+      clarification:
+        step: ask
+        output: response
+    on:
+      planned: review
+  - id: end
+    type: end
