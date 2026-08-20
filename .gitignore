@@ -11,3 +11,6 @@
 .dolt/
 *.db
 .beads.backup-pre-migration.*
+
+# Local-only agent flow notes (reviewer marker protocol, beads iteration loop)
+.agents/skills/bdtui-review-loop/
