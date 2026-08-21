@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"bdtui/internal/orch"
 	"bdtui/internal/taskstore"
 	"bdtui/internal/taskstore/taskstoretest"
+
+	_ "modernc.org/sqlite"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -501,6 +504,110 @@ func TestOutboxPersistedBeforeExternalSync(t *testing.T) {
 	}
 }
 
+// recordingTaskStore tracks every SyncTerminal call so the test can
+// assert the call was or was not made.
+type recordingTaskStore struct {
+	inner *taskstoretest.Fake
+	// syncTerminalCalls records the outcomes the service tried to
+	// sync. The test asserts this slice stays empty (or non-empty)
+	// depending on the scenario.
+	syncTerminalCalls []taskstore.RunOutcome
+}
+
+func (r *recordingTaskStore) Get(ctx context.Context, id string) (*taskstore.Task, error) {
+	return r.inner.Get(ctx, id)
+}
+func (r *recordingTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
+	return r.inner.Claim(ctx, id)
+}
+func (r *recordingTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome) error {
+	r.syncTerminalCalls = append(r.syncTerminalCalls, outcome)
+	return r.inner.SyncTerminal(ctx, id, outcome)
+}
+
+// TestSyncAbortsWhenOutboxPersistFails verifies that when the
+// durable-intent persist fails, the service does NOT attempt the
+// external side effect. A side effect without a durable intent is
+// unrecoverable: the reconciler would never see the Beads mutation
+// and could replay a stale decision. We simulate a persist failure
+// by dropping the task_sync_outbox table out from under the service
+// after the migration lands. The Run transitions still work because
+// they don't touch the outbox table.
+func TestSyncAbortsWhenOutboxPersistFails(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "orch.db")
+	socketPath := filepath.Join(dir, "daemon.sock")
+
+	store, err := orch.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	project := &orch.Project{Name: "test", FsPath: "/tmp/test"}
+	if err := store.CreateProject(context.Background(), project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	rec := &recordingTaskStore{inner: taskstoretest.New()}
+	rec.inner.Put(&taskstore.Task{
+		ID:     "task-append-fails",
+		Title:  "Append fails",
+		Status: taskstore.TaskTodo,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := NewServerWithTasks(store, rec, socketPath)
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		srv.Stop()
+		<-done
+	})
+
+	// Wait for the daemon to come up.
+	deadline := time.Now().Add(3 * time.Second)
+	for !socketAlive(context.Background(), socketPath) {
+		if time.Now().After(deadline) {
+			t.Fatal("daemon socket did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	client, err := Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	// Create a Run so the smoke path works.
+	run, err := client.CreateRun(context.Background(), &daemonpb.CreateRunRequest{
+		ProjectId: project.ID,
+		TaskId:    "task-append-fails",
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	// Drop the outbox table so the next Append fails. Run transitions
+	// remain functional because they don't touch the outbox. We use
+	// the modernc.org/sqlite driver directly via a fresh connection
+	// to the same DB file.
+	if err := dropTableViaFreshConn(dbPath, "task_sync_outbox"); err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+
+	// Now Cancel the run. The CancelRun RPC will still succeed
+	// (the Run transition is independent of the outbox), but the
+	// service MUST NOT attempt to call SyncTerminal because the
+	// outbox persist failed.
+	if _, err := client.CancelRun(context.Background(), &daemonpb.CancelRunRequest{Id: run.Id}); err != nil {
+		t.Fatalf("CancelRun: %v", err)
+	}
+	if len(rec.syncTerminalCalls) != 0 {
+		t.Errorf("SyncTerminal was called %d times despite outbox persist failure; want 0",
+			len(rec.syncTerminalCalls))
+	}
+}
+
 // TestSyncHelpersCoverNeedsAttention ensures that the unified sync
 // helper covers the non-terminal needs_attention case. The spec
 // mandates needs_attention -> blocked even though the Run is
@@ -533,4 +640,21 @@ func TestSyncHelpersCoverNeedsAttention(t *testing.T) {
 		t.Errorf("status = %q, want blocked", beadsStatus)
 	}
 	_ = store
+}
+
+// dropTableViaFreshConn opens a fresh SQLite connection to the
+// daemon's DB file and drops the named table. The fresh connection
+// goes through the modernc.org/sqlite driver directly so the test
+// does not need to share the daemon's pooled connection. This is the
+// cheapest way to force the outbox Append to fail without taking the
+// rest of the store down.
+func dropTableViaFreshConn(dbPath, table string) error {
+	dsn := "file:" + dbPath + "?_txlock=immediate&_foreign_keys=on"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec("DROP TABLE IF EXISTS " + table)
+	return err
 }
