@@ -265,9 +265,8 @@ func (f *flakyTaskStore) SyncTerminal(ctx context.Context, id string, outcome ta
 }
 
 // TestSyncFailureWritesDurableEvent verifies that a SyncTerminal
-// failure is recorded as a task.sync_failed event so the failure is
-// not silently lost. The Run row is persisted; the sync failure is
-// surfaced via the event log.
+// failure is recorded as a task.sync_failed event AND appended to the
+// task_sync_outbox so the future controller reconciler can retry.
 func TestSyncFailureWritesDurableEvent(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "orch.db")
@@ -326,8 +325,7 @@ func TestSyncFailureWritesDurableEvent(t *testing.T) {
 		t.Fatalf("CancelRun: %v", err)
 	}
 
-	// The Run was persisted (CancelRun succeeded). The sync failure
-	// must be visible as a task.sync_failed event.
+	// Audit: the sync failure must be visible as a task.sync_failed event.
 	events, err := store.ListEventsByRun(context.Background(), run.Id)
 	if err != nil {
 		t.Fatalf("ListEventsByRun: %v", err)
@@ -349,6 +347,68 @@ func TestSyncFailureWritesDurableEvent(t *testing.T) {
 		for _, e := range events {
 			t.Logf("event: %s payload=%s", e.Type, e.Payload)
 		}
+	}
+
+	// Durable retry state: the outbox row is what the future controller
+	// reconciler (bdtui-cvy.13) will consume. The reconciler asks
+	// "which Runs still owe a TaskStore sync?" via this query.
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("ListPendingTaskSyncOutbox: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending outbox = %d, want 1", len(pending))
+	}
+	if pending[0].RunID != run.Id {
+		t.Errorf("outbox run_id = %q, want %q", pending[0].RunID, run.Id)
+	}
+	if pending[0].TaskID != "task-fail-sync" {
+		t.Errorf("outbox task_id = %q", pending[0].TaskID)
+	}
+	if pending[0].Outcome != string(taskstore.RunCancelled) {
+		t.Errorf("outbox outcome = %q, want cancelled", pending[0].Outcome)
+	}
+	if pending[0].Status != orch.TaskSyncPending {
+		t.Errorf("outbox status = %q", pending[0].Status)
+	}
+}
+
+// TestPendingOutboxCleanedAfterMarkDone verifies the reconciler can
+// advance the outbox row to 'done' once a retry succeeds.
+func TestPendingOutboxCleanedAfterMarkDone(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	// Create a real Run so the outbox row's foreign key is satisfied.
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-x",
+		Status:    orch.RunCancelled,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-x",
+		Outcome: string(taskstore.RunCancelled),
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if err := store.MarkTaskSyncOutboxDone(context.Background(), pending[0].ID); err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+	pending, err = store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list 2: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending = %d, want 0", len(pending))
 	}
 }
 

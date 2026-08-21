@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -134,17 +135,49 @@ func TestClaimFromTodo(t *testing.T) {
 		t.Errorf("backend status not in_progress: %s", beadsStatus)
 	}
 
-	// Second claim is idempotent for the same user (the runner of the
-	// test is the assignee of the first claim). The store still returns
-	// a fresh post-claim snapshot so the orchestrator can re-derive the
-	// Run snapshot. The single-active-Run invariant is enforced at the
-	// orchestrator layer, not here.
+	// Second Claim is idempotent for the same holder. The `bd --claim`
+	// flag is documented as idempotent when the assignee is the same
+	// user; the adapter returns the post-claim snapshot without error.
+	// The single-active-Run invariant — "at most one active Run per
+	// Beads task" — is enforced at the orchestrator's CreateRun layer
+	// (see TestCreateRunRefusesAlreadyClaimed + the partial unique
+	// index on runs), not at the TaskStore Claim boundary. This test
+	// pins the Claim idempotency for the same holder; the cross-holder
+	// path is exercised separately.
 	second, err := store.Claim(context.Background(), id)
 	if err != nil {
 		t.Fatalf("second Claim: %v", err)
 	}
 	if second.Status != taskstore.TaskInProgress {
 		t.Errorf("second snapshot status = %q, want in_progress", second.Status)
+	}
+}
+
+// TestClaimRefusesForeignHolder documents the failure mode the
+// orchestrator relies on for "already claimed". When the Beads CLI
+// rejects a claim because the task is assigned to another user, the
+// adapter must surface ErrTaskAlreadyClaimed. This is the path the
+// daemon's CreateRun relies on when an external Beads actor has the
+// task and the in-process controller cannot take ownership.
+//
+// We cannot easily impersonate a different Beads holder inside this
+// test environment, so the test drives the failure through a fake
+// Client whose Claim returns a "not claimable" stderr. The wiring
+// path this test exercises is identical to the live CLI path: the
+// adapter inspects the stderr for the canonical phrase and maps the
+// failure to the matching sentinel.
+func TestClaimRefusesForeignHolder(t *testing.T) {
+	cli := &fakeClient{
+		claim: nil,
+		claimErr: fmt.Errorf(
+			"exit status 1: %s",
+			"Error claiming x: already claimed by other_user",
+		),
+	}
+	store := beads.NewStore(cli)
+	_, err := store.Claim(context.Background(), "x")
+	if !errors.Is(err, taskstore.ErrTaskAlreadyClaimed) {
+		t.Fatalf("err = %v, want ErrTaskAlreadyClaimed", err)
 	}
 }
 

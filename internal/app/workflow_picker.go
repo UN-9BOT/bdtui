@@ -329,31 +329,44 @@ func (m model) ensureDaemon(ctx context.Context) (*daemon.Client, error) {
 	if err := validateBeadsDir(m.BeadsDir); err != nil {
 		return nil, err
 	}
+	projectID, err := m.projectIDForBeadsDir()
+	if err != nil {
+		return nil, fmt.Errorf("project id: %w", err)
+	}
 	opts := daemon.Options{
-		SocketPath: daemonSocketPath(),
-		DBPath:     daemonDBPath(m.BeadsDir),
+		// Per-project socket and DB isolate concurrent workspaces:
+		// TUI for project B never re-uses the daemon of project A.
+		// The legacy global socket/DB is the fallback when the
+		// operator explicitly overrides via env or projects is empty.
+		SocketPath: daemonSocketPath(projectID),
+		DBPath:     daemonDBPath(projectID),
 		// Pass the project root (parent of .beads) so the daemon
 		// constructs a Beads TaskStore and the production CreateRun
 		// path includes the Claim that the spec mandates. Without this
-		// the daemon runs in legacy no-TaskStore mode and the orchestrator
-		// silently skips the lifecycle binding.
+		// the daemon runs in legacy no-TaskStore mode and the
+		// orchestrator silently skips the lifecycle binding.
 		BeadsDir: m.RepoDir,
 	}
 	return daemon.EnsureDaemon(ctx, opts)
 }
 
-func daemonSocketPath() string {
+// daemonSocketPath returns the socket path for the given project_id.
+// The legacy BDTUI_DAEMON_SOCKET env override still wins so operator
+// tooling can pin a single socket.
+func daemonSocketPath(projectID string) string {
 	if v := os.Getenv("BDTUI_DAEMON_SOCKET"); v != "" {
 		return v
 	}
-	return daemon.DefaultSocketPath()
+	return daemon.SocketPathForProject(projectID)
 }
 
-func daemonDBPath(beadsDir string) string {
+// daemonDBPath returns the orchestrator DB path for the given
+// project_id. The legacy BDTUI_DAEMON_DB env override still wins.
+func daemonDBPath(projectID string) string {
 	if v := os.Getenv("BDTUI_DAEMON_DB"); v != "" {
 		return v
 	}
-	return daemon.DefaultDBPath()
+	return daemon.DBPathForProject(projectID)
 }
 
 // validateBeadsDir checks that the configured BeadsDir points at an

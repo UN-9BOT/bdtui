@@ -115,14 +115,30 @@ func (t *Task) Clone() *Task {
 //
 // Contract:
 //   - Get returns ErrTaskNotFound when the task is absent.
-//   - Claim atomically snapshots the task and transitions it to in_progress.
-//     If the task is already in_progress, Claim returns ErrTaskAlreadyClaimed.
-//     The returned Task is the post-claim snapshot and MUST be treated as
-//     immutable for the lifetime of the Run it backs.
-//   - SyncTerminal pushes the controller's terminal Run classification back
-//     to the task using the mapping in MapRunOutcomeToTaskStatus.
-//   - All methods MUST return ErrTaskStoreUnavailable when the backend is
-//     unreachable so the controller can refuse to launch a Run.
+//   - Claim atomically snapshots the task and transitions it to
+//     in_progress. The returned Task is the post-claim snapshot and MUST
+//     be treated as immutable for the lifetime of the Run it backs.
+//     "Atomic" here means race-free with respect to the backend: two
+//     concurrent Claim calls on the same task cannot both observe a
+//     free task. The CLI implementation is idempotent for the same
+//     holder (the ORCH daemon's identity), so Claim returns the
+//     in_progress snapshot without error in that case. The "already
+//     claimed by another holder" failure mode is mapped to
+//     ErrTaskAlreadyClaimed. The single-active-Run invariant ("at most
+//     one Run per task") is enforced at the orchestrator's CreateRun
+//     layer via the partial unique index, so the TaskStore cannot
+//     itself produce that inequality — it can only refuse to proceed
+//     when the BACKEND reports a foreign holder.
+//   - SyncTerminal pushes the controller's terminal Run classification
+//     back to the task using the mapping in MapRunOutcomeToTaskStatus.
+//   - All methods MUST return ErrTaskStoreUnavailable when the backend
+//     is unreachable so the controller can refuse to launch a Run.
+//
+// The "atomic claim" semantic is what makes the orchestrator's spec
+// promise "if Beads is unavailable, Run launch must not start" possible:
+// when the backend is reachable, the post-claim snapshot is congruent
+// with the backend state regardless of how many concurrent calls
+// attempt to claim the same task.
 type TaskStore interface {
 	Get(ctx context.Context, id string) (*Task, error)
 	Claim(ctx context.Context, id string) (*Task, error)

@@ -154,4 +154,31 @@ CREATE TABLE step_attempt_counters (
 ALTER TABLE runs ADD COLUMN task_snapshot TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 8,
+		name:    "task_sync_outbox",
+		sql: `
+-- task_sync_outbox stores pending TaskStore syncs that failed during
+-- the original call. The daemon appends a row when SyncTerminal
+-- returns an error (e.g. Beads back-end unreachable). The future
+-- controller reconciler (bdtui-cvy.13) is the consumer: it picks up
+-- rows with status='pending', retries the sync, and either clears
+-- the row or records the new error. This is the durable retry state
+-- the reviewer asked for: the event log is audit-only, the outbox is
+-- the source of truth for "this Run still owes a TaskStore sync".
+CREATE TABLE task_sync_outbox (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       TEXT NOT NULL REFERENCES runs(id),
+    task_id      TEXT NOT NULL,
+    outcome      TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    retry_count  INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX idx_task_sync_outbox_status ON task_sync_outbox(status, id);
+CREATE INDEX idx_task_sync_outbox_run ON task_sync_outbox(run_id);
+`,
+	},
 }

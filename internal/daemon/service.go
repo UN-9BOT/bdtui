@@ -201,6 +201,14 @@ func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 // Run id, the TaskStore id, the attempted outcome and the verbatim
 // error message so the operator (and the controller) can decide
 // whether to retry, surface it, or treat the Beads back-end as offline.
+//
+// In addition to the audit event, the function also appends a row to
+// the durable task_sync_outbox so the future controller reconciler has
+// a queryable list of Runs that still owe a Beads sync. The outbox
+// row is the source of truth for "this Run still owes a sync"; the
+// event is the audit/tui trail. Without the outbox, an already-closed
+// Run has no path to a retry because the events are append-only and
+// not re-driven.
 func (s *Service) recordTaskSyncFailed(ctx context.Context, run *orch.Run, outcome taskstore.RunOutcome, syncErr error) {
 	runID := run.ID
 	b, err := json.Marshal(struct {
@@ -225,6 +233,14 @@ func (s *Service) recordTaskSyncFailed(ctx context.Context, run *orch.Run, outco
 		b = []byte(fmt.Sprintf(`{"run_id":%q,"task_id":%q,"error":%q}`, run.ID, run.TaskID, syncErr.Error()))
 	}
 	_ = s.store.AppendEvent(ctx, &runID, orch.EventTaskSyncFailed, string(b))
+
+	// Durable retry state — the reconciler can pick this up later.
+	_ = s.store.AppendTaskSyncOutbox(ctx, &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  run.TaskID,
+		Outcome: string(outcome),
+		Status:  orch.TaskSyncPending,
+	})
 }
 
 // syncTerminalTask is a thin wrapper that preserves the historic name
