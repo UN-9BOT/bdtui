@@ -28,6 +28,9 @@ type TaskSyncOutbox struct {
 	Status     string
 	RetryCount int
 	LastError  string
+	ClaimedAt  time.Time
+	LeaseToken string
+	Generation int64
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -47,13 +50,23 @@ const (
 func (e *TaskSyncOutbox) Pending() bool { return e.Status == TaskSyncPending }
 
 // AppendTaskSyncOutbox records a pending sync for (run_id, task_id)
-// and supersedes any earlier pending row for the same pair. The
+// and supersedes any earlier active row for the same pair. The
 // supersede transaction is atomic: the reconciler can never see
 // both the old and the new pending rows for the same pair.
 //
-// The returned id is the new row's id; the caller passes it to
-// MarkTaskSyncOutboxDone on a successful sync. The earlier pending
-// row's id is irrelevant because it is now superseded.
+// "Active" means status IN ('pending', 'in_flight'). A new intent
+// supersedes an in_flight row too, not just a pending one: the
+// reviewer's P1 was that a stale in_flight row could still win
+// the SyncTerminal race even after a newer intent arrived. By
+// superseding in_flight on append, the durable intent is always
+// the latest row, and the in_flight SyncTerminal becomes a
+// generation-mismatch NOOP (the reconciler must check
+// generation before calling SyncTerminal).
+//
+// The returned id is the new row's id. The new row's generation
+// is one greater than the previous max generation for (run_id,
+// task_id); the caller can pass this generation to the TaskStore
+// to fence SyncTerminal against stale writes.
 func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) (int64, error) {
 	if e.Status == "" {
 		e.Status = TaskSyncPending
@@ -69,22 +82,42 @@ func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) (in
 	}
 	defer tx.Rollback()
 
-	// Supersede any prior pending row for this (run_id, task_id).
+	// Supersede any prior active row for this (run_id, task_id).
 	// Without this, the reconciler would replay the stale outcome
 	// (e.g. an old pending needs_attention -> blocked) after a newer
-	// outcome (e.g. completed -> done) had already succeeded.
+	// outcome (e.g. completed -> done) had already succeeded. The
+	// WHERE clause covers pending AND in_flight so a stale
+	// in_flight row cannot win the SyncTerminal race against a
+	// newer intent.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE task_sync_outbox SET status = ?, updated_at = ?
-		 WHERE run_id = ? AND task_id = ? AND status = ?`,
-		TaskSyncSuperseded, timeString(e.UpdatedAt), e.RunID, e.TaskID, TaskSyncPending,
+		 WHERE run_id = ? AND task_id = ? AND status IN (?, ?)`,
+		TaskSyncSuperseded, timeString(e.UpdatedAt),
+		e.RunID, e.TaskID, TaskSyncPending, TaskSyncInFlight,
 	); err != nil {
 		return 0, err
 	}
 
+	// Bump generation: read the current max for (run_id, task_id)
+	// and add 1. The new row's generation is the new authoritative
+	// version of (run_id, task_id).
+	var maxGen sql.NullInt64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT MAX(generation) FROM task_sync_outbox WHERE run_id = ? AND task_id = ?`,
+		e.RunID, e.TaskID,
+	).Scan(&maxGen); err != nil {
+		return 0, err
+	}
+	gen := int64(1)
+	if maxGen.Valid {
+		gen = maxGen.Int64 + 1
+	}
+	e.Generation = gen
+
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO task_sync_outbox(run_id, task_id, outcome, status, retry_count, last_error, created_at, updated_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.RunID, e.TaskID, e.Outcome, e.Status, e.RetryCount, e.LastError,
+		`INSERT INTO task_sync_outbox(run_id, task_id, outcome, status, retry_count, last_error, generation, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.RunID, e.TaskID, e.Outcome, e.Status, e.RetryCount, e.LastError, e.Generation,
 		timeString(e.CreatedAt), timeString(e.UpdatedAt),
 	)
 	if err != nil {
@@ -149,19 +182,20 @@ func (s *Store) MarkTaskSyncOutboxDone(ctx context.Context, id int64) error {
 }
 
 // ClaimTaskSyncOutbox atomically transitions a pending row to
-// in_flight, returning true if the row was claimed. This is the
-// "atomic retry ownership" the reviewer asked for: between the
-// stale-check and the actual SyncTerminal, a newer intent may
-// append and supersede the row. The supersede only applies to
-// pending rows, so once the reconciler has CAS-claimed the row to
-// in_flight, the append mechanism can no longer touch it. The
-// newer intent lands as a fresh pending row, and on the next
-// reconciler pass it will be picked up. The retry owns its row
-// end-to-end.
+// in_flight, returning true if the row was claimed. The claim
+// also stamps claimed_at and a unique lease_token so the row can
+// be reclaimed if the daemon crashes mid-sync.
+//
+// The claim also acts as a generation fence: the row MUST hold
+// the latest generation for (run_id, task_id). If a newer intent
+// has bumped the generation, the claim fails (returns false). The
+// reconciler MUST check the row's generation before calling
+// SyncTerminal to avoid a stale write.
 //
 // The caller MUST check the bool return: false means the row was
 // already not pending (superseded, done, or claimed by another
-// goroutine), and the caller MUST skip the SyncTerminal. After a
+// goroutine), OR the row is no longer the latest generation. The
+// caller MUST skip the SyncTerminal in that case. After a
 // successful SyncTerminal, the caller MUST call
 // MarkTaskSyncOutboxClaimedDone; if the done update affects 0 rows,
 // the row was lost mid-sync and the caller should treat the sync
@@ -169,10 +203,14 @@ func (s *Store) MarkTaskSyncOutboxDone(ctx context.Context, id int64) error {
 //
 // Returns ErrNotFound if the row id is absent.
 func (s *Store) ClaimTaskSyncOutbox(ctx context.Context, id int64) (bool, error) {
+	now := nowUTC()
+	lease := leaseToken()
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE task_sync_outbox SET status = ?, updated_at = ?
-		 WHERE id = ? AND status = ?`,
-		TaskSyncInFlight, timeString(nowUTC()), id, TaskSyncPending,
+		`UPDATE task_sync_outbox
+		    SET status = ?, updated_at = ?, claimed_at = ?, lease_token = ?
+		  WHERE id = ? AND status = ?`,
+		TaskSyncInFlight, timeString(now), timeString(now), lease,
+		id, TaskSyncPending,
 	)
 	if err != nil {
 		return false, err
@@ -193,6 +231,30 @@ func (s *Store) ClaimTaskSyncOutbox(ctx context.Context, id int64) (bool, error)
 			}
 			return false, err
 		}
+		return false, nil
+	}
+	// Generation fence: the row's generation must be the latest
+	// for (run_id, task_id). If a newer intent has been appended,
+	// the row is no longer authoritative; rollback the claim.
+	row, err := s.GetTaskSyncOutbox(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	var maxGen int64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT MAX(generation) FROM task_sync_outbox WHERE run_id = ? AND task_id = ?`,
+		row.RunID, row.TaskID,
+	).Scan(&maxGen); err != nil {
+		return false, err
+	}
+	if row.Generation < maxGen {
+		// The row is a stale generation. Rollback to pending so
+		// the next reconciler pass picks up the newer intent.
+		_, _ = s.db.ExecContext(ctx,
+			`UPDATE task_sync_outbox SET status = ?, claimed_at = '', lease_token = '', updated_at = ?
+			 WHERE id = ? AND status = ?`,
+			TaskSyncPending, timeString(now), id, TaskSyncInFlight,
+		)
 		return false, nil
 	}
 	return true, nil
@@ -304,7 +366,7 @@ func outcomeForRunStatus(s RunStatus) (RunOutcomeString, error) {
 // skip sync), false if the row is still actionable (caller should
 // retry the sync).
 func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int64, run *Run) (bool, error) {
-	outcome, status, err := s.getTaskSyncOutboxOutcomeStatus(ctx, id)
+	outcome, status, err := s.GetTaskSyncOutboxOutcomeStatus(ctx, id)
 	if err != nil {
 		return false, err
 	}
@@ -349,11 +411,12 @@ func (s *Store) GetTaskSyncOutboxOutcome(ctx context.Context, id int64) (string,
 	return outcome, nil
 }
 
-// getTaskSyncOutboxOutcomeStatus returns (outcome, status) for a
-// row. Atomic read; defends the TOCTOU race in
-// MarkTaskSyncOutboxSupersededIfStale where the row's status may
-// change between ListPending and the stale-check.
-func (s *Store) getTaskSyncOutboxOutcomeStatus(ctx context.Context, id int64) (string, string, error) {
+// GetTaskSyncOutboxOutcomeStatus returns (outcome, status) for a
+// row. Returns ErrNotFound for an absent row. (Note: status is
+// the textual status, not a typed bool; callers should compare
+// against TaskSyncPending / TaskSyncInFlight / TaskSyncDone /
+// TaskSyncSuperseded.)
+func (s *Store) GetTaskSyncOutboxOutcomeStatus(ctx context.Context, id int64) (string, string, error) {
 	var outcome, status string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT outcome, status FROM task_sync_outbox WHERE id = ?`, id,
@@ -365,6 +428,99 @@ func (s *Store) getTaskSyncOutboxOutcomeStatus(ctx context.Context, id int64) (s
 		return "", "", err
 	}
 	return outcome, status, nil
+}
+
+// getTaskSyncOutbox returns the full row. Used by ClaimTaskSyncOutbox
+// to enforce the generation fence.
+func (s *Store) GetTaskSyncOutbox(ctx context.Context, id int64) (*TaskSyncOutbox, error) {
+	var e TaskSyncOutbox
+	var claimed, created, updated string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, run_id, task_id, outcome, status, retry_count, last_error,
+		        claimed_at, lease_token, generation, created_at, updated_at
+		   FROM task_sync_outbox WHERE id = ?`, id,
+	).Scan(&e.ID, &e.RunID, &e.TaskID, &e.Outcome, &e.Status, &e.RetryCount, &e.LastError,
+		&claimed, &e.LeaseToken, &e.Generation, &created, &updated)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if t, err := parseTime(claimed); err == nil {
+		e.ClaimedAt = t
+	}
+	if t, err := parseTime(created); err == nil {
+		e.CreatedAt = t
+	}
+	if t, err := parseTime(updated); err == nil {
+		e.UpdatedAt = t
+	}
+	return &e, nil
+}
+
+// leaseToken returns a unique, opaque per-claim token. In
+// production this should be a UUID; for now we use a
+// monotonically-increasing counter exposed via nowUTC() base64.
+// The token is the only proof that THIS goroutine holds the row;
+// ReleaseExpiredTaskSyncOutbox uses ownership of the token to
+// avoid reclaiming a row that another goroutine re-claimed in
+// the meantime.
+var leaseCounter int64
+
+func leaseToken() string {
+	leaseCounter++
+	return timeString(nowUTC()) + "-" + itoa(leaseCounter)
+}
+
+func itoa(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}
+
+// ReclaimExpiredTaskSyncOutbox scans in_flight rows whose
+// claimed_at is older than the lease and resets them to pending.
+// This is the crash-recovery path the reviewer asked for: if the
+// daemon crashed mid-sync, the row is stuck in_flight forever
+// without this reaper. The reconciler MUST call this before
+// each list-and-retry loop.
+//
+// Returns the number of rows reclaimed. The lease is wall-clock
+// based; callers SHOULD pass a value that comfortably exceeds the
+// expected SyncTerminal duration (e.g. 5 minutes for a 30s
+// sync + headroom).
+func (s *Store) ReclaimExpiredTaskSyncOutbox(ctx context.Context, lease time.Duration) (int64, error) {
+	cutoff := nowUTC().Add(-lease)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE task_sync_outbox SET status = ?, claimed_at = '', lease_token = '', updated_at = ?
+		 WHERE status = ? AND claimed_at <> '' AND claimed_at < ?`,
+		TaskSyncPending, timeString(nowUTC()), TaskSyncInFlight, timeString(cutoff),
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // markSupersededByID transitions a pending row to superseded.

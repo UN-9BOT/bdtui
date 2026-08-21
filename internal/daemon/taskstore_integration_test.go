@@ -1028,3 +1028,220 @@ func dropTableViaFreshConn(dbPath, table string) error {
 	_, err = db.Exec("DROP TABLE IF EXISTS " + table)
 	return err
 }
+
+// TestReclaimExpiredTaskSyncOutbox covers the crash-safety
+// mechanism the reviewer asked for: if the daemon crashes after
+// ClaimTaskSyncOutbox and before MarkTaskSyncOutboxClaimedDone,
+// the row is in_flight forever without a reaper. The reaper
+// (ReclaimExpiredTaskSyncOutbox) resets in_flight rows whose
+// claimed_at is older than the lease back to pending.
+func TestReclaimExpiredTaskSyncOutbox(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-reclaim",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-reclaim",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), id)
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v, %v", claimed, err)
+	}
+
+	// Reclaim with a 0s lease: the row's claimed_at is now, so
+	// the cutoff is now (claimed_at < now is false initially).
+	// Wait, the cutoff is now - lease = now - 0s = now; the row
+	// was claimed at now, so claimed_at < now is false. We need
+	// a small positive lease so the cutoff is older than the row.
+	// Actually, the test is: with a 1ns lease, the cutoff is now
+	// - 1ns, which is older than claimed_at, so the row IS
+	// reclaimable.
+	n, err := store.ReclaimExpiredTaskSyncOutbox(context.Background(), 1*time.Nanosecond)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("reclaimed = %d, want 1", n)
+	}
+
+	// The row should now be pending again.
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("pending = %d, want 1 (the reclaimed row)", len(pending))
+	}
+
+	// Verify the row's claimed_at and lease_token are cleared.
+	row, err := store.GetTaskSyncOutbox(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !row.ClaimedAt.IsZero() {
+		t.Errorf("claimed_at = %v, want zero", row.ClaimedAt)
+	}
+	if row.LeaseToken != "" {
+		t.Errorf("lease_token = %q, want empty", row.LeaseToken)
+	}
+}
+
+// TestReclaimExpiredTaskSyncOutboxRespectsActiveLease covers the
+// happy path: an in_flight row whose lease has NOT expired is
+// NOT reclaimed. This protects live reconcilers from a reaper
+// double-reclaim.
+func TestReclaimExpiredTaskSyncOutboxRespectsActiveLease(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-active-lease",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-active-lease",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), id)
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v, %v", claimed, err)
+	}
+
+	// Reclaim with a 1-hour lease: the row's claimed_at is now,
+	// so 1h is far from expired.
+	n, err := store.ReclaimExpiredTaskSyncOutbox(context.Background(), time.Hour)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("reclaimed = %d, want 0 (active lease)", n)
+	}
+
+	// The row should still be in_flight.
+	_, status, err := store.GetTaskSyncOutboxOutcomeStatus(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if status != orch.TaskSyncInFlight {
+		t.Errorf("status = %q, want in_flight", status)
+	}
+}
+
+// TestClaimTaskSyncOutboxFailsOnStaleGeneration covers the
+// generation fence the reviewer asked for: between the
+// stale-check and the claim, a newer intent is appended. The
+// newer intent's supersede renovates the old row to 'superseded'
+// (because of the new IN(pending, in_flight) WHERE clause), so
+// the claim UPDATE finds 0 rows pending and returns false. This
+// is the generation-fence-via-supersede path.
+func TestClaimTaskSyncOutboxFailsOnStaleGeneration(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-stale-gen",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	oldID, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-stale-gen",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append old: %v", err)
+	}
+
+	// Newer intent supersedes the old row (AND bumps generation).
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-stale-gen",
+		Outcome: string(taskstore.RunCancelled),
+	}); err != nil {
+		t.Fatalf("append new: %v", err)
+	}
+
+	// Claim old row: must fail because the row is now superseded.
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), oldID)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if claimed {
+		t.Errorf("claim returned true on a superseded row; stale generation would have been written")
+	}
+}
+
+// TestAppendTaskSyncOutboxSupersedesInFlight covers the new
+// supersede semantics: an in_flight row is also demoted by a
+// new intent. The stale in_flight row's SyncTerminal must not
+// race the newer intent.
+func TestAppendTaskSyncOutboxSupersedesInFlight(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-supersede-inflight",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	oldID, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-supersede-inflight",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append old: %v", err)
+	}
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), oldID)
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v, %v", claimed, err)
+	}
+	// old row is now in_flight.
+
+	// Newer intent arrives. With the new IN(pending, in_flight)
+	// supersede clause, the in_flight row must be demoted to
+	// superseded.
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-supersede-inflight",
+		Outcome: string(taskstore.RunCancelled),
+	}); err != nil {
+		t.Fatalf("append new: %v", err)
+	}
+
+	// old row is now superseded (not in_flight).
+	_, status, err := store.GetTaskSyncOutboxOutcomeStatus(context.Background(), oldID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if status != orch.TaskSyncSuperseded {
+		t.Errorf("old row status = %q, want superseded", status)
+	}
+
+	// Newer row is pending.
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("pending = %d, want 1 (the newer row)", len(pending))
+	}
+}

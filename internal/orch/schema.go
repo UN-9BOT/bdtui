@@ -181,4 +181,30 @@ CREATE INDEX idx_task_sync_outbox_status ON task_sync_outbox(status, id);
 CREATE INDEX idx_task_sync_outbox_run ON task_sync_outbox(run_id);
 `,
 	},
+	{
+		version: 9,
+		name:    "task_sync_outbox_lease",
+		sql: `
+-- claimed_at and lease_token are the lease mechanism for crash-safe
+-- retry ownership. The reconciler sets claimed_at = now() and a
+-- unique lease_token on ClaimTaskSyncOutbox. If the daemon crashes
+-- mid-sync, the next restart's ReclaimExpiredTaskSyncOutbox(lease)
+-- helper resets in_flight rows whose claimed_at is older than the
+-- lease back to pending, so the retry is not stuck forever.
+--
+-- generation is a per (run_id, task_id) monotonic counter that
+-- lets SyncTerminal refuse to overwrite a newer lifecycle intent.
+-- The reconciler MUST pass the row's generation to the TaskStore
+-- wrapper; the Beads adapter MUST refuse to write if the
+-- generation is not the latest for (run_id, task_id). This is the
+-- generation fencing the reviewer asked for: between the
+-- stale-check and the actual SyncTerminal, a newer intent may
+-- supersede the row (regardless of in_flight vs pending status),
+-- and the SyncTerminal must skip such stale rows.
+ALTER TABLE task_sync_outbox ADD COLUMN claimed_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE task_sync_outbox ADD COLUMN lease_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE task_sync_outbox ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_task_sync_outbox_gen ON task_sync_outbox(run_id, task_id, generation);
+`,
+	},
 }
