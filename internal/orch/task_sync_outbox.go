@@ -201,10 +201,15 @@ func (s *Store) MarkTaskSyncOutboxDone(ctx context.Context, id int64) error {
 // be reclaimed if the daemon crashes mid-sync.
 //
 // The claim also acts as a generation fence: the row MUST hold
-// the latest generation for (run_id, task_id). If a newer intent
-// has bumped the generation, the claim fails (returns false). The
+// the latest generation for the TASK (across all runs). If a
+// newer intent for the same task has bumped the generation — even
+// from a different Run — the claim fails (returns false). The
 // reconciler MUST check the row's generation before calling
-// SyncTerminal to avoid a stale write.
+// SyncTerminal to avoid a stale write. The per-task scope
+// matches AppendTaskSyncOutbox's per-task generation scheme (the
+// Beads label is on the task, not on the Run) and ensures that
+// the claim cannot be hijacked by a stale row of a previous Run
+// on the same task.
 //
 // The caller MUST check the bool return: false means the row was
 // already not pending (superseded, done, or claimed by another
@@ -248,16 +253,20 @@ func (s *Store) ClaimTaskSyncOutbox(ctx context.Context, id int64) (bool, error)
 		return false, nil
 	}
 	// Generation fence: the row's generation must be the latest
-	// for (run_id, task_id). If a newer intent has been appended,
-	// the row is no longer authoritative; rollback the claim.
+	// for the TASK (across all runs). Per-task generation matches
+	// the Beads label generation scheme (the label is on the task,
+	// not on the Run) and is the invariant AppendTaskSyncOutbox
+	// enforces on insert. If a newer intent for the SAME task has
+	// been appended — even from a different Run — the row is no
+	// longer authoritative; rollback the claim.
 	row, err := s.GetTaskSyncOutbox(ctx, id)
 	if err != nil {
 		return false, err
 	}
 	var maxGen int64
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT MAX(generation) FROM task_sync_outbox WHERE run_id = ? AND task_id = ?`,
-		row.RunID, row.TaskID,
+		`SELECT MAX(generation) FROM task_sync_outbox WHERE task_id = ?`,
+		row.TaskID,
 	).Scan(&maxGen); err != nil {
 		return false, err
 	}

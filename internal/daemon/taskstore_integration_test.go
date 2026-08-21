@@ -1189,6 +1189,92 @@ func TestClaimTaskSyncOutboxFailsOnStaleGeneration(t *testing.T) {
 	}
 }
 
+// TestClaimTaskSyncOutboxFailsOnStaleCrossRunGeneration covers the
+// per-task generation scope on the claim path. Two terminal runs
+// for the SAME task each append an outbox row. Run A's row gets
+// generation 1, Run B's row gets generation 2 (per-task max).
+// Claiming Run A's row must fail because the row is stale relative
+// to the task-level generation 2 even though it is still pending
+// (Run A's row was never superseded; both rows are for different
+// (run_id, task_id) pairs, so the append-side supersede does not
+// apply). The claim's generation-fence check MUST compare against
+// the per-task max, not the (run_id, task_id) max, otherwise a
+// reconciler could hijack a previous run's stale row.
+func TestClaimTaskSyncOutboxFailsOnStaleCrossRunGeneration(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+
+	// Two terminal runs for the same task. The single-active-Run
+	// index only blocks non-terminal runs, so two completed runs
+	// for the same task are permitted.
+	runA := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-cross-run-gen",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), runA); err != nil {
+		t.Fatalf("CreateRun A: %v", err)
+	}
+	runB := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-cross-run-gen",
+		Status:    orch.RunFailed,
+	}
+	if err := store.CreateRun(context.Background(), runB); err != nil {
+		t.Fatalf("CreateRun B: %v", err)
+	}
+
+	// Run A appends first: per-task gen=1. Run A's row stays
+	// pending because the supersede in AppendTaskSyncOutbox only
+	// matches (run_id, task_id) pairs.
+	rowA, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   runA.ID,
+		TaskID:  "task-cross-run-gen",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append A: %v", err)
+	}
+
+	// Run B appends: per-task gen=2.
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   runB.ID,
+		TaskID:  "task-cross-run-gen",
+		Outcome: string(taskstore.RunFailed),
+	}); err != nil {
+		t.Fatalf("append B: %v", err)
+	}
+
+	// Row A must still be pending (it is the only pending row
+	// for (runA.ID, task), not for the task).
+	rowAState, err := store.GetTaskSyncOutbox(context.Background(), rowA)
+	if err != nil {
+		t.Fatalf("get A: %v", err)
+	}
+	if rowAState.Status != orch.TaskSyncPending {
+		t.Errorf("row A status = %q, want pending (no supersede across (run_id, task_id) pairs)", rowAState.Status)
+	}
+
+	// Claim row A: must fail because the per-task max is 2 (row B)
+	// and row A's generation is 1. The reconciler must NOT be
+	// able to claim and re-sync a previous run's stale row.
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), rowA)
+	if err != nil {
+		t.Fatalf("claim A: %v", err)
+	}
+	if claimed {
+		t.Errorf("claim returned true for cross-run stale row A (gen=1); per-task max is 2; previous run's sync would be replayed")
+	}
+
+	// Row A must have been rolled back to pending (not stuck in_flight).
+	rowAState, err = store.GetTaskSyncOutbox(context.Background(), rowA)
+	if err != nil {
+		t.Fatalf("get A post-claim: %v", err)
+	}
+	if rowAState.Status != orch.TaskSyncPending {
+		t.Errorf("row A status after failed claim = %q, want pending (rolled back)", rowAState.Status)
+	}
+}
+
 // TestAppendTaskSyncOutboxSupersedesInFlight covers the new
 // supersede semantics: an in_flight row is also demoted by a
 // new intent. The stale in_flight row's SyncTerminal must not
