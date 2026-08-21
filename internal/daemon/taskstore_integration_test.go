@@ -504,6 +504,93 @@ func TestOutboxPersistedBeforeExternalSync(t *testing.T) {
 	}
 }
 
+// TestReconcileSupersedesStalePendingRow simulates the scenario
+// from R5: a failed needs_attention -> blocked sync left a pending
+// row in the outbox, then the Run moved to completed -> done. The
+// next reconciler pass must NOT replay the stale blocked outcome;
+// the helper MarkTaskSyncOutboxSupersededIfStale exists exactly so
+// the reconciler can drop stale rows before retrying.
+func TestReconcileSupersedesStalePendingRow(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-stale",
+		Status:    orch.RunNeedsAttention,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	// Seed: append a needs_attention -> blocked pending row.
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-stale",
+		Outcome: string(taskstore.RunNeedsAttention),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Run has now advanced to completed. The reconciler, before
+	// retrying the sync, asks the outbox whether the row is still
+	// actionable.
+	run.Status = orch.RunCompleted
+	superseded, err := store.MarkTaskSyncOutboxSupersededIfStale(context.Background(), id, run)
+	if err != nil {
+		t.Fatalf("check stale: %v", err)
+	}
+	if !superseded {
+		t.Errorf("stale row was not marked superseded")
+	}
+
+	// The pending queue is now empty.
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d, want 0 (stale row should not be replayed)", len(pending))
+	}
+}
+
+// TestReconcileKeepsCurrentPendingRow protects the happy path:
+// when the pending outcome matches the current Run status, the
+// reconciler MUST NOT mark it superseded (the row is still
+// actionable).
+func TestReconcileKeepsCurrentPendingRow(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-current",
+		Status:    orch.RunCancelled,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-current",
+		Outcome: string(taskstore.RunCancelled),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	superseded, err := store.MarkTaskSyncOutboxSupersededIfStale(context.Background(), id, run)
+	if err != nil {
+		t.Fatalf("check stale: %v", err)
+	}
+	if superseded {
+		t.Errorf("current row was wrongly marked superseded")
+	}
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("pending = %d, want 1", len(pending))
+	}
+}
+
 // recordingTaskStore tracks every SyncTerminal call so the test can
 // assert the call was or was not made.
 type recordingTaskStore struct {

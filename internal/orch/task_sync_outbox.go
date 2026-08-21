@@ -152,6 +152,98 @@ func (s *Store) IncrementTaskSyncOutboxRetry(ctx context.Context, id int64, errM
 	return err
 }
 
+// RunOutcomeString is the canonical Run classification used by the
+// outbox. The literal values match the TaskStore's RunOutcome enum
+// so the reconciler can pass them straight back to
+// TaskStore.SyncTerminal.
+type RunOutcomeString string
+
+const (
+	// RunOutcomeString constants. The values are the same as the
+	// taskstore RunOutcome enum; they are mirrored here to avoid
+	// an orch -> taskstore import cycle.
+	RunOutcomeCompleted       RunOutcomeString = "completed"
+	RunOutcomeFailed          RunOutcomeString = "failed"
+	RunOutcomeNeedsAttention  RunOutcomeString = "needs_attention"
+	RunOutcomeCancelled       RunOutcomeString = "cancelled"
+)
+
+// outcomeForRunStatus returns the canonical outcome for a Run
+// status. Non-terminal statuses (queued / running / waiting_human)
+// have no mapping and return ErrNotFound so the caller can mark
+// the outbox row as stale.
+func outcomeForRunStatus(s RunStatus) (RunOutcomeString, error) {
+	switch s {
+	case RunCompleted:
+		return RunOutcomeCompleted, nil
+	case RunFailed:
+		return RunOutcomeFailed, nil
+	case RunNeedsAttention:
+		return RunOutcomeNeedsAttention, nil
+	case RunCancelled:
+		return RunOutcomeCancelled, nil
+	default:
+		return "", ErrNotFound
+	}
+}
+
+// MarkTaskSyncOutboxSupersededIfStale opens an outbox row and
+// supersedes it if the current Run status no longer matches the
+// recorded outcome. The reconciler MUST call this before retrying
+// the sync: a pending row whose outcome does not match the current
+// Run status is stale by construction (e.g. needs_attention ->
+// blocked left pending, then Run became completed -> done; the
+// stale pending row would revert the Beads task back to blocked).
+//
+// Returns true if the row was superseded (caller should skip
+// sync), false if the row is still actionable (caller should retry
+// the sync).
+func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int64, run *Run) (bool, error) {
+	outcome, err := s.GetTaskSyncOutboxOutcome(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	expected, err := outcomeForRunStatus(run.Status)
+	if err != nil {
+		// Run status has no mapping (non-terminal): the pending row
+		// is stale by construction.
+		return markSupersededByID(ctx, s, id)
+	}
+	if string(expected) == outcome {
+		return false, nil
+	}
+	return markSupersededByID(ctx, s, id)
+}
+
+// GetTaskSyncOutboxOutcome returns the recorded outcome for a
+// pending outbox row. Returns ErrNotFound for an absent row.
+func (s *Store) GetTaskSyncOutboxOutcome(ctx context.Context, id int64) (string, error) {
+	var outcome string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT outcome FROM task_sync_outbox WHERE id = ?`, id,
+	).Scan(&outcome)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return outcome, nil
+}
+
+func markSupersededByID(ctx context.Context, s *Store, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE task_sync_outbox SET status = ?, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		TaskSyncSuperseded, timeString(nowUTC()), id, TaskSyncPending,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // suppress unused warnings if the build flags change; the sql.ErrNoRows
 // import is used by callers that classify the error.
 var _ = sql.ErrNoRows
