@@ -104,16 +104,16 @@ func TestFakeSyncTerminal(t *testing.T) {
 	f := taskstoretest.New().Seed("t1", "first", taskstore.TaskInProgress)
 	ctx := context.Background()
 
-	if err := f.SyncTerminal(ctx, "t1", taskstore.RunCompleted); err != nil {
+	if err := f.SyncTerminal(ctx, "t1", taskstore.RunCompleted, 1); err != nil {
 		t.Fatalf("SyncTerminal(completed): %v", err)
 	}
-	if err := f.SyncTerminal(ctx, "t1", taskstore.RunFailed); err != nil {
+	if err := f.SyncTerminal(ctx, "t1", taskstore.RunFailed, 2); err != nil {
 		t.Fatalf("SyncTerminal(failed): %v", err)
 	}
-	if err := f.SyncTerminal(ctx, "t1", taskstore.RunNeedsAttention); err != nil {
+	if err := f.SyncTerminal(ctx, "t1", taskstore.RunNeedsAttention, 3); err != nil {
 		t.Fatalf("SyncTerminal(needs_attention): %v", err)
 	}
-	if err := f.SyncTerminal(ctx, "t1", taskstore.RunCancelled); err != nil {
+	if err := f.SyncTerminal(ctx, "t1", taskstore.RunCancelled, 4); err != nil {
 		t.Fatalf("SyncTerminal(cancelled): %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestFakeSyncTerminal(t *testing.T) {
 
 func TestFakeSyncTerminalInvalid(t *testing.T) {
 	f := taskstoretest.New().Seed("t1", "first", taskstore.TaskInProgress)
-	err := f.SyncTerminal(context.Background(), "t1", taskstore.RunOutcome("stuck"))
+	err := f.SyncTerminal(context.Background(), "t1", taskstore.RunOutcome("stuck"), 1)
 	if !errors.Is(err, taskstore.ErrInvalidOutcome) {
 		t.Fatalf("err = %v, want ErrInvalidOutcome", err)
 	}
@@ -151,7 +151,7 @@ func TestFakeSyncTerminalInvalid(t *testing.T) {
 
 func TestFakeSyncTerminalMissing(t *testing.T) {
 	f := taskstoretest.New()
-	err := f.SyncTerminal(context.Background(), "missing", taskstore.RunCompleted)
+	err := f.SyncTerminal(context.Background(), "missing", taskstore.RunCompleted, 1)
 	if !errors.Is(err, taskstore.ErrTaskNotFound) {
 		t.Fatalf("err = %v, want ErrTaskNotFound", err)
 	}

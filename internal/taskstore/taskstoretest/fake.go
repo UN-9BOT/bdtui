@@ -26,9 +26,10 @@ type Fake struct {
 // RecordedUpdate captures one Successive write through Claim or SyncTerminal
 // for later assertions.
 type RecordedUpdate struct {
-	TaskID  string
-	Outcome taskstore.RunOutcome // empty for Claim
-	Title   string               // copied from the snapshot at update time
+	TaskID     string
+	Outcome    taskstore.RunOutcome // empty for Claim
+	Title      string               // copied from the snapshot at update time
+	Generation int64                // recorded generation on SyncTerminal
 }
 
 // New returns a fresh Fake with no tasks.
@@ -105,7 +106,7 @@ func (f *Fake) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
 }
 
 // SyncTerminal implements TaskStore.
-func (f *Fake) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome) error {
+func (f *Fake) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	t, ok := f.tasks[id]
@@ -120,9 +121,10 @@ func (f *Fake) SyncTerminal(ctx context.Context, id string, outcome taskstore.Ru
 	t.SnapshotAt = f.now()
 	f.tasks[id] = t.Clone()
 	f.updates = append(f.updates, RecordedUpdate{
-		TaskID:  id,
-		Outcome: outcome,
-		Title:   t.Title,
+		TaskID:     id,
+		Outcome:    outcome,
+		Title:      t.Title,
+		Generation: generation,
 	})
 	return nil
 }

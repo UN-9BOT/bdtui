@@ -212,7 +212,7 @@ func TestSyncTerminal(t *testing.T) {
 		if _, err := store.Claim(context.Background(), id); err != nil && !errors.Is(err, taskstore.ErrTaskAlreadyClaimed) {
 			t.Fatalf("prep Claim: %v", err)
 		}
-		if err := store.SyncTerminal(context.Background(), id, c.outcome); err != nil {
+		if err := store.SyncTerminal(context.Background(), id, c.outcome, 1); err != nil {
 			t.Fatalf("SyncTerminal(%s): %v", c.outcome, err)
 		}
 		snap, err := store.Get(context.Background(), id)
@@ -233,9 +233,32 @@ func TestSyncTerminalInvalid(t *testing.T) {
 	root := fixture(t)
 	id := createTask(t, root, "nope")
 	store := beads.NewStore(beads.New(root))
-	err := store.SyncTerminal(context.Background(), id, taskstore.RunOutcome("stuck"))
+	err := store.SyncTerminal(context.Background(), id, taskstore.RunOutcome("stuck"), 1)
 	if !errors.Is(err, taskstore.ErrInvalidOutcome) {
 		t.Fatalf("err = %v, want ErrInvalidOutcome", err)
+	}
+}
+
+// TestSyncTerminalStaleGenerationRejected covers the generation
+// fence the reviewer asked for: a fresh sync at generation N is
+// accepted and stamps the orch-gen-N label. A subsequent sync at
+// generation N-1 (older) is rejected with ErrStaleLifecycleIntent
+// because the currently-recorded generation is greater than the
+// incoming one.
+func TestSyncTerminalStaleGenerationRejected(t *testing.T) {
+	root := fixture(t)
+	id := createTask(t, root, "stale-gen")
+	store := beads.NewStore(beads.New(root))
+
+	// First sync at generation 5.
+	if err := store.SyncTerminal(context.Background(), id, taskstore.RunCompleted, 5); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+
+	// Second sync at generation 3 (older). Must be rejected.
+	err := store.SyncTerminal(context.Background(), id, taskstore.RunFailed, 3)
+	if !errors.Is(err, taskstore.ErrStaleLifecycleIntent) {
+		t.Errorf("stale sync: err = %v, want ErrStaleLifecycleIntent", err)
 	}
 }
 
@@ -416,6 +439,7 @@ type fakeClient struct {
 	claim   []byte
 	claimErr error
 	updates []string
+	labels  []string
 }
 
 func (f *fakeClient) Show(ctx context.Context, id string) ([]byte, error) {
@@ -426,6 +450,10 @@ func (f *fakeClient) Show(ctx context.Context, id string) ([]byte, error) {
 }
 func (f *fakeClient) Update(ctx context.Context, id string, status string) ([]byte, error) {
 	f.updates = append(f.updates, id+":"+status)
+	return []byte(`{}`), nil
+}
+func (f *fakeClient) AddLabel(ctx context.Context, id string, label string) ([]byte, error) {
+	f.labels = append(f.labels, id+":"+label)
 	return []byte(`{}`), nil
 }
 func (f *fakeClient) Claim(ctx context.Context, id string) ([]byte, error) {

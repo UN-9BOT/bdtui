@@ -31,12 +31,18 @@ import (
 // Client is the subset of the `bd` CLI that the TaskStore needs. It is
 // exposed so tests can inject a fake without shelling out.
 type Client interface {
-	// Show returns the raw JSON output of `bd show <id> --json`. A missing
-	// task is reported by returning a non-nil error that wraps
-	// taskstore.ErrTaskNotFound.
+// Show returns the raw JSON output of `bd show <id> --json`. A missing
+// task must surface as ErrTaskNotFound so the controller can refuse
+// to launch a Run.
 	Show(ctx context.Context, id string) ([]byte, error)
-	// Update returns the raw JSON output of `bd update <id> --status <s> --json`.
+// Update returns the raw JSON output of `bd update <id> --status <s> --json`.
+// It returns ErrTaskStoreUnavailable for transient backend failures
+// and ErrTaskAlreadyClaimed if the backend refuses the transition.
 	Update(ctx context.Context, id string, status string) ([]byte, error)
+// AddLabel returns the raw JSON output of `bd update <id> --add-label <l>`.
+// This is the mechanism SyncTerminal uses to record the orchestrator's
+// generation on the task so the next sync can fence stale writes.
+	AddLabel(ctx context.Context, id string, label string) ([]byte, error)
 	// Claim returns the raw JSON output of `bd update <id> --claim --json`.
 	// The claim is atomic at the Beads level: it transitions todo ->
 	// in_progress and assigns the issue to the current user in a single
@@ -72,6 +78,11 @@ func (c *CLI) Show(ctx context.Context, id string) ([]byte, error) {
 // Update shells out to `bd update <id> --status <status> --json`.
 func (c *CLI) Update(ctx context.Context, id string, status string) ([]byte, error) {
 	return c.run(ctx, "update", id, "--status", status, "--json")
+}
+
+// AddLabel shells out to `bd update <id> --add-label <label> --json`.
+func (c *CLI) AddLabel(ctx context.Context, id string, label string) ([]byte, error) {
+	return c.run(ctx, "update", id, "--add-label", label, "--json")
 }
 
 // Claim shells out to `bd update <id> --claim --json`. The flag is the
@@ -193,13 +204,14 @@ var _ taskstore.TaskStore = (*Store)(nil)
 // about. Beads may add fields; we ignore unknown fields and tolerate
 // missing optional ones.
 type bdTask struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Priority    int    `json:"priority"`
-	IssueType   string `json:"issue_type"`
-	UpdatedAt   string `json:"updated_at"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Status      string   `json:"status"`
+	Priority    int      `json:"priority"`
+	IssueType   string   `json:"issue_type"`
+	UpdatedAt   string   `json:"updated_at"`
+	Labels      []string `json:"labels"`
 }
 
 // toTask converts a parsed bdTask into the taskstore.Task contract. The
@@ -218,6 +230,7 @@ func toTask(b bdTask) (*taskstore.Task, error) {
 		Status:      status,
 		Priority:    b.Priority,
 		IssueType:   b.IssueType,
+		Labels:      b.Labels,
 		SnapshotAt:  time.Now().UTC(),
 	}
 	if b.UpdatedAt != "" {
@@ -307,8 +320,13 @@ func (s *Store) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
 
 // SyncTerminal implements taskstore.TaskStore. The outcome is mapped to a
 // TaskStatus via MapRunOutcomeToTaskStatus and then to a Beads status via
-// toBeadsStatus. The actual write is a single `bd update` call.
-func (s *Store) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome) error {
+// toBeadsStatus. The generation argument is the orchestrator's monotonic
+// counter for (run_id, task_id); the Beads adapter records it as a
+// label on the task so the next sync can fence stale writes. If the
+// Beads backend already has a newer generation on record for this
+// task, the write is short-circuited with ErrStaleLifecycleIntent
+// and the local side-effect (outbox row completion) is skipped.
+func (s *Store) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
 	status, err := taskstore.MapRunOutcomeToTaskStatus(outcome)
 	if err != nil {
 		return err
@@ -317,8 +335,45 @@ func (s *Store) SyncTerminal(ctx context.Context, id string, outcome taskstore.R
 	if err != nil {
 		return err
 	}
+	// Read the current generation label. If the current generation
+	// is greater than the one we are about to write, the intent is
+	// stale and the write is skipped. The Beads adapter acts as the
+	// generation-stamped source of truth.
+	cur, err := s.readGeneration(ctx, id)
+	if err == nil && cur > generation {
+		return fmt.Errorf("%w: current=%d, incoming=%d", taskstore.ErrStaleLifecycleIntent, cur, generation)
+	}
 	_, err = s.Client.Update(ctx, id, beadsStatus)
-	return err
+	if err != nil {
+		return err
+	}
+	// Record generation as a label on the task. Best-effort: a
+	// failure here is not fatal (the write succeeded), but the
+	// next sync will re-read whatever the backend has.
+	_, _ = s.Client.AddLabel(ctx, id, fmt.Sprintf("orch-gen-%d", generation))
+	return nil
+}
+
+// readGeneration extracts the orchestrator's generation label from
+// the task. Beads does not have a native generation concept, so we
+// store it as a label prefixed with "orch-gen-". Returns 0 if the
+// label is absent (this is the "first sync" case).
+func (s *Store) readGeneration(ctx context.Context, id string) (int64, error) {
+	raw, err := s.Client.Show(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	task, err := parseTask(raw)
+	if err != nil {
+		return 0, err
+	}
+	for _, lab := range task.Labels {
+		var n int64
+		if _, err := fmt.Sscanf(lab, "orch-gen-%d", &n); err == nil {
+			return n, nil
+		}
+	}
+	return 0, nil
 }
 
 // toBeadsStatus maps the taskstore vocabulary to the Beads CLI vocabulary.

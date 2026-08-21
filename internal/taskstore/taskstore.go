@@ -96,6 +96,11 @@ type Task struct {
 	Status      TaskStatus
 	Priority    int
 	IssueType   string
+	// Labels is the set of free-form labels attached to the task
+	// by the backend. The Beads adapter uses the prefix "orch-gen-"
+	// to record the orchestrator's generation counter for
+	// generation-fenced SyncTerminal.
+	Labels []string
 	// SnapshotAt is the wall-clock time the TaskStore froze the fields above.
 	SnapshotAt time.Time
 }
@@ -131,6 +136,9 @@ func (t *Task) Clone() *Task {
 //     when the BACKEND reports a foreign holder.
 //   - SyncTerminal pushes the controller's terminal Run classification
 //     back to the task using the mapping in MapRunOutcomeToTaskStatus.
+//     The generation argument is the orchestrator's monotonic counter
+//     for (run_id, task_id); the Beads adapter records it on the task
+//     (e.g. as a label) so the next sync can fence stale writes.
 //   - All methods MUST return ErrTaskStoreUnavailable when the backend
 //     is unreachable so the controller can refuse to launch a Run.
 //
@@ -142,7 +150,7 @@ func (t *Task) Clone() *Task {
 type TaskStore interface {
 	Get(ctx context.Context, id string) (*Task, error)
 	Claim(ctx context.Context, id string) (*Task, error)
-	SyncTerminal(ctx context.Context, id string, outcome RunOutcome) error
+	SyncTerminal(ctx context.Context, id string, outcome RunOutcome, generation int64) error
 }
 
 // Sentinel errors. Adapters MUST wrap these with %w so callers can use
@@ -160,4 +168,10 @@ var (
 	// ErrInvalidOutcome is returned when SyncTerminal receives an outcome
 	// that has no defined TaskStatus mapping.
 	ErrInvalidOutcome = errors.New("taskstore: invalid run outcome")
+	// ErrStaleLifecycleIntent is returned when SyncTerminal's generation
+	// argument is older than the current generation the backend has on
+	// record for the task. The orchestrator MUST treat this as a
+	// no-op and skip the local side-effect; the row is the authoritative
+	// current desired state.
+	ErrStaleLifecycleIntent = errors.New("taskstore: stale lifecycle intent")
 )

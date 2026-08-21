@@ -67,6 +67,11 @@ func (e *TaskSyncOutbox) Pending() bool { return e.Status == TaskSyncPending }
 // is one greater than the previous max generation for (run_id,
 // task_id); the caller can pass this generation to the TaskStore
 // to fence SyncTerminal against stale writes.
+//
+// The input struct's Generation field is overwritten with the
+// assigned generation. The input struct's ID field is overwritten
+// with the new row's id, so callers can read both values without
+// a separate query.
 func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) (int64, error) {
 	if e.Status == "" {
 		e.Status = TaskSyncPending
@@ -127,6 +132,7 @@ func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) (in
 	if err != nil {
 		return 0, err
 	}
+	e.ID = id
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}

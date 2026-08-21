@@ -263,7 +263,7 @@ func (f *flakyTaskStore) Get(ctx context.Context, id string) (*taskstore.Task, e
 func (f *flakyTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
 	return f.inner.Claim(ctx, id)
 }
-func (f *flakyTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome) error {
+func (f *flakyTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
 	return fmt.Errorf("simulated Beads outage for %s", id)
 }
 
@@ -890,9 +890,9 @@ func (r *recordingTaskStore) Get(ctx context.Context, id string) (*taskstore.Tas
 func (r *recordingTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
 	return r.inner.Claim(ctx, id)
 }
-func (r *recordingTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome) error {
+func (r *recordingTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
 	r.syncTerminalCalls = append(r.syncTerminalCalls, outcome)
-	return r.inner.SyncTerminal(ctx, id, outcome)
+	return r.inner.SyncTerminal(ctx, id, outcome, generation)
 }
 
 // TestSyncAbortsWhenOutboxPersistFails verifies that when the

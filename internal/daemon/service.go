@@ -205,12 +205,13 @@ func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 	// the write is bounded by the same deadline as the Run transition.
 	// If this fails, we DO NOT attempt the external side effect:
 	// the side effect without a durable intent is unrecoverable.
-	outboxID, outboxErr := s.store.AppendTaskSyncOutbox(ctx, &orch.TaskSyncOutbox{
+	outbox := &orch.TaskSyncOutbox{
 		RunID:   run.ID,
 		TaskID:  run.TaskID,
 		Outcome: string(outcome),
 		Status:  orch.TaskSyncPending,
-	})
+	}
+	outboxID, outboxErr := s.store.AppendTaskSyncOutbox(ctx, outbox)
 	if outboxErr != nil {
 		// The reconciler cannot find this Run if the outbox row was
 		// not persisted. Surface the failure as an audit event in
@@ -229,7 +230,7 @@ func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := s.tasks.SyncTerminal(syncCtx, run.TaskID, outcome); err != nil {
+	if err := s.tasks.SyncTerminal(syncCtx, run.TaskID, outcome, outbox.Generation); err != nil {
 		s.recordTaskSyncFailed(syncCtx, run, outcome, err)
 		return
 	}
