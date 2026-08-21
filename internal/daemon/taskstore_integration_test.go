@@ -1265,13 +1265,17 @@ func TestClaimTaskSyncOutboxFailsOnStaleCrossRunGeneration(t *testing.T) {
 		t.Errorf("claim returned true for cross-run stale row A (gen=1); per-task max is 2; previous run's sync would be replayed")
 	}
 
-	// Row A must have been rolled back to pending (not stuck in_flight).
+	// Row A must have been transitioned to superseded (terminal
+	// non-actionable state) so the reconciler does not pick it up
+	// on the next cycle. Rolling back to pending would create a
+	// retry loop: the next cycle would see the same generation
+	// mismatch, lose the claim again, and re-enter pending forever.
 	rowAState, err = store.GetTaskSyncOutbox(context.Background(), rowA)
 	if err != nil {
 		t.Fatalf("get A post-claim: %v", err)
 	}
-	if rowAState.Status != orch.TaskSyncPending {
-		t.Errorf("row A status after failed claim = %q, want pending (rolled back)", rowAState.Status)
+	if rowAState.Status != orch.TaskSyncSuperseded {
+		t.Errorf("row A status after failed claim = %q, want superseded (terminal non-actionable, no retry loop)", rowAState.Status)
 	}
 }
 

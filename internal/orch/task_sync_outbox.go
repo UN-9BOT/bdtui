@@ -271,12 +271,23 @@ func (s *Store) ClaimTaskSyncOutbox(ctx context.Context, id int64) (bool, error)
 		return false, err
 	}
 	if row.Generation < maxGen {
-		// The row is a stale generation. Rollback to pending so
-		// the next reconciler pass picks up the newer intent.
+		// The row is stale: a newer intent for the same TASK (not
+		// just the same (run_id, task_id)) bumped the per-task
+		// generation above this row's. The newer intent owns the
+		// lifecycle now; this row is permanently obsolete and MUST
+		// be transitioned to superseded (terminal non-actionable
+		// state) so the reconciler does not pick it up on the next
+		// cycle. Rolling back to pending would create a retry
+		// loop: the next cycle would see the same generation
+		// mismatch, lose the claim again, and re-enter pending
+		// forever. The row may be in pending or in_flight (the
+		// claim above moved it to in_flight); we accept both so
+		// the transition is safe.
 		_, _ = s.db.ExecContext(ctx,
 			`UPDATE task_sync_outbox SET status = ?, claimed_at = '', lease_token = '', updated_at = ?
-			 WHERE id = ? AND status = ?`,
-			TaskSyncPending, timeString(now), id, TaskSyncInFlight,
+			 WHERE id = ? AND status IN (?, ?)`,
+			TaskSyncSuperseded, timeString(now), id,
+			TaskSyncPending, TaskSyncInFlight,
 		)
 		return false, nil
 	}
