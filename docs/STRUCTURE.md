@@ -16,6 +16,23 @@ This repository uses a standard Go CLI layout centered on `cmd` + `internal`.
   - External/system integrations:
   - `beads/` for `.beads` discovery and watch target helpers.
   - `clipboard/` for clipboard operations.
+- `internal/daemon/`
+  - gRPC daemon (bdtuid) that owns orchestrator durable state and the
+    task lifecycle. Exposes the Orchestrator proto surface.
+- `internal/orch/`
+  - SQLite-backed orchestrator store: projects, runs, step attempts,
+    executions, human inputs, launch intents, events.
+- `internal/taskstore/`
+  - TaskStore boundary (interface + Beads adapter) used by the daemon
+    to drive the high-level task lifecycle (todo / in_progress / done
+    / blocked). The Beads adapter lives in `internal/taskstore/beads/`.
+- `internal/recovery/`
+  - Recovery primitives (handle restarts, reattach executions).
+- `internal/agent/`
+  - Runtime interface and adapters (ExecRuntime today, HerdrRuntime
+    upcoming).
+- `internal/workflow/`
+  - Workflow loader, validator, role model.
 - `tests/`
   - Black-box integration-style tests importing `internal/app`.
 - `docs/`

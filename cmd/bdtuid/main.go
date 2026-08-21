@@ -11,21 +11,24 @@ import (
 
 	"bdtui/internal/daemon"
 	"bdtui/internal/orch"
+	"bdtui/internal/taskstore"
+	"bdtui/internal/taskstore/beads"
 )
 
 func main() {
 	socketPath := flag.String("socket", daemon.DefaultSocketPath(), "Unix domain socket path")
 	dbPath := flag.String("db", daemon.DefaultDBPath(), "SQLite database path")
 	pidPath := flag.String("pidfile", "", "Path to write the daemon PID (defaults to <socket>.pid)")
+	beadsDir := flag.String("beads-dir", "", "Path to the project's .beads directory (enables the high-level task lifecycle integration). When empty the daemon runs without a TaskStore and the legacy behaviour is preserved.")
 	flag.Parse()
 
-	if err := run(*socketPath, *dbPath, *pidPath); err != nil {
+	if err := run(*socketPath, *dbPath, *pidPath, *beadsDir); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(socketPath, dbPath, pidPath string) error {
+func run(socketPath, dbPath, pidPath, beadsDir string) error {
 	if pidPath == "" {
 		pidPath = socketPath + ".pid"
 	}
@@ -62,6 +65,10 @@ func run(socketPath, dbPath, pidPath string) error {
 	}
 	defer store.Close()
 
-	srv := daemon.NewServer(store, socketPath)
+	var tasks taskstore.TaskStore
+	if beadsDir != "" {
+		tasks = beads.NewStore(beads.New(beadsDir))
+	}
+	srv := daemon.NewServerWithTasks(store, tasks, socketPath)
 	return srv.Serve(ctx)
 }

@@ -10,6 +10,7 @@ import (
 
 	"bdtui/internal/daemon/daemonpb"
 	"bdtui/internal/orch"
+	"bdtui/internal/taskstore"
 
 	"google.golang.org/grpc"
 )
@@ -27,14 +28,24 @@ type Server struct {
 }
 
 // NewServer builds a server that serves the Orchestrator API over the given
-// Unix domain socket path.
+// Unix domain socket path. The service has no TaskStore integration; use
+// NewServerWithTasks to wire the Beads adapter (or any other TaskStore
+// implementation) into the high-level task lifecycle.
 func NewServer(store *orch.Store, socketPath string) *Server {
+	return NewServerWithTasks(store, nil, socketPath)
+}
+
+// NewServerWithTasks builds a server whose Service has the given TaskStore.
+// The same store is used for both the SQLite orchestrator state and the
+// high-level task lifecycle. The TaskStore may be nil; in that case the
+// server behaves identically to NewServer.
+func NewServerWithTasks(store *orch.Store, tasks taskstore.TaskStore, socketPath string) *Server {
 	s := &Server{
 		grpcServer: grpc.NewServer(),
 		store:      store,
 		socketPath: socketPath,
 	}
-	daemonpb.RegisterOrchestratorServer(s.grpcServer, NewService(store))
+	daemonpb.RegisterOrchestratorServer(s.grpcServer, NewServiceWithTasks(store, tasks))
 	return s
 }
 

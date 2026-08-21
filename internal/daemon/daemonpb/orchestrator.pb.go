@@ -31,6 +31,7 @@ type Run struct {
 	Status               string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
 	WorkflowSnapshotRef  string                 `protobuf:"bytes,5,opt,name=workflow_snapshot_ref,json=workflowSnapshotRef,proto3" json:"workflow_snapshot_ref,omitempty"`
 	WorkflowSnapshot     string                 `protobuf:"bytes,6,opt,name=workflow_snapshot,json=workflowSnapshot,proto3" json:"workflow_snapshot,omitempty"`
+	TaskSnapshot         string                 `protobuf:"bytes,14,opt,name=task_snapshot,json=taskSnapshot,proto3" json:"task_snapshot,omitempty"`
 	CurrentStepId        *string                `protobuf:"bytes,7,opt,name=current_step_id,json=currentStepId,proto3,oneof" json:"current_step_id,omitempty"`
 	NeedsAttentionReason *string                `protobuf:"bytes,8,opt,name=needs_attention_reason,json=needsAttentionReason,proto3,oneof" json:"needs_attention_reason,omitempty"`
 	Error                *string                `protobuf:"bytes,9,opt,name=error,proto3,oneof" json:"error,omitempty"`
@@ -110,6 +111,13 @@ func (x *Run) GetWorkflowSnapshotRef() string {
 func (x *Run) GetWorkflowSnapshot() string {
 	if x != nil {
 		return x.WorkflowSnapshot
+	}
+	return ""
+}
+
+func (x *Run) GetTaskSnapshot() string {
+	if x != nil {
+		return x.TaskSnapshot
 	}
 	return ""
 }
@@ -1279,7 +1287,7 @@ var File_orchestrator_proto protoreflect.FileDescriptor
 
 const file_orchestrator_proto_rawDesc = "" +
 	"\n" +
-	"\x12orchestrator.proto\x12\x0fbdtui.daemon.v1\"\xac\x04\n" +
+	"\x12orchestrator.proto\x12\x0fbdtui.daemon.v1\"\xd1\x04\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1287,7 +1295,8 @@ const file_orchestrator_proto_rawDesc = "" +
 	"\atask_id\x18\x03 \x01(\tR\x06taskId\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x122\n" +
 	"\x15workflow_snapshot_ref\x18\x05 \x01(\tR\x13workflowSnapshotRef\x12+\n" +
-	"\x11workflow_snapshot\x18\x06 \x01(\tR\x10workflowSnapshot\x12+\n" +
+	"\x11workflow_snapshot\x18\x06 \x01(\tR\x10workflowSnapshot\x12#\n" +
+	"\rtask_snapshot\x18\x0e \x01(\tR\ftaskSnapshot\x12+\n" +
 	"\x0fcurrent_step_id\x18\a \x01(\tH\x00R\rcurrentStepId\x88\x01\x01\x129\n" +
 	"\x16needs_attention_reason\x18\b \x01(\tH\x01R\x14needsAttentionReason\x88\x01\x01\x12\x19\n" +
 	"\x05error\x18\t \x01(\tH\x02R\x05error\x88\x01\x01\x12\x1d\n" +

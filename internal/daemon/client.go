@@ -54,6 +54,19 @@ func Dial(socketPath string) (*Client, error) {
 type Options struct {
 	SocketPath string
 	DBPath     string
+	// BeadsDir is the project root that holds the .beads directory. When
+	// non-empty, EnsureDaemon spawns bdtuid with --beads-dir so the daemon
+	// constructs a Beads TaskStore and the production CreateRun path
+	// (including the Claim on Run launch and the SyncTerminal on
+	// terminal transitions) is wired through. Empty leaves the daemon in
+	// the legacy no-TaskStore mode and is suitable only for tests that
+	// want to bypass the Beads lifecycle.
+	//
+	// Scope: for the MVP, the daemon is per-project — each spawned
+	// instance is bound to one Beads root. Multi-project dispatch
+	// (project_id -> TaskStore registry) is delivered by the project
+	// metadata task; the wiring here is the prerequisite of that task.
+	BeadsDir string
 	// Binary is the daemon executable to spawn when no daemon is running.
 	// Empty defaults to "bdtuid".
 	Binary string
@@ -100,7 +113,11 @@ func startDaemon(ctx context.Context, opts Options) error {
 		defer f.Close()
 	}
 
-	cmd := exec.Command(opts.Binary, "--socket", opts.SocketPath, "--db", opts.DBPath)
+	args := []string{opts.Binary, "--socket", opts.SocketPath, "--db", opts.DBPath}
+	if opts.BeadsDir != "" {
+		args = append(args, "--beads-dir", opts.BeadsDir)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdin = nil
 	cmd.Stdout = out
 	cmd.Stderr = out

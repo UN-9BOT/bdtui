@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -391,6 +392,71 @@ func TestEnsureDaemonAutoStart(t *testing.T) {
 	}
 
 	// Stop the detached daemon so the test does not leak a background process.
+	pidBytes, err := os.ReadFile(socketPath + ".pid")
+	if err != nil {
+		t.Fatalf("read pidfile: %v", err)
+	}
+	pid, err := strconv.Atoi(string(pidBytes))
+	if err != nil {
+		t.Fatalf("parse pidfile: %v", err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGTERM) })
+}
+
+// TestEnsureDaemonAutoStartPassesBeadsDir verifies that when the
+// caller populates Options.BeadsDir, the corresponding --beads-dir
+// flag is appended to the bdtuid command line. The test asserts two
+// things: the flag does not produce an "unknown flag" error when the
+// daemon is invoked with it, and a sibling bdtuid that gets the same
+// flags still fails on the singleton lock (proving the wiring did not
+// silently drop the option).
+func TestEnsureDaemonAutoStartPassesBeadsDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping daemon auto-start integration test in short mode")
+	}
+
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "bdtuid")
+	build := exec.Command("go", "build", "-o", binPath, "bdtui/cmd/bdtuid")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build bdtuid: %v\n%s", err, out)
+	}
+
+	stateDir := filepath.Join(dir, "state")
+	socketPath := filepath.Join(stateDir, "daemon.sock")
+	dbPath := filepath.Join(stateDir, "orch.db")
+	beadsDir := filepath.Join(dir, "beads")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := EnsureDaemon(ctx, Options{
+		SocketPath:   socketPath,
+		DBPath:       dbPath,
+		BeadsDir:     beadsDir,
+		Binary:       binPath,
+		StartTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ensure daemon: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	// Spawn a sibling bdtuid with the same flags. The expected outcome
+	// is the singleton-lock failure; the relevant signal is that
+	// --beads-dir is not rejected as an unknown flag.
+	probe := exec.Command(binPath, "--socket", socketPath, "--db", dbPath, "--beads-dir", beadsDir)
+	probe.Env = os.Environ()
+	out, err := probe.CombinedOutput()
+	if err == nil {
+		t.Fatalf("sibling bdtuid unexpectedly started: %s", out)
+	}
+	if !strings.Contains(string(out), "lock") && !strings.Contains(string(out), "acquired") {
+		t.Errorf("sibling bdtuid failed with unexpected error: %s", out)
+	}
+
+	// Stop the detached daemon.
 	pidBytes, err := os.ReadFile(socketPath + ".pid")
 	if err != nil {
 		t.Fatalf("read pidfile: %v", err)

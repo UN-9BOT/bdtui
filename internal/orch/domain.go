@@ -18,7 +18,11 @@ type Project struct {
 // both are populated at Run start from the workflow dependency closure.
 //
 // TaskID references the source Kanban task (bd issue); at most one active
-// (non-terminal) run may exist per task.
+// (non-terminal) run may exist per task. TaskSnapshot is the immutable
+// TaskStore snapshot captured at Run creation, stored as the JSON
+// serialisation of the taskstore.Task struct (with the canonical
+// in_progress status applied). It is empty when the Run was created
+// without a TaskStore (e.g. legacy callers or test fixtures).
 type Run struct {
 	ID                   string     `json:"id"`
 	ProjectID            string     `json:"project_id"`
@@ -26,6 +30,7 @@ type Run struct {
 	Status               RunStatus  `json:"status"`
 	WorkflowSnapshotRef  string     `json:"workflow_snapshot_ref"`
 	WorkflowSnapshot     string     `json:"workflow_snapshot"`
+	TaskSnapshot         string     `json:"task_snapshot"`
 	CurrentStepID        *string    `json:"current_step_id"`
 	NeedsAttentionReason *string    `json:"needs_attention_reason"`
 	Error                *string    `json:"error"`

@@ -142,4 +142,69 @@ CREATE TABLE step_attempt_counters (
 );
 `,
 	},
+	{
+		version: 7,
+		name:    "task_snapshot",
+		sql: `
+-- task_snapshot stores the immutable TaskStore snapshot captured at
+-- Run creation. The controller freezes the bead's title, description
+-- and metadata here so external edits during the Run do not mutate the
+-- view the controller / agent step prompts see. JSON because the set
+-- of fields is small and the orchestrator does not need to query it.
+ALTER TABLE runs ADD COLUMN task_snapshot TEXT NOT NULL DEFAULT '';
+`,
+	},
+	{
+		version: 8,
+		name:    "task_sync_outbox",
+		sql: `
+-- task_sync_outbox stores pending TaskStore syncs that failed during
+-- the original call. The daemon appends a row when SyncTerminal
+-- returns an error (e.g. Beads back-end unreachable). The future
+-- controller reconciler (bdtui-cvy.13) is the consumer: it picks up
+-- rows with status='pending', retries the sync, and either clears
+-- the row or records the new error. This is the durable retry state
+-- the reviewer asked for: the event log is audit-only, the outbox is
+-- the source of truth for "this Run still owes a TaskStore sync".
+CREATE TABLE task_sync_outbox (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       TEXT NOT NULL REFERENCES runs(id),
+    task_id      TEXT NOT NULL,
+    outcome      TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    retry_count  INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX idx_task_sync_outbox_status ON task_sync_outbox(status, id);
+CREATE INDEX idx_task_sync_outbox_run ON task_sync_outbox(run_id);
+`,
+	},
+	{
+		version: 9,
+		name:    "task_sync_outbox_lease",
+		sql: `
+-- claimed_at and lease_token are the lease mechanism for crash-safe
+-- retry ownership. The reconciler sets claimed_at = now() and a
+-- unique lease_token on ClaimTaskSyncOutbox. If the daemon crashes
+-- mid-sync, the next restart's ReclaimExpiredTaskSyncOutbox(lease)
+-- helper resets in_flight rows whose claimed_at is older than the
+-- lease back to pending, so the retry is not stuck forever.
+--
+-- generation is a per (run_id, task_id) monotonic counter that
+-- lets SyncTerminal refuse to overwrite a newer lifecycle intent.
+-- The reconciler MUST pass the row's generation to the TaskStore
+-- wrapper; the Beads adapter MUST refuse to write if the
+-- generation is not the latest for (run_id, task_id). This is the
+-- generation fencing the reviewer asked for: between the
+-- stale-check and the actual SyncTerminal, a newer intent may
+-- supersede the row (regardless of in_flight vs pending status),
+-- and the SyncTerminal must skip such stale rows.
+ALTER TABLE task_sync_outbox ADD COLUMN claimed_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE task_sync_outbox ADD COLUMN lease_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE task_sync_outbox ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_task_sync_outbox_gen ON task_sync_outbox(run_id, task_id, generation);
+`,
+	},
 }

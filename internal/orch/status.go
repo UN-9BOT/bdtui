@@ -186,4 +186,15 @@ const (
 	EventHumanAnswered   = "human.input_answered"
 	EventIntentCreated   = "launch_intent.created"
 	EventIntentResolved  = "launch_intent.resolved"
+	// EventTaskSyncFailed is emitted when a TaskStore sync attempt
+	// (SyncTerminal after a non-queued transition, or Claim during
+	// launch) failed. The daemon does not abort the run on sync
+	// failure — the run is already persisted locally — but the
+	// failure is recorded so the operator (and the future controller
+	// reconciler) can act on it.
+	EventTaskSyncFailed = "task.sync_failed"
+	// EventTaskClaimed is emitted after a successful TaskStore.Claim so
+	// the controller has a durable record of the high-level claim that
+	// survives daemon restarts and Beads renewal.
+	EventTaskClaimed = "task.claimed"
 )
