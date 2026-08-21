@@ -48,9 +48,10 @@ func (s *Store) CreateRun(ctx context.Context, r *Run) error {
 
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO runs(id, project_id, task_id, status, workflow_snapshot_ref, workflow_snapshot,
-		                  current_step_id, needs_attention_reason, error, created_at, updated_at, started_at, completed_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                  task_snapshot, current_step_id, needs_attention_reason, error, created_at, updated_at, started_at, completed_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.ProjectID, r.TaskID, string(r.Status), r.WorkflowSnapshotRef, r.WorkflowSnapshot,
+		r.TaskSnapshot,
 		nullString(r.CurrentStepID), nullString(r.NeedsAttentionReason), nullString(r.Error),
 		timeString(r.CreatedAt), timeString(r.UpdatedAt), timeStringPtr(r.StartedAt), timeStringPtr(r.CompletedAt),
 	); err != nil {
@@ -68,7 +69,7 @@ func (s *Store) CreateRun(ctx context.Context, r *Run) error {
 func (s *Store) GetRun(ctx context.Context, id string) (*Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, project_id, task_id, status, workflow_snapshot_ref, workflow_snapshot,
-		        current_step_id, needs_attention_reason, error, created_at, updated_at, started_at, completed_at
+		        task_snapshot, current_step_id, needs_attention_reason, error, created_at, updated_at, started_at, completed_at
 		 FROM runs WHERE id = ?`, id)
 
 	r := &Run{}
@@ -78,7 +79,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (*Run, error) {
 	var started, completed sql.NullString
 
 	if err := row.Scan(&r.ID, &r.ProjectID, &r.TaskID, &status, &r.WorkflowSnapshotRef, &r.WorkflowSnapshot,
-		&currentStep, &reason, &errStr, &created, &updated, &started, &completed); err != nil {
+		&r.TaskSnapshot, &currentStep, &reason, &errStr, &created, &updated, &started, &completed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

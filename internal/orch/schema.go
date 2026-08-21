@@ -142,4 +142,16 @@ CREATE TABLE step_attempt_counters (
 );
 `,
 	},
+	{
+		version: 7,
+		name:    "task_snapshot",
+		sql: `
+-- task_snapshot stores the immutable TaskStore snapshot captured at
+-- Run creation. The controller freezes the bead's title, description
+-- and metadata here so external edits during the Run do not mutate the
+-- view the controller / agent step prompts see. JSON because the set
+-- of fields is small and the orchestrator does not need to query it.
+ALTER TABLE runs ADD COLUMN task_snapshot TEXT NOT NULL DEFAULT '';
+`,
+	},
 }

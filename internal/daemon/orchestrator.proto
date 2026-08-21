@@ -32,6 +32,7 @@ message Run {
   string status = 4;
   string workflow_snapshot_ref = 5;
   string workflow_snapshot = 6;
+  string task_snapshot = 14;
   optional string current_step_id = 7;
   optional string needs_attention_reason = 8;
   optional string error = 9;

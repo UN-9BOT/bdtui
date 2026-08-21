@@ -16,8 +16,15 @@ column derivation, herdr integration.
 
 ```
 bdtui/
-├── cmd/bdtui/           # CLI entrypoint (main.go → app.Run)
+├── cmd/bdtui/           # TUI entrypoint (main.go → app.Run)
+├── cmd/bdtuid/          # Orchestrator daemon entrypoint (gRPC over UDS)
 ├── internal/app/        # Core TUI (Model, Update, View, forms, plugins) [SEE AGENTS.md]
+├── internal/daemon/     # gRPC service + Orchestrator proto
+├── internal/orch/       # SQLite-backed orchestrator store (projects, runs, executions, events)
+├── internal/taskstore/  # TaskStore boundary + Beads adapter (todo/in_progress/done/blocked)
+├── internal/agent/      # Runtime interface (ExecRuntime today; HerdrRuntime upcoming)
+├── internal/recovery/   # Recovery primitives (handle restarts, reattach executions)
+├── internal/workflow/   # Workflow loader, validator, role model
 ├── internal/ui/         # Styles, keymaps, string utilities
 ├── internal/adapters/   # External: beads discovery, clipboard
 ├── internal/logger/     # File logging

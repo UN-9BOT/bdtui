@@ -27,6 +27,7 @@ func runToProto(r *orch.Run) *daemonpb.Run {
 		Status:               string(r.Status),
 		WorkflowSnapshotRef:  r.WorkflowSnapshotRef,
 		WorkflowSnapshot:     r.WorkflowSnapshot,
+		TaskSnapshot:         r.TaskSnapshot,
 		CurrentStepId:        r.CurrentStepID,
 		NeedsAttentionReason: r.NeedsAttentionReason,
 		Error:                r.Error,

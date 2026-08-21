@@ -68,16 +68,17 @@ func (m model) loadWorkflowOptions() ([]WorkflowOption, error) {
 	return options, nil
 }
 
-// launchRunCmd resolves the named workflow into a snapshot, sends CreateRun
-// to the daemon, then locally transitions the task to in_progress so the
-// board reflects the claim without depending on bd.
+// launchRunCmd resolves the named workflow into a snapshot and sends
+// CreateRun to the daemon. The daemon claims the task in the
+// TaskStore (Beads) atomically inside CreateRun, so the TUI does not
+// need to perform a separate `bd update` — splitting the operation
+// into two non-atomic steps would leave a queued Run with no Beads
+// claim, and a follow-up retry would then hit ErrActiveRunExists.
 //
-// Run creation is the sole side-effect: we deliberately do NOT push a status
-// change back to bd. The bead description states queued/running state is
-// surfaced by the orchestrator, not encoded into Beads. Adding a follow-up
-// bd update would split the operation into two non-atomic steps where a
-// failure of the second step leaves a queued Run with no Beads claim, and a
-// follow-up retry then hits ErrActiveRunExists.
+// The TaskStore encodes only the high-level task lifecycle (todo /
+// in_progress / done / blocked). Queued / running / current-step state
+// remains in the orchestrator's SQLite store and is surfaced via the
+// events / runs RPC, not by mutating Beads.
 func (m model) launchRunCmd(taskID, workflowName string) tea.Cmd {
 	workflowName = strings.TrimSpace(workflowName)
 	taskID = strings.TrimSpace(taskID)

@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"bdtui/internal/daemon/daemonpb"
 	"bdtui/internal/orch"
+	"bdtui/internal/taskstore"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,14 +19,38 @@ const eventPollInterval = 100 * time.Millisecond
 // Service implements the daemon gRPC API over an orch.Store. It is the only
 // writer to the store while the daemon is running, keeping concurrent clients
 // serialized through SQLite's write transactions.
+//
+// When a TaskStore is configured (via NewServiceWithTasks), the service
+// uses it to enforce the high-level task lifecycle bound to Beads: every
+// CreateRun claims the task, and every transition to a terminal Run
+// status synchronises the task back via the TaskStore. If the TaskStore
+// is unavailable, CreateRun refuses to start (the spec'd "if Beads is
+// unavailable, Run launch must not start" guarantee).
 type Service struct {
 	daemonpb.UnimplementedOrchestratorServer
 	store *orch.Store
+	tasks taskstore.TaskStore // optional; nil disables lifecycle integration
 }
 
+// NewService builds a Service with no TaskStore integration. This is the
+// backward-compatible constructor for existing tests and tooling that have
+// no Beads backend configured.
 func NewService(store *orch.Store) *Service {
 	return &Service{store: store}
 }
+
+// NewServiceWithTasks builds a Service with the given TaskStore wired
+// in. The same store is used for both the SQLite orchestrator state and
+// the high-level task lifecycle. The TaskStore may be nil; in that case
+// the service behaves identically to NewService.
+func NewServiceWithTasks(store *orch.Store, tasks taskstore.TaskStore) *Service {
+	return &Service{store: store, tasks: tasks}
+}
+
+// HasTaskStore reports whether the service has a TaskStore wired in.
+// Callers (and tests) use this to gate assertions that depend on the
+// lifecycle integration.
+func (s *Service) HasTaskStore() bool { return s.tasks != nil }
 
 func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest) (*daemonpb.Run, error) {
 	if req.TaskId == "" {
@@ -37,17 +63,117 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 		return nil, toStatus(err)
 	}
 
+	var taskSnap string
+	if s.tasks != nil {
+		// Claim the task in the TaskStore. If the backend is unavailable
+		// or the task is already claimed, refuse to start the Run: the
+		// spec requires "if Beads is unavailable, Run launch must not
+		// start" and a double-claim would violate the single-active-Run
+		// invariant.
+		snap, err := s.tasks.Claim(ctx, req.TaskId)
+		if err != nil {
+			return nil, taskStoreToStatus(err)
+		}
+		taskSnap = encodeTaskSnapshot(snap)
+	}
+
 	r := &orch.Run{
 		ProjectID:           req.ProjectId,
 		TaskID:              req.TaskId,
 		Status:              orch.RunQueued,
 		WorkflowSnapshotRef: req.WorkflowSnapshotRef,
 		WorkflowSnapshot:    req.WorkflowSnapshot,
+		TaskSnapshot:        taskSnap,
 	}
 	if err := s.store.CreateRun(ctx, r); err != nil {
 		return nil, toStatus(err)
 	}
 	return runToProto(r), nil
+}
+
+// encodeTaskSnapshot serialises a TaskStore snapshot into the JSON form
+// persisted on the runs row. The taskstore package does not depend on
+// encoding/json so the daemon owns the wire format.
+func encodeTaskSnapshot(t *taskstore.Task) string {
+	if t == nil {
+		return ""
+	}
+	b, err := json.Marshal(struct {
+		ID          string           `json:"id"`
+		Title       string           `json:"title"`
+		Description string           `json:"description"`
+		Status      taskstore.TaskStatus `json:"status"`
+		Priority    int              `json:"priority"`
+		IssueType   string           `json:"issue_type"`
+		SnapshotAt  string           `json:"snapshot_at"`
+	}{
+		ID:          t.ID,
+		Title:       t.Title,
+		Description: t.Description,
+		Status:      t.Status,
+		Priority:    t.Priority,
+		IssueType:   t.IssueType,
+		SnapshotAt:  t.SnapshotAt.UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// syncTerminalTask is a best-effort sync of the run's task to the
+// TaskStore. It is called by every run-transition path that lands the
+// run in a terminal state. Errors are intentionally swallowed: the Run
+// is already persisted in the orchestrator store, and the next
+// reconciliation pass will retry the sync. The daemon must never fail
+// a Run transition because the TaskStore is unhealthy.
+func (s *Service) syncTerminalTask(ctx context.Context, run *orch.Run) {
+	if s.tasks == nil || run.TaskID == "" || !run.Status.Terminal() {
+		return
+	}
+	outcome, err := outcomeForRunStatus(run.Status)
+	if err != nil {
+		return
+	}
+	_ = s.tasks.SyncTerminal(ctx, run.TaskID, outcome)
+}
+
+// outcomeForRunStatus applies the canonical Run->Outcome mapping used by
+// the daemon's task lifecycle sync. Sub-states like waiting_human are not
+// terminal and never call this helper.
+func outcomeForRunStatus(s orch.RunStatus) (taskstore.RunOutcome, error) {
+	switch s {
+	case orch.RunCompleted:
+		return taskstore.RunCompleted, nil
+	case orch.RunFailed:
+		return taskstore.RunFailed, nil
+	case orch.RunNeedsAttention:
+		return taskstore.RunNeedsAttention, nil
+	case orch.RunCancelled:
+		return taskstore.RunCancelled, nil
+	default:
+		return "", taskstore.ErrInvalidOutcome
+	}
+}
+
+// taskStoreToStatus maps taskstore sentinel errors onto gRPC status
+// codes. The mapping is conservative: anything that looks like
+// "unavailable" maps to codes.Unavailable so the client can retry, and
+// "already claimed" maps to codes.AlreadyExists so the client surfaces
+// the existing active run.
+func taskStoreToStatus(err error) error {
+	switch {
+	case errors.Is(err, taskstore.ErrTaskNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, taskstore.ErrTaskAlreadyClaimed):
+		return status.Error(codes.AlreadyExists, err.Error())
+	case errors.Is(err, taskstore.ErrTaskStoreUnavailable):
+		return status.Error(codes.Unavailable, err.Error())
+	case errors.Is(err, taskstore.ErrInvalidOutcome):
+		return status.Error(codes.InvalidArgument, err.Error())
+	default:
+		return status.Error(codes.Internal, err.Error())
+	}
 }
 
 // resolveOrCreateProject treats project_id as the canonical project handle.
@@ -155,6 +281,7 @@ func (s *Service) CancelRun(ctx context.Context, req *daemonpb.CancelRunRequest)
 	if err != nil {
 		return nil, toStatus(err)
 	}
+	s.syncTerminalTask(ctx, r)
 	return runToProto(r), nil
 }
 
