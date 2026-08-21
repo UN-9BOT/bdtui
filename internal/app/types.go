@@ -164,20 +164,23 @@ type WorkflowPickerState struct {
 
 // RunRow is a single row in the Runs tab. It carries the rendered run
 // coarse state plus the minimum identifiers needed to dispatch the
-// inspect/focus/retry/cancel actions over gRPC. The model exposes only
-// coarse status (per orch.RunStatus enum) plus a pane/process reference
-// from the most-recent Execution; full agent transcripts are NOT shown
-// here -- the user follows the pane reference to read them in Herdr.
+// inspect/focus/retry/cancel/answer-human actions over gRPC. The model
+// exposes only coarse status (per orch.RunStatus enum) plus a
+// pane/process reference from the most-recent Execution; full agent
+// transcripts are NOT shown here -- the user follows the pane
+// reference to read them in Herdr.
 type RunRow struct {
-	RunID             string
-	ProjectID         string
-	TaskID            string
-	Status            string
-	CurrentStepID     string
-	NeedsAttention    string
-	PaneID            string // most recent Execution's PaneID, or ""
-	WorkflowStageHint string // human-readable hint, e.g. "review -> implement"
-	HasPendingHuman   bool   // true if Run is in waiting_human
+	RunID              string
+	ProjectID          string
+	TaskID             string
+	Status             string
+	CurrentStepID      string
+	NeedsAttention     string
+	PaneID             string // most recent Execution's PaneID, or ""
+	WorkflowStageHint  string // human-readable hint, e.g. "review -> implement"
+	HasPendingHuman    bool   // true if Run is in waiting_human
+	PendingHumanID     string // first pending human_input id, or "" if none
+	PendingHumanPrompt string // prompt of the pending human_input, for the confirm prompt
 }
 
 // RunsTabState owns the Runs tab view: the rows fetched from the daemon,

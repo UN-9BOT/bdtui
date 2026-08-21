@@ -1375,7 +1375,7 @@ func (m model) renderRunsModal() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, "j/k move  r retry  x cancel  R refresh  esc/q close")
+	lines = append(lines, "j/k move  a answer-human  r retry  x cancel  R refresh  esc/q close")
 	return strings.Join(lines, "\n")
 }
 

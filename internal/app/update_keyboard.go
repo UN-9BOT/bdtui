@@ -585,7 +585,8 @@ func (m model) handleParentPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleRunsKey handles navigation and actions inside the Runs tab.
-// j/k move the selection; r retries the selected run; x cancels it;
+// j/k move the selection; a answers the pending human input on a
+// waiting_human row; r retries the selected run; x cancels it;
 // R reloads; Esc / q closes the tab and returns to the board.
 func (m model) handleRunsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -599,6 +600,8 @@ func (m model) handleRunsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.moveRunSelection(-1)
 		return m, nil
+	case "a":
+		return m.answerSelectedHumanInput()
 	case "r":
 		return m.retrySelectedRun()
 	case "x":

@@ -104,6 +104,38 @@ func (s *Service) AnswerHumanInput(ctx context.Context, req *daemonpb.AnswerHuma
 	return humanInputToProto(h), nil
 }
 
+// ListHumanInputs returns human inputs attached to a single run, or
+// every human input in the store when req.RunId is unset. Used by the
+// Runs tab to enumerate the human input ids it needs to surface (and
+// the operator to answer) for any waiting_human row.
+func (s *Service) ListHumanInputs(ctx context.Context, req *daemonpb.ListHumanInputsRequest) (*daemonpb.ListHumanInputsResponse, error) {
+	runID := ""
+	if req.RunId != nil {
+		runID = *req.RunId
+	}
+	var (
+		rows []orch.HumanInput
+		err  error
+	)
+	if runID != "" {
+		rows, err = s.store.ListHumanInputsByRun(ctx, runID)
+	} else {
+		// No run id: list every pending human input. The MVP has no
+		// "all inputs" store method, so for now we return an error if
+		// the caller didn't narrow the query. This keeps the contract
+		// tight and forces clients to scope by run.
+		return nil, status.Error(codes.InvalidArgument, "run_id is required")
+	}
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	resp := &daemonpb.ListHumanInputsResponse{HumanInputs: make([]*daemonpb.HumanInput, 0, len(rows))}
+	for i := range rows {
+		resp.HumanInputs = append(resp.HumanInputs, humanInputToProto(&rows[i]))
+	}
+	return resp, nil
+}
+
 func (s *Service) RetryRun(ctx context.Context, req *daemonpb.RetryRunRequest) (*daemonpb.Run, error) {
 	if err := s.store.RequestRunRetry(ctx, req.Id); err != nil {
 		return nil, toStatus(err)

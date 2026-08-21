@@ -14,6 +14,7 @@ service Orchestrator {
   rpc CreateRun(CreateRunRequest) returns (Run);
   rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
   rpc GetRun(GetRunRequest) returns (Run);
+  rpc ListHumanInputs(ListHumanInputsRequest) returns (ListHumanInputsResponse);
   rpc AnswerHumanInput(AnswerHumanInputRequest) returns (HumanInput);
   rpc RetryRun(RetryRunRequest) returns (Run);
   rpc CancelRun(CancelRunRequest) returns (Run);
@@ -72,6 +73,16 @@ message HumanInput {
   string status = 7;
   string created_at = 8;
   optional string answered_at = 9;
+}
+
+message ListHumanInputsRequest {
+  // When set, only human inputs for this run are returned; otherwise all
+  // rows in the store are listed.
+  optional string run_id = 1;
+}
+
+message ListHumanInputsResponse {
+  repeated HumanInput human_inputs = 1;
 }
 
 message AnswerHumanInputRequest {

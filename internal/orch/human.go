@@ -116,3 +116,38 @@ func (s *Store) AnswerHumanInput(ctx context.Context, id, response string) error
 	}
 	return tx.Commit()
 }
+
+// ListHumanInputsByRun returns every human input attached to a run,
+// oldest-first. Used by the Runs tab so the operator can answer a
+// waiting_human row from the coarse list (the Run row itself only
+// carries the status flag, not the human_input ids).
+func (s *Store) ListHumanInputsByRun(ctx context.Context, runID string) ([]HumanInput, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, step_attempt_id, execution_id, prompt, response, status, created_at, answered_at
+		 FROM human_inputs WHERE run_id = ? ORDER BY created_at, id`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []HumanInput
+	for rows.Next() {
+		var h HumanInput
+		var execID, response, answered sql.NullString
+		var created string
+		if err := rows.Scan(&h.ID, &h.RunID, &h.StepAttemptID, &execID, &response,
+			&h.Status, &created, &answered); err != nil {
+			return nil, err
+		}
+		h.ExecutionID = strPtr(execID)
+		h.Response = strPtr(response)
+		if h.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		if h.AnsweredAt, err = timePtr(answered); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.34.1
-// source: internal/daemon/orchestrator.proto
+// source: orchestrator.proto
 
 package daemonpb
 
@@ -22,6 +22,7 @@ const (
 	Orchestrator_CreateRun_FullMethodName        = "/bdtui.daemon.v1.Orchestrator/CreateRun"
 	Orchestrator_ListRuns_FullMethodName         = "/bdtui.daemon.v1.Orchestrator/ListRuns"
 	Orchestrator_GetRun_FullMethodName           = "/bdtui.daemon.v1.Orchestrator/GetRun"
+	Orchestrator_ListHumanInputs_FullMethodName  = "/bdtui.daemon.v1.Orchestrator/ListHumanInputs"
 	Orchestrator_AnswerHumanInput_FullMethodName = "/bdtui.daemon.v1.Orchestrator/AnswerHumanInput"
 	Orchestrator_RetryRun_FullMethodName         = "/bdtui.daemon.v1.Orchestrator/RetryRun"
 	Orchestrator_CancelRun_FullMethodName        = "/bdtui.daemon.v1.Orchestrator/CancelRun"
@@ -43,6 +44,7 @@ type OrchestratorClient interface {
 	CreateRun(ctx context.Context, in *CreateRunRequest, opts ...grpc.CallOption) (*Run, error)
 	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error)
 	GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*Run, error)
+	ListHumanInputs(ctx context.Context, in *ListHumanInputsRequest, opts ...grpc.CallOption) (*ListHumanInputsResponse, error)
 	AnswerHumanInput(ctx context.Context, in *AnswerHumanInputRequest, opts ...grpc.CallOption) (*HumanInput, error)
 	RetryRun(ctx context.Context, in *RetryRunRequest, opts ...grpc.CallOption) (*Run, error)
 	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*Run, error)
@@ -82,6 +84,16 @@ func (c *orchestratorClient) GetRun(ctx context.Context, in *GetRunRequest, opts
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Run)
 	err := c.cc.Invoke(ctx, Orchestrator_GetRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orchestratorClient) ListHumanInputs(ctx context.Context, in *ListHumanInputsRequest, opts ...grpc.CallOption) (*ListHumanInputsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListHumanInputsResponse)
+	err := c.cc.Invoke(ctx, Orchestrator_ListHumanInputs_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +173,7 @@ type OrchestratorServer interface {
 	CreateRun(context.Context, *CreateRunRequest) (*Run, error)
 	ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error)
 	GetRun(context.Context, *GetRunRequest) (*Run, error)
+	ListHumanInputs(context.Context, *ListHumanInputsRequest) (*ListHumanInputsResponse, error)
 	AnswerHumanInput(context.Context, *AnswerHumanInputRequest) (*HumanInput, error)
 	RetryRun(context.Context, *RetryRunRequest) (*Run, error)
 	CancelRun(context.Context, *CancelRunRequest) (*Run, error)
@@ -184,6 +197,9 @@ func (UnimplementedOrchestratorServer) ListRuns(context.Context, *ListRunsReques
 }
 func (UnimplementedOrchestratorServer) GetRun(context.Context, *GetRunRequest) (*Run, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRun not implemented")
+}
+func (UnimplementedOrchestratorServer) ListHumanInputs(context.Context, *ListHumanInputsRequest) (*ListHumanInputsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListHumanInputs not implemented")
 }
 func (UnimplementedOrchestratorServer) AnswerHumanInput(context.Context, *AnswerHumanInputRequest) (*HumanInput, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerHumanInput not implemented")
@@ -271,6 +287,24 @@ func _Orchestrator_GetRun_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrchestratorServer).GetRun(ctx, req.(*GetRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Orchestrator_ListHumanInputs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListHumanInputsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrchestratorServer).ListHumanInputs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Orchestrator_ListHumanInputs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrchestratorServer).ListHumanInputs(ctx, req.(*ListHumanInputsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -378,6 +412,10 @@ var Orchestrator_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Orchestrator_GetRun_Handler,
 		},
 		{
+			MethodName: "ListHumanInputs",
+			Handler:    _Orchestrator_ListHumanInputs_Handler,
+		},
+		{
 			MethodName: "AnswerHumanInput",
 			Handler:    _Orchestrator_AnswerHumanInput_Handler,
 		},
@@ -401,5 +439,5 @@ var Orchestrator_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "internal/daemon/orchestrator.proto",
+	Metadata: "orchestrator.proto",
 }
