@@ -528,11 +528,24 @@ func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		value := strings.TrimSpace(m.Prompt.Input.Value())
-		issueID := m.Prompt.TargetIssue
+		// For PromptAnswerHuman the typed value is the human response
+		// and the relevant id is HumanInputID, not TargetIssue. We
+		// stash the id on a per-action field so the rest of the flow
+		// can stay unaware of the answer-human case.
 		action := m.Prompt.Action
-		m.Mode = ModeBoard
+		var cmd tea.Cmd
+		if action == PromptAnswerHuman {
+			// Stay in the Runs tab so the operator can see the toast
+			// after the answer is sent.
+			m.Mode = ModeRuns
+			cmd = m.submitAnswerHuman(m.Prompt.HumanInputID, m.Prompt.RunID, value)
+		} else {
+			issueID := m.Prompt.TargetIssue
+			m.Mode = ModeBoard
+			cmd = m.submitPrompt(issueID, action, value)
+		}
 		m.Prompt = nil
-		return m, m.submitPrompt(issueID, action, value)
+		return m, cmd
 	}
 
 	var cmd tea.Cmd

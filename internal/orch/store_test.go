@@ -561,6 +561,41 @@ func TestHumanInputAnswer(t *testing.T) {
 	}
 }
 
+// TestListHumanInputsByRun exercises the BIR-54 scan path. It
+// catches the 9-column/8-destination mismatch in ListHumanInputsByRun
+// where the human_inputs.prompt column was being skipped, causing
+// every call to fail at Scan and silently lose the row from the Runs
+// tab.
+func TestListHumanInputsByRun(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p := newProject(t, s, "p")
+	r := newRun(t, s, p.ID, "task-1")
+	sa, _ := s.StartStepAttempt(ctx, r.ID, "human-step", "{}")
+
+	h1 := &HumanInput{RunID: r.ID, StepAttemptID: sa.ID, Prompt: "first prompt"}
+	if err := s.CreateHumanInput(ctx, h1); err != nil {
+		t.Fatal(err)
+	}
+	h2 := &HumanInput{RunID: r.ID, StepAttemptID: sa.ID, Prompt: "second prompt"}
+	if err := s.CreateHumanInput(ctx, h2); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: the scan bug would have failed here and returned
+	// rows.Err() instead of the two inputs.
+	rows, err := s.ListHumanInputsByRun(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("ListHumanInputsByRun: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	if rows[0].Prompt != "first prompt" || rows[1].Prompt != "second prompt" {
+		t.Fatalf("prompts not scanned: %q %q", rows[0].Prompt, rows[1].Prompt)
+	}
+}
+
 
 func strPtrTo(s string) *string { return &s }
 

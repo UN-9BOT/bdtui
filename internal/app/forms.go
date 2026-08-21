@@ -554,3 +554,25 @@ func newPrompt(mode Mode, title, description, issueID string, action PromptActio
 		Input:       in,
 	}
 }
+
+// newAnswerHumanPrompt opens a textinput prompt pre-seeded with the
+// given human-input prompt so the operator can type their answer.
+// The HumanInputID is carried through to the submit handler so the
+// daemon can route the typed response to the right HumanInput row.
+// Used by the BIR-54 Runs tab.
+func newAnswerHumanPrompt(humanID, runID, promptText string) *PromptState {
+	in := textinput.New()
+	in.Prompt = "> "
+	in.Placeholder = "type your answer"
+	in.CharLimit = 2048
+	in.Focus()
+	in.CursorEnd()
+	return &PromptState{
+		Title:        "Answer human input",
+		Description:  promptText,
+		Action:       PromptAnswerHuman,
+		HumanInputID: humanID,
+		RunID:        runID,
+		Input:        in,
+	}
+}

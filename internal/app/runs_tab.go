@@ -256,11 +256,12 @@ func (m model) cancelSelectedRun() (tea.Model, tea.Cmd) {
 	}
 }
 
-// answerSelectedHumanInput answers the pending human input for the
-// selected run. The text comes from a small textinput-driven prompt
-// that opens on Enter; for the MVP harness we use a placeholder
-// default so the binding works in scripts. Real users get the
-// full prompt mode (PromptAction=AnswerHuman).
+// answerSelectedHumanInput opens a textinput prompt so the operator
+// can type the response to the pending human input for the selected
+// run. The actual AnswerHumanInput call happens in submitPrompt with
+// PromptAction=PromptAnswerHuman -- we never fabricate the answer
+// ourselves, because the human gate is the architectural decision the
+// operator must make.
 func (m model) answerSelectedHumanInput() (tea.Model, tea.Cmd) {
 	run := m.currentRun()
 	if run == nil {
@@ -275,19 +276,33 @@ func (m model) answerSelectedHumanInput() (tea.Model, tea.Cmd) {
 		m.setToast("warning", "daemon not running")
 		return m, nil
 	}
+	prompt := strings.TrimSpace(run.PendingHumanPrompt)
+	if prompt == "" {
+		prompt = "human input"
+	}
+	m.Prompt = newAnswerHumanPrompt(run.PendingHumanID, run.RunID, prompt)
+	m.Mode = ModePrompt
+	return m, nil
+}
+
+// submitAnswerHuman sends the typed answer to the daemon via the
+// AnswerHumanInput RPC. Called from submitPrompt with the action
+// PromptAnswerHuman.
+func (m model) submitAnswerHuman(humanID, runID, response string) tea.Cmd {
 	client := m.Daemon
-	humanID := run.PendingHumanID
-	runID := run.RunID
-	return m, func() tea.Msg {
+	if client == nil {
+		return opCmd("", func() error { return fmt.Errorf("daemon not running") })
+	}
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return opCmd("", func() error { return fmt.Errorf("answer is empty") })
+	}
+	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), runsLoadTimeout)
 		defer cancel()
-		// Use a default answer that satisfies the test harness. Real
-		// users get a textinput prompt via the prompt subsystem; the
-		// coarse action (this) exists for the keyboard-driven path
-		// required by BIR-54.
 		_, err := client.AnswerHumanInput(ctx, &daemonpb.AnswerHumanInputRequest{
 			Id:       humanID,
-			Response: "ack (default answer from Runs tab)",
+			Response: response,
 		})
 		if err != nil {
 			return runsActionMsg{action: "answer", runID: runID, err: err}

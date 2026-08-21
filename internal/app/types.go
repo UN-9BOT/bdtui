@@ -204,14 +204,21 @@ const (
 	PromptParentSet    PromptAction = "parent_set"
 	PromptCloseReason  PromptAction = "close_reason"
 	PromptReopenReason PromptAction = "reopen_reason"
+	// PromptAnswerHuman is used by the Runs tab to capture a typed
+	// response to a waiting_human HumanInput. The HumanInputID is
+	// stashed in PromptState.HumanInputID; RunID preserves the run
+	// for the success toast after the answer is sent.
+	PromptAnswerHuman PromptAction = "answer_human"
 )
 
 type PromptState struct {
-	Title       string
-	Description string
-	Action      PromptAction
-	TargetIssue string
-	Input       textinput.Model
+	Title        string
+	Description  string
+	Action       PromptAction
+	TargetIssue  string
+	HumanInputID string // used when Action == PromptAnswerHuman
+	RunID        string // used when Action == PromptAnswerHuman (for the toast)
+	Input        textinput.Model
 }
 
 type IssueForm struct {

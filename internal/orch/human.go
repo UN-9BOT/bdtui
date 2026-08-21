@@ -119,7 +119,7 @@ func (s *Store) AnswerHumanInput(ctx context.Context, id, response string) error
 
 // ListHumanInputsByRun returns every human input attached to a run,
 // oldest-first. Used by the Runs tab so the operator can answer a
-// waiting_human row from the coarse list (the Run row itself only
+// waiting_human run from the coarse list (the Run row itself only
 // carries the status flag, not the human_input ids).
 func (s *Store) ListHumanInputsByRun(ctx context.Context, runID string) ([]HumanInput, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -135,8 +135,8 @@ func (s *Store) ListHumanInputsByRun(ctx context.Context, runID string) ([]Human
 		var h HumanInput
 		var execID, response, answered sql.NullString
 		var created string
-		if err := rows.Scan(&h.ID, &h.RunID, &h.StepAttemptID, &execID, &response,
-			&h.Status, &created, &answered); err != nil {
+		if err := rows.Scan(&h.ID, &h.RunID, &h.StepAttemptID, &execID, &h.Prompt,
+			&response, &h.Status, &created, &answered); err != nil {
 			return nil, err
 		}
 		h.ExecutionID = strPtr(execID)
@@ -151,3 +151,4 @@ func (s *Store) ListHumanInputsByRun(ctx context.Context, runID string) ([]Human
 	}
 	return out, rows.Err()
 }
+

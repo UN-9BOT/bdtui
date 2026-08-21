@@ -2,6 +2,8 @@ package app
 
 import (
 	"testing"
+
+	"bdtui/internal/daemon"
 )
 
 // TestRenderRunsModalEmpty asserts the modal renders cleanly when no
@@ -144,6 +146,65 @@ func TestFocusSelectedRunPaneRequiresSelection(t *testing.T) {
 	gm := got.(model)
 	if gm.Toast == "" || gm.ToastKind != "warning" {
 		t.Fatal("expected warning toast when no run is selected")
+	}
+}
+
+// TestAnswerSelectedHumanInputOpensPrompt asserts the 'a' binding
+// opens a textinput prompt rather than fabricating a default answer.
+// The human gate is the architectural decision the operator must
+// make (BIR-54), so the TUI must never send a fabricated default.
+func TestAnswerSelectedHumanInputOpensPrompt(t *testing.T) {
+	m := model{
+		Daemon: &daemon.Client{},
+		Runs: &RunsTabState{
+			Loaded: true,
+			Rows: []RunRow{{
+				RunID:              "run-x",
+				Status:             "waiting_human",
+				PendingHumanID:     "human-1",
+				PendingHumanPrompt: "approve the plan?",
+			}},
+			Index: 0,
+		},
+	}
+	got, _ := m.answerSelectedHumanInput()
+	gm := got.(model)
+	if gm.Prompt == nil {
+		t.Fatal("expected a prompt to open")
+	}
+	if gm.Prompt.Action != PromptAnswerHuman {
+		t.Fatalf("expected PromptAnswerHuman, got %q", gm.Prompt.Action)
+	}
+	if gm.Prompt.HumanInputID != "human-1" {
+		t.Fatalf("expected HumanInputID = human-1, got %q", gm.Prompt.HumanInputID)
+	}
+	if gm.Prompt.RunID != "run-x" {
+		t.Fatalf("expected RunID = run-x, got %q", gm.Prompt.RunID)
+	}
+	if gm.Mode != ModePrompt {
+		t.Fatalf("expected ModePrompt, got %q", gm.Mode)
+	}
+}
+
+// TestAnswerSelectedHumanInputRequiresPendingHuman asserts the
+// no-pending-human branch returns a warning toast instead of opening
+// a prompt.
+func TestAnswerSelectedHumanInputRequiresPendingHuman(t *testing.T) {
+	m := model{
+		Daemon: &daemon.Client{},
+		Runs: &RunsTabState{
+			Loaded: true,
+			Rows:   []RunRow{{RunID: "run-x", Status: "completed"}},
+			Index:  0,
+		},
+	}
+	got, _ := m.answerSelectedHumanInput()
+	gm := got.(model)
+	if gm.Prompt != nil {
+		t.Fatal("expected no prompt when no pending human")
+	}
+	if gm.Toast == "" || gm.ToastKind != "warning" {
+		t.Fatal("expected warning toast")
 	}
 }
 
