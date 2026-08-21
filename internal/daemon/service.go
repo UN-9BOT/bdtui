@@ -178,6 +178,28 @@ func (s *Service) InspectExecution(ctx context.Context, req *daemonpb.InspectExe
 	return resp, nil
 }
 
+// ListExecutions returns the executions attached to a run. The
+// BIR-54 contract scopes by run so the operator only sees the
+// executions of their selected run; callers must supply run_id.
+func (s *Service) ListExecutions(ctx context.Context, req *daemonpb.ListExecutionsRequest) (*daemonpb.ListExecutionsResponse, error) {
+	runID := ""
+	if req.RunId != nil {
+		runID = *req.RunId
+	}
+	if runID == "" {
+		return nil, status.Error(codes.InvalidArgument, "run_id is required")
+	}
+	rows, err := s.store.ListExecutionsByRun(ctx, runID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	resp := &daemonpb.ListExecutionsResponse{Executions: make([]*daemonpb.Execution, 0, len(rows))}
+	for i := range rows {
+		resp.Executions = append(resp.Executions, executionToProto(&rows[i]))
+	}
+	return resp, nil
+}
+
 func (s *Service) StreamEvents(req *daemonpb.StreamEventsRequest, stream daemonpb.Orchestrator_StreamEventsServer) error {
 	ctx := stream.Context()
 	if req.RunId == "" {

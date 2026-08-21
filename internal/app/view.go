@@ -1332,10 +1332,10 @@ func (m model) renderParentPickerModal() string {
 }
 
 // renderRunsModal draws the Runs tab. It renders the load status,
-// then a list of coarse Run rows (task id, status, current step hint,
-// human-attention flag), then a footer with the key bindings. Full
-// agent transcripts are NOT shown -- the user follows the pane
-// reference in Herdr for that.
+// then a list of coarse Run rows (task id, status, current step id,
+// pane reference, human-attention flag), then a footer with the key
+// bindings. Full agent transcripts are NOT shown -- the user follows
+// the pane reference in Herdr for that.
 func (m model) renderRunsModal() string {
 	state := m.Runs
 	if state == nil {
@@ -1363,19 +1363,29 @@ func (m model) renderRunsModal() string {
 			if r.HasPendingHuman {
 				humanFlag = "  [needs human]"
 			}
-			stage := r.WorkflowStageHint
+			// Prefer the durable CurrentStepID from the proto; fall
+			// back to the (best-effort) snapshot heuristic, then to
+			// a literal placeholder when neither is available.
+			stage := r.CurrentStepID
+			if stage == "" {
+				stage = r.WorkflowStageHint
+			}
 			if stage == "" {
 				stage = "(no step)"
 			}
-			line := fmt.Sprintf("%s%-8s  %-12s  %-22s  %s%s",
+			pane := r.PaneID
+			if pane == "" {
+				pane = "-"
+			}
+			line := fmt.Sprintf("%s%-8s  %-12s  %-22s  %-18s  %-8s%s",
 				marker, r.Status, shortRunID(r.RunID),
-				truncate(r.TaskID, 22), stage, humanFlag)
+				truncate(r.TaskID, 22), stage, truncate(pane, 8), humanFlag)
 			lines = append(lines, line)
 		}
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, "j/k move  a answer-human  r retry  x cancel  R refresh  esc/q close")
+	lines = append(lines, "j/k move  enter focus-pane  a answer-human  r retry  x cancel  R refresh  esc/q close")
 	return strings.Join(lines, "\n")
 }
 

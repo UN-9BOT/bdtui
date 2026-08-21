@@ -44,7 +44,9 @@ func loadRunsCmd(client *daemon.Client) tea.Cmd {
 // runRowFromProto converts a daemon Run protobuf into the coarse RunRow
 // the Runs tab renders. For waiting_human runs it also fetches the
 // pending human_input ids via ListHumanInputs so the operator can
-// answer them directly from the tab (the BIR-54 contract).
+// answer them directly from the tab; for any run it fetches the
+// most-recent Execution so the row carries a pane_id for the
+// BIR-54 follow-the-pane-reference contract.
 func runRowFromProto(ctx context.Context, r *daemonpb.Run, client *daemon.Client) (RunRow, error) {
 	row := RunRow{
 		RunID:             r.Id,
@@ -55,6 +57,23 @@ func runRowFromProto(ctx context.Context, r *daemonpb.Run, client *daemon.Client
 		NeedsAttention:    derefString(r.NeedsAttentionReason),
 		WorkflowStageHint: stageHintFromSnapshot(r.WorkflowSnapshot),
 		HasPendingHuman:   r.Status == "waiting_human",
+	}
+	// Fetch the executions for this run so the row can show the
+	// most-recent pane_id. We don't propagate the error -- if the
+	// call fails the row still renders, just without a pane reference.
+	if listResp, err := client.ListExecutions(rpcCtx(), &daemonpb.ListExecutionsRequest{
+		RunId: &r.Id,
+	}); err == nil {
+		// Walk backwards so we pick the most-recent execution that
+		// actually has a pane_id (matching what the operator would
+		// expect to follow).
+		for i := len(listResp.Executions) - 1; i >= 0; i-- {
+			e := listResp.Executions[i]
+			if p := derefString(e.PaneId); p != "" {
+				row.PaneID = p
+				break
+			}
+		}
 	}
 	if r.Status == "waiting_human" {
 		// Fetch the pending human_input ids so the operator can answer.
@@ -275,6 +294,45 @@ func (m model) answerSelectedHumanInput() (tea.Model, tea.Cmd) {
 		}
 		return runsActionMsg{action: "answer", runID: runID}
 	}
+}
+
+// focusSelectedRunPane switches the user to the Herdr pane that owns
+// the selected run's most-recent execution. BIR-54 calls "follow the
+// pane reference" a first-class action; the operator triggers it from
+// the Runs tab with Enter. If herdr is disabled or the run has no
+// pane_id, the user gets a warning toast.
+func (m model) focusSelectedRunPane() (tea.Model, tea.Cmd) {
+	run := m.currentRun()
+	if run == nil {
+		m.setToast("warning", "no run selected")
+		return m, nil
+	}
+	if run.PaneID == "" {
+		m.setToast("warning", "no pane reference for this run")
+		return m, nil
+	}
+	herdr := m.Plugins.Herdr()
+	if herdr == nil || !herdr.Enabled() {
+		m.setToast("warning", "herdr plugin not enabled")
+		return m, nil
+	}
+	targets, err := herdr.ListTargets()
+	if err != nil {
+		m.setToast("warning", "herdr list failed: "+err.Error())
+		return m, nil
+	}
+	for _, t := range targets {
+		if strings.TrimSpace(t.PaneID) == run.PaneID {
+			if err := herdr.FocusTarget(t); err != nil {
+				m.setToast("warning", "herdr focus failed: "+err.Error())
+				return m, nil
+			}
+			m.setToast("success", "focused pane "+shortRunID(run.PaneID))
+			return m, nil
+		}
+	}
+	m.setToast("warning", "pane not found in herdr")
+	return m, nil
 }
 
 // runsActionMsg is the response message for retry/cancel commands.

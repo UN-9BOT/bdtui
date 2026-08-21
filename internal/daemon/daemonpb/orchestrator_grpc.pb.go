@@ -27,6 +27,7 @@ const (
 	Orchestrator_RetryRun_FullMethodName         = "/bdtui.daemon.v1.Orchestrator/RetryRun"
 	Orchestrator_CancelRun_FullMethodName        = "/bdtui.daemon.v1.Orchestrator/CancelRun"
 	Orchestrator_InspectExecution_FullMethodName = "/bdtui.daemon.v1.Orchestrator/InspectExecution"
+	Orchestrator_ListExecutions_FullMethodName   = "/bdtui.daemon.v1.Orchestrator/ListExecutions"
 	Orchestrator_StreamEvents_FullMethodName     = "/bdtui.daemon.v1.Orchestrator/StreamEvents"
 )
 
@@ -49,6 +50,7 @@ type OrchestratorClient interface {
 	RetryRun(ctx context.Context, in *RetryRunRequest, opts ...grpc.CallOption) (*Run, error)
 	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*Run, error)
 	InspectExecution(ctx context.Context, in *InspectExecutionRequest, opts ...grpc.CallOption) (*InspectExecutionResponse, error)
+	ListExecutions(ctx context.Context, in *ListExecutionsRequest, opts ...grpc.CallOption) (*ListExecutionsResponse, error)
 	StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
 }
 
@@ -140,6 +142,16 @@ func (c *orchestratorClient) InspectExecution(ctx context.Context, in *InspectEx
 	return out, nil
 }
 
+func (c *orchestratorClient) ListExecutions(ctx context.Context, in *ListExecutionsRequest, opts ...grpc.CallOption) (*ListExecutionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExecutionsResponse)
+	err := c.cc.Invoke(ctx, Orchestrator_ListExecutions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *orchestratorClient) StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Orchestrator_ServiceDesc.Streams[0], Orchestrator_StreamEvents_FullMethodName, cOpts...)
@@ -178,6 +190,7 @@ type OrchestratorServer interface {
 	RetryRun(context.Context, *RetryRunRequest) (*Run, error)
 	CancelRun(context.Context, *CancelRunRequest) (*Run, error)
 	InspectExecution(context.Context, *InspectExecutionRequest) (*InspectExecutionResponse, error)
+	ListExecutions(context.Context, *ListExecutionsRequest) (*ListExecutionsResponse, error)
 	StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[Event]) error
 	mustEmbedUnimplementedOrchestratorServer()
 }
@@ -212,6 +225,9 @@ func (UnimplementedOrchestratorServer) CancelRun(context.Context, *CancelRunRequ
 }
 func (UnimplementedOrchestratorServer) InspectExecution(context.Context, *InspectExecutionRequest) (*InspectExecutionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InspectExecution not implemented")
+}
+func (UnimplementedOrchestratorServer) ListExecutions(context.Context, *ListExecutionsRequest) (*ListExecutionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListExecutions not implemented")
 }
 func (UnimplementedOrchestratorServer) StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
@@ -381,6 +397,24 @@ func _Orchestrator_InspectExecution_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Orchestrator_ListExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrchestratorServer).ListExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Orchestrator_ListExecutions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrchestratorServer).ListExecutions(ctx, req.(*ListExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Orchestrator_StreamEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamEventsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -430,6 +464,10 @@ var Orchestrator_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InspectExecution",
 			Handler:    _Orchestrator_InspectExecution_Handler,
+		},
+		{
+			MethodName: "ListExecutions",
+			Handler:    _Orchestrator_ListExecutions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

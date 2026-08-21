@@ -19,6 +19,7 @@ service Orchestrator {
   rpc RetryRun(RetryRunRequest) returns (Run);
   rpc CancelRun(CancelRunRequest) returns (Run);
   rpc InspectExecution(InspectExecutionRequest) returns (InspectExecutionResponse);
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
   rpc StreamEvents(StreamEventsRequest) returns (stream Event);
 }
 
@@ -133,6 +134,17 @@ message InspectExecutionRequest {
 message InspectExecutionResponse {
   Execution execution = 1;
   repeated Artifact artifacts = 2;
+}
+
+message ListExecutionsRequest {
+  // When set, only executions for this run are returned; otherwise the
+  // store returns no rows (the BIR-54 contract scopes by run so the
+  // operator only sees the executions of their selected run).
+  optional string run_id = 1;
+}
+
+message ListExecutionsResponse {
+  repeated Execution executions = 1;
 }
 
 message StreamEventsRequest {

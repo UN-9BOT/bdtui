@@ -1046,6 +1046,97 @@ func (x *InspectExecutionResponse) GetArtifacts() []*Artifact {
 	return nil
 }
 
+type ListExecutionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// When set, only executions for this run are returned; otherwise the
+	// store returns no rows (the BIR-54 contract scopes by run so the
+	// operator only sees the executions of their selected run).
+	RunId         *string `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3,oneof" json:"run_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExecutionsRequest) Reset() {
+	*x = ListExecutionsRequest{}
+	mi := &file_orchestrator_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExecutionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExecutionsRequest) ProtoMessage() {}
+
+func (x *ListExecutionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExecutionsRequest.ProtoReflect.Descriptor instead.
+func (*ListExecutionsRequest) Descriptor() ([]byte, []int) {
+	return file_orchestrator_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListExecutionsRequest) GetRunId() string {
+	if x != nil && x.RunId != nil {
+		return *x.RunId
+	}
+	return ""
+}
+
+type ListExecutionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Executions    []*Execution           `protobuf:"bytes,1,rep,name=executions,proto3" json:"executions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExecutionsResponse) Reset() {
+	*x = ListExecutionsResponse{}
+	mi := &file_orchestrator_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExecutionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExecutionsResponse) ProtoMessage() {}
+
+func (x *ListExecutionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExecutionsResponse.ProtoReflect.Descriptor instead.
+func (*ListExecutionsResponse) Descriptor() ([]byte, []int) {
+	return file_orchestrator_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListExecutionsResponse) GetExecutions() []*Execution {
+	if x != nil {
+		return x.Executions
+	}
+	return nil
+}
+
 type StreamEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	RunId string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
@@ -1058,7 +1149,7 @@ type StreamEventsRequest struct {
 
 func (x *StreamEventsRequest) Reset() {
 	*x = StreamEventsRequest{}
-	mi := &file_orchestrator_proto_msgTypes[15]
+	mi := &file_orchestrator_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +1161,7 @@ func (x *StreamEventsRequest) String() string {
 func (*StreamEventsRequest) ProtoMessage() {}
 
 func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_proto_msgTypes[15]
+	mi := &file_orchestrator_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1174,7 @@ func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
-	return file_orchestrator_proto_rawDescGZIP(), []int{15}
+	return file_orchestrator_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StreamEventsRequest) GetRunId() string {
@@ -1114,7 +1205,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_orchestrator_proto_msgTypes[16]
+	mi := &file_orchestrator_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1217,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_proto_msgTypes[16]
+	mi := &file_orchestrator_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1230,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_orchestrator_proto_rawDescGZIP(), []int{16}
+	return file_orchestrator_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Event) GetId() int64 {
@@ -1300,7 +1391,14 @@ const file_orchestrator_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x8d\x01\n" +
 	"\x18InspectExecutionResponse\x128\n" +
 	"\texecution\x18\x01 \x01(\v2\x1a.bdtui.daemon.v1.ExecutionR\texecution\x127\n" +
-	"\tartifacts\x18\x02 \x03(\v2\x19.bdtui.daemon.v1.ArtifactR\tartifacts\"I\n" +
+	"\tartifacts\x18\x02 \x03(\v2\x19.bdtui.daemon.v1.ArtifactR\tartifacts\">\n" +
+	"\x15ListExecutionsRequest\x12\x1a\n" +
+	"\x06run_id\x18\x01 \x01(\tH\x00R\x05runId\x88\x01\x01B\t\n" +
+	"\a_run_id\"T\n" +
+	"\x16ListExecutionsResponse\x12:\n" +
+	"\n" +
+	"executions\x18\x01 \x03(\v2\x1a.bdtui.daemon.v1.ExecutionR\n" +
+	"executions\"I\n" +
 	"\x13StreamEventsRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
 	"\tafter_seq\x18\x02 \x01(\x03R\bafterSeq\"\x9d\x01\n" +
@@ -1312,7 +1410,7 @@ const file_orchestrator_proto_rawDesc = "" +
 	"\apayload\x18\x05 \x01(\tR\apayload\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\tR\tcreatedAtB\t\n" +
-	"\a_run_id2\xe9\x05\n" +
+	"\a_run_id2\xcc\x06\n" +
 	"\fOrchestrator\x12D\n" +
 	"\tCreateRun\x12!.bdtui.daemon.v1.CreateRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12O\n" +
 	"\bListRuns\x12 .bdtui.daemon.v1.ListRunsRequest\x1a!.bdtui.daemon.v1.ListRunsResponse\x12>\n" +
@@ -1321,7 +1419,8 @@ const file_orchestrator_proto_rawDesc = "" +
 	"\x10AnswerHumanInput\x12(.bdtui.daemon.v1.AnswerHumanInputRequest\x1a\x1b.bdtui.daemon.v1.HumanInput\x12B\n" +
 	"\bRetryRun\x12 .bdtui.daemon.v1.RetryRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12D\n" +
 	"\tCancelRun\x12!.bdtui.daemon.v1.CancelRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12g\n" +
-	"\x10InspectExecution\x12(.bdtui.daemon.v1.InspectExecutionRequest\x1a).bdtui.daemon.v1.InspectExecutionResponse\x12N\n" +
+	"\x10InspectExecution\x12(.bdtui.daemon.v1.InspectExecutionRequest\x1a).bdtui.daemon.v1.InspectExecutionResponse\x12a\n" +
+	"\x0eListExecutions\x12&.bdtui.daemon.v1.ListExecutionsRequest\x1a'.bdtui.daemon.v1.ListExecutionsResponse\x12N\n" +
 	"\fStreamEvents\x12$.bdtui.daemon.v1.StreamEventsRequest\x1a\x16.bdtui.daemon.v1.Event0\x01B)Z'bdtui/internal/daemon/daemonpb;daemonpbb\x06proto3"
 
 var (
@@ -1336,7 +1435,7 @@ func file_orchestrator_proto_rawDescGZIP() []byte {
 	return file_orchestrator_proto_rawDescData
 }
 
-var file_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_orchestrator_proto_goTypes = []any{
 	(*Run)(nil),                      // 0: bdtui.daemon.v1.Run
 	(*CreateRunRequest)(nil),         // 1: bdtui.daemon.v1.CreateRunRequest
@@ -1353,37 +1452,42 @@ var file_orchestrator_proto_goTypes = []any{
 	(*Artifact)(nil),                 // 12: bdtui.daemon.v1.Artifact
 	(*InspectExecutionRequest)(nil),  // 13: bdtui.daemon.v1.InspectExecutionRequest
 	(*InspectExecutionResponse)(nil), // 14: bdtui.daemon.v1.InspectExecutionResponse
-	(*StreamEventsRequest)(nil),      // 15: bdtui.daemon.v1.StreamEventsRequest
-	(*Event)(nil),                    // 16: bdtui.daemon.v1.Event
+	(*ListExecutionsRequest)(nil),    // 15: bdtui.daemon.v1.ListExecutionsRequest
+	(*ListExecutionsResponse)(nil),   // 16: bdtui.daemon.v1.ListExecutionsResponse
+	(*StreamEventsRequest)(nil),      // 17: bdtui.daemon.v1.StreamEventsRequest
+	(*Event)(nil),                    // 18: bdtui.daemon.v1.Event
 }
 var file_orchestrator_proto_depIdxs = []int32{
 	0,  // 0: bdtui.daemon.v1.ListRunsResponse.runs:type_name -> bdtui.daemon.v1.Run
 	5,  // 1: bdtui.daemon.v1.ListHumanInputsResponse.human_inputs:type_name -> bdtui.daemon.v1.HumanInput
 	11, // 2: bdtui.daemon.v1.InspectExecutionResponse.execution:type_name -> bdtui.daemon.v1.Execution
 	12, // 3: bdtui.daemon.v1.InspectExecutionResponse.artifacts:type_name -> bdtui.daemon.v1.Artifact
-	1,  // 4: bdtui.daemon.v1.Orchestrator.CreateRun:input_type -> bdtui.daemon.v1.CreateRunRequest
-	3,  // 5: bdtui.daemon.v1.Orchestrator.ListRuns:input_type -> bdtui.daemon.v1.ListRunsRequest
-	2,  // 6: bdtui.daemon.v1.Orchestrator.GetRun:input_type -> bdtui.daemon.v1.GetRunRequest
-	6,  // 7: bdtui.daemon.v1.Orchestrator.ListHumanInputs:input_type -> bdtui.daemon.v1.ListHumanInputsRequest
-	8,  // 8: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:input_type -> bdtui.daemon.v1.AnswerHumanInputRequest
-	9,  // 9: bdtui.daemon.v1.Orchestrator.RetryRun:input_type -> bdtui.daemon.v1.RetryRunRequest
-	10, // 10: bdtui.daemon.v1.Orchestrator.CancelRun:input_type -> bdtui.daemon.v1.CancelRunRequest
-	13, // 11: bdtui.daemon.v1.Orchestrator.InspectExecution:input_type -> bdtui.daemon.v1.InspectExecutionRequest
-	15, // 12: bdtui.daemon.v1.Orchestrator.StreamEvents:input_type -> bdtui.daemon.v1.StreamEventsRequest
-	0,  // 13: bdtui.daemon.v1.Orchestrator.CreateRun:output_type -> bdtui.daemon.v1.Run
-	4,  // 14: bdtui.daemon.v1.Orchestrator.ListRuns:output_type -> bdtui.daemon.v1.ListRunsResponse
-	0,  // 15: bdtui.daemon.v1.Orchestrator.GetRun:output_type -> bdtui.daemon.v1.Run
-	7,  // 16: bdtui.daemon.v1.Orchestrator.ListHumanInputs:output_type -> bdtui.daemon.v1.ListHumanInputsResponse
-	5,  // 17: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:output_type -> bdtui.daemon.v1.HumanInput
-	0,  // 18: bdtui.daemon.v1.Orchestrator.RetryRun:output_type -> bdtui.daemon.v1.Run
-	0,  // 19: bdtui.daemon.v1.Orchestrator.CancelRun:output_type -> bdtui.daemon.v1.Run
-	14, // 20: bdtui.daemon.v1.Orchestrator.InspectExecution:output_type -> bdtui.daemon.v1.InspectExecutionResponse
-	16, // 21: bdtui.daemon.v1.Orchestrator.StreamEvents:output_type -> bdtui.daemon.v1.Event
-	13, // [13:22] is the sub-list for method output_type
-	4,  // [4:13] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	11, // 4: bdtui.daemon.v1.ListExecutionsResponse.executions:type_name -> bdtui.daemon.v1.Execution
+	1,  // 5: bdtui.daemon.v1.Orchestrator.CreateRun:input_type -> bdtui.daemon.v1.CreateRunRequest
+	3,  // 6: bdtui.daemon.v1.Orchestrator.ListRuns:input_type -> bdtui.daemon.v1.ListRunsRequest
+	2,  // 7: bdtui.daemon.v1.Orchestrator.GetRun:input_type -> bdtui.daemon.v1.GetRunRequest
+	6,  // 8: bdtui.daemon.v1.Orchestrator.ListHumanInputs:input_type -> bdtui.daemon.v1.ListHumanInputsRequest
+	8,  // 9: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:input_type -> bdtui.daemon.v1.AnswerHumanInputRequest
+	9,  // 10: bdtui.daemon.v1.Orchestrator.RetryRun:input_type -> bdtui.daemon.v1.RetryRunRequest
+	10, // 11: bdtui.daemon.v1.Orchestrator.CancelRun:input_type -> bdtui.daemon.v1.CancelRunRequest
+	13, // 12: bdtui.daemon.v1.Orchestrator.InspectExecution:input_type -> bdtui.daemon.v1.InspectExecutionRequest
+	15, // 13: bdtui.daemon.v1.Orchestrator.ListExecutions:input_type -> bdtui.daemon.v1.ListExecutionsRequest
+	17, // 14: bdtui.daemon.v1.Orchestrator.StreamEvents:input_type -> bdtui.daemon.v1.StreamEventsRequest
+	0,  // 15: bdtui.daemon.v1.Orchestrator.CreateRun:output_type -> bdtui.daemon.v1.Run
+	4,  // 16: bdtui.daemon.v1.Orchestrator.ListRuns:output_type -> bdtui.daemon.v1.ListRunsResponse
+	0,  // 17: bdtui.daemon.v1.Orchestrator.GetRun:output_type -> bdtui.daemon.v1.Run
+	7,  // 18: bdtui.daemon.v1.Orchestrator.ListHumanInputs:output_type -> bdtui.daemon.v1.ListHumanInputsResponse
+	5,  // 19: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:output_type -> bdtui.daemon.v1.HumanInput
+	0,  // 20: bdtui.daemon.v1.Orchestrator.RetryRun:output_type -> bdtui.daemon.v1.Run
+	0,  // 21: bdtui.daemon.v1.Orchestrator.CancelRun:output_type -> bdtui.daemon.v1.Run
+	14, // 22: bdtui.daemon.v1.Orchestrator.InspectExecution:output_type -> bdtui.daemon.v1.InspectExecutionResponse
+	16, // 23: bdtui.daemon.v1.Orchestrator.ListExecutions:output_type -> bdtui.daemon.v1.ListExecutionsResponse
+	18, // 24: bdtui.daemon.v1.Orchestrator.StreamEvents:output_type -> bdtui.daemon.v1.Event
+	15, // [15:25] is the sub-list for method output_type
+	5,  // [5:15] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_orchestrator_proto_init() }
@@ -1396,14 +1500,15 @@ func file_orchestrator_proto_init() {
 	file_orchestrator_proto_msgTypes[5].OneofWrappers = []any{}
 	file_orchestrator_proto_msgTypes[6].OneofWrappers = []any{}
 	file_orchestrator_proto_msgTypes[11].OneofWrappers = []any{}
-	file_orchestrator_proto_msgTypes[16].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[15].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[18].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchestrator_proto_rawDesc), len(file_orchestrator_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

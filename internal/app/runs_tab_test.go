@@ -18,14 +18,15 @@ func TestRenderRunsModalEmpty(t *testing.T) {
 
 // TestRenderRunsModalRows asserts the modal renders one line per run
 // plus the header / footer. The selected row must be prefixed with
-// "> " so the user can see which row is active.
+// "> " so the user can see which row is active. The pane reference
+// column must show the most-recent execution's pane_id (BIR-54).
 func TestRenderRunsModalRows(t *testing.T) {
 	m := model{Runs: &RunsTabState{
 		Loaded: true,
 		Index:  1,
 		Rows: []RunRow{
-			{RunID: "run-aaaa", Status: "completed", TaskID: "task-smooth", WorkflowStageHint: "plan -> review -> implement"},
-			{RunID: "run-bbbb", Status: "waiting_human", TaskID: "task-human", WorkflowStageHint: "review -> ask", HasPendingHuman: true},
+			{RunID: "run-aaaa", Status: "completed", TaskID: "task-smooth", CurrentStepID: "implement", PaneID: "%42"},
+			{RunID: "run-bbbb", Status: "waiting_human", TaskID: "task-human", CurrentStepID: "ask-human", PaneID: "%7", HasPendingHuman: true},
 		},
 	}}
 	out := m.renderRunsModal()
@@ -37,6 +38,12 @@ func TestRenderRunsModalRows(t *testing.T) {
 	}
 	if !contains(out, "[needs human]") {
 		t.Fatalf("expected needs-human flag, got: %q", out)
+	}
+	if !contains(out, "implement") {
+		t.Fatalf("expected CurrentStepID 'implement' in modal output, got: %q", out)
+	}
+	if !contains(out, "%42") {
+		t.Fatalf("expected pane reference '%%42' in modal output, got: %q", out)
 	}
 }
 
@@ -101,11 +108,42 @@ func TestCurrentRunEmpty(t *testing.T) {
 // a board key). This is a static check, not a runtime call, so it
 // does not need a fully-initialised Model.
 func TestRunsKeyHandlersCoverBindings(t *testing.T) {
-	doc := "j/k move  r retry  x cancel  R refresh  esc/q close"
-	for _, b := range []string{"j", "k", "r", "x", "R", "esc", "q"} {
+	doc := "j/k move  enter focus-pane  a answer-human  r retry  x cancel  R refresh  esc/q close"
+	for _, b := range []string{"j", "k", "enter", "a", "r", "x", "R", "esc", "q"} {
 		if !contains(doc, b) {
 			t.Errorf("binding %q not mentioned in docs %q", b, doc)
 		}
+	}
+}
+
+// TestFocusSelectedRunPaneRequiresPaneID verifies that pressing Enter
+// on a run with no pane reference surfaces a toast instead of
+// silently doing nothing. The pane reference is the hard contract
+// the BIR-54 tab is built around.
+func TestFocusSelectedRunPaneRequiresPaneID(t *testing.T) {
+	m := model{Runs: &RunsTabState{
+		Loaded: true,
+		Rows:   []RunRow{{RunID: "run-x", Status: "completed"}},
+		Index:  0,
+	}}
+	got, _ := m.focusSelectedRunPane()
+	gm := got.(model)
+	if gm.Toast == "" {
+		t.Fatal("expected a warning toast when run has no pane_id")
+	}
+	if gm.ToastKind != "warning" {
+		t.Fatalf("expected warning toast, got %q", gm.ToastKind)
+	}
+}
+
+// TestFocusSelectedRunPaneRequiresSelection asserts the no-row
+// branch returns a warning toast instead of crashing.
+func TestFocusSelectedRunPaneRequiresSelection(t *testing.T) {
+	m := model{}
+	got, _ := m.focusSelectedRunPane()
+	gm := got.(model)
+	if gm.Toast == "" || gm.ToastKind != "warning" {
+		t.Fatal("expected warning toast when no run is selected")
 	}
 }
 

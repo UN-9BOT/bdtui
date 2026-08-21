@@ -169,6 +169,55 @@ func (s *Store) SetExecutionResultJSON(ctx context.Context, id, jsonResult strin
 	return nil
 }
 
+// ListExecutionsByRun returns every execution attached to a run,
+// oldest-first. The Runs tab calls this to fetch the pane_id of the
+// most-recent execution so the operator can follow the BIR-54
+// "follow the pane reference" contract.
+func (s *Store) ListExecutionsByRun(ctx context.Context, runID string) ([]Execution, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, step_attempt_id, kind, status, pane_id, process_id,
+		        prompt_ref, prompt_hash, result_json, result_commit, error,
+		        created_at, updated_at, started_at, completed_at
+		 FROM executions WHERE run_id = ? ORDER BY created_at, id`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Execution
+	for rows.Next() {
+		var e Execution
+		var kind, status, created, updated string
+		var pane, proc, resultJSON, resultCommit, errStr, started, completed sql.NullString
+		if err := rows.Scan(&e.ID, &e.RunID, &e.StepAttemptID, &kind, &status, &pane, &proc,
+			&e.PromptRef, &e.PromptHash, &resultJSON, &resultCommit, &errStr, &created, &updated, &started, &completed); err != nil {
+			return nil, err
+		}
+		e.Kind = ExecutionKind(kind)
+		e.Status = ExecutionStatus(status)
+		e.PaneID = strPtr(pane)
+		e.ProcessID = strPtr(proc)
+		e.ResultJSON = strPtr(resultJSON)
+		e.ResultCommit = strPtr(resultCommit)
+		e.Error = strPtr(errStr)
+		var perr error
+		if e.CreatedAt, perr = parseTime(created); perr != nil {
+			return nil, perr
+		}
+		if e.UpdatedAt, perr = parseTime(updated); perr != nil {
+			return nil, perr
+		}
+		if e.StartedAt, perr = timePtr(started); perr != nil {
+			return nil, perr
+		}
+		if e.CompletedAt, perr = timePtr(completed); perr != nil {
+			return nil, perr
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // CreateArtifact records an immutable execution artifact.
 func (s *Store) CreateArtifact(ctx context.Context, a *Artifact) error {
 	if a.ID == "" {
