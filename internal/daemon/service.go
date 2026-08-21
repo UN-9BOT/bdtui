@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"bdtui/internal/daemon/daemonpb"
@@ -31,6 +32,18 @@ type Service struct {
 	daemonpb.UnimplementedOrchestratorServer
 	store *orch.Store
 	tasks taskstore.TaskStore // optional; nil disables lifecycle integration
+	// taskSyncLocks is the per-task sync barrier that serializes
+	// concurrent SyncTerminal calls for the same task. The Beads
+	// adapter's generation fence is a sanity check (catches external
+	// edits); the lock is the primary defense against the
+	// read-then-write race the reviewer flagged in R5 v6: without it,
+	// two concurrent syncs could both read the same current
+	// generation and race their writes, with the stale write winning.
+	// The lock is keyed by task_id (not run_id) because the Beads task
+	// is the unit of contention. The lock is held only during the
+	// Beads side effect, not during the outbox append, so cross-task
+	// syncs remain parallel.
+	taskSyncLocks sync.Map // map[string]*sync.Mutex, keyed by task_id
 }
 
 // NewService builds a Service with no TaskStore integration. This is the
@@ -190,6 +203,21 @@ func encodeTaskSnapshot(t *taskstore.Task) string {
 //     retries it. The reconciler only ever sees the LATEST pending
 //     row for a (run_id, task_id) pair because AppendTaskSyncOutbox
 //     supersedes earlier pending rows in the same transaction.
+//
+// Concurrency: the per-task sync lock (taskSyncLocks) serializes
+// concurrent SyncTerminal calls for the same task across the
+// synchronous side-effect path (this function) and the future
+// reconciler. The lock is acquired only for the Beads side effect,
+// so outbox appends and cross-task syncs remain parallel. The lock
+// closes the read-then-write race the reviewer flagged in R5 v6:
+// without it, two concurrent syncs could both read the same current
+// generation and race their writes, with the stale write winning.
+//
+// ErrStaleLifecycleIntent is a successful outcome: the intent was
+// satisfied by a newer write (or the Beads task was edited
+// externally). The outbox row is marked done silently without a
+// sync_failed audit event because the row is moot; the retry path
+// would see the same staleness and loop forever.
 func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 	if s.tasks == nil || run.TaskID == "" {
 		return
@@ -222,6 +250,14 @@ func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 		return
 	}
 
+	// Per-task sync lock. Serializes concurrent SyncTerminal calls
+	// for the same task. The lock is held only during the Beads side
+	// effect (the SyncTerminal call), not during the outbox append,
+	// so cross-task syncs remain parallel. The lock is the primary
+	// defense against the read-then-write race the reviewer flagged.
+	lock := s.taskLock(run.TaskID)
+	lock.Lock()
+
 	// Detached context for the external side effect. The caller's
 	// deadline / cancellation MUST NOT abort the sync attempt
 	// because the Run is already terminal and we still owe the Beads
@@ -231,13 +267,34 @@ func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 	defer cancel()
 
 	if err := s.tasks.SyncTerminal(syncCtx, run.TaskID, outcome, outbox.Generation); err != nil {
+		lock.Unlock()
+		if errors.Is(err, taskstore.ErrStaleLifecycleIntent) {
+			// The intent is stale (a newer write beat us, or an
+			// external edit bumped the Beads generation). The newer
+			// state is the authoritative current desired state, so
+			// this row is moot. Mark done silently so the
+			// reconciler does not retry a permanently stale row.
+			_ = s.store.MarkTaskSyncOutboxDone(syncCtx, outboxID)
+			return
+		}
 		s.recordTaskSyncFailed(syncCtx, run, outcome, err)
 		return
 	}
+	lock.Unlock()
 	// Success: clear the outbox row. The audit event is the
 	// human-facing trail; the outbox row's only purpose is to feed
 	// the reconciler.
 	_ = s.store.MarkTaskSyncOutboxDone(syncCtx, outboxID)
+}
+
+// taskLock returns the per-task sync barrier for the given task_id.
+// The lock is created on first use and reused for the lifetime of the
+// Service; it is never deleted. The lock is keyed by task_id (not
+// run_id) because the Beads task is the unit of contention at the
+// sync layer.
+func (s *Service) taskLock(taskID string) *sync.Mutex {
+	v, _ := s.taskSyncLocks.LoadOrStore(taskID, &sync.Mutex{})
+	return v.(*sync.Mutex)
 }
 
 // recordTaskSyncFailed appends a task.sync_failed event so the sync

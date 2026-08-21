@@ -30,19 +30,31 @@ import (
 
 // Client is the subset of the `bd` CLI that the TaskStore needs. It is
 // exposed so tests can inject a fake without shelling out.
+//
+// UpdateWithLabel is the only write primitive the Beads adapter uses:
+// it issues a single `bd update <id> --status X --add-label Y --json`
+// command. Dolt's transaction semantics make the status and label
+// update atomic together, so the Beads-side fence (current max
+// generation on the task) and the write of the new generation are
+// committed in one observable step. The orchestrator's per-task sync
+// lock (see internal/daemon) closes the read-then-write window so two
+// concurrent syncs cannot both observe the same current generation
+// and race their writes; the Beads-side fence is then a sanity check
+// (catches external edits to the task between the lock release and
+// the next sync).
 type Client interface {
-// Show returns the raw JSON output of `bd show <id> --json`. A missing
-// task must surface as ErrTaskNotFound so the controller can refuse
-// to launch a Run.
+	// Show returns the raw JSON output of `bd show <id> --json`. A missing
+	// task must surface as ErrTaskNotFound so the controller can refuse
+	// to launch a Run.
 	Show(ctx context.Context, id string) ([]byte, error)
-// Update returns the raw JSON output of `bd update <id> --status <s> --json`.
-// It returns ErrTaskStoreUnavailable for transient backend failures
-// and ErrTaskAlreadyClaimed if the backend refuses the transition.
-	Update(ctx context.Context, id string, status string) ([]byte, error)
-// AddLabel returns the raw JSON output of `bd update <id> --add-label <l>`.
-// This is the mechanism SyncTerminal uses to record the orchestrator's
-// generation on the task so the next sync can fence stale writes.
-	AddLabel(ctx context.Context, id string, label string) ([]byte, error)
+	// UpdateWithLabel returns the raw JSON output of
+	// `bd update <id> --status <status> --add-label <label> --json`.
+	// The status and label are committed in one Dolt transaction so
+	// downstream readers always see the two values together. The
+	// TaskStore adapter uses this primitive to atomically push the
+	// mapped terminal status and the orch-gen-N label that represents
+	// the new generation.
+	UpdateWithLabel(ctx context.Context, id string, status string, label string) ([]byte, error)
 	// Claim returns the raw JSON output of `bd update <id> --claim --json`.
 	// The claim is atomic at the Beads level: it transitions todo ->
 	// in_progress and assigns the issue to the current user in a single
@@ -75,14 +87,15 @@ func (c *CLI) Show(ctx context.Context, id string) ([]byte, error) {
 	return c.run(ctx, "show", id, "--json")
 }
 
-// Update shells out to `bd update <id> --status <status> --json`.
-func (c *CLI) Update(ctx context.Context, id string, status string) ([]byte, error) {
-	return c.run(ctx, "update", id, "--status", status, "--json")
-}
-
-// AddLabel shells out to `bd update <id> --add-label <label> --json`.
-func (c *CLI) AddLabel(ctx context.Context, id string, label string) ([]byte, error) {
-	return c.run(ctx, "update", id, "--add-label", label, "--json")
+// UpdateWithLabel shells out to
+// `bd update <id> --status <status> --add-label <label> --json`. The
+// status and label are committed in one Dolt transaction, so the
+// downstream view always observes the two fields together. The Beads
+// adapter uses this single command as the canonical write primitive
+// for SyncTerminal: the generation fence (current max on the task)
+// and the new generation label land atomically with the new status.
+func (c *CLI) UpdateWithLabel(ctx context.Context, id string, status string, label string) ([]byte, error) {
+	return c.run(ctx, "update", id, "--status", status, "--add-label", label, "--json")
 }
 
 // Claim shells out to `bd update <id> --claim --json`. The flag is the
@@ -318,14 +331,38 @@ func (s *Store) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
 	return snap, nil
 }
 
-// SyncTerminal implements taskstore.TaskStore. The outcome is mapped to a
-// TaskStatus via MapRunOutcomeToTaskStatus and then to a Beads status via
-// toBeadsStatus. The generation argument is the orchestrator's monotonic
-// counter for (run_id, task_id); the Beads adapter records it as a
-// label on the task so the next sync can fence stale writes. If the
-// Beads backend already has a newer generation on record for this
-// task, the write is short-circuited with ErrStaleLifecycleIntent
-// and the local side-effect (outbox row completion) is skipped.
+// SyncTerminal implements taskstore.TaskStore. The outcome is mapped
+// to a TaskStatus via MapRunOutcomeToTaskStatus and then to a Beads
+// status via toBeadsStatus. The generation argument is the
+// orchestrator's monotonic counter for the TASK (across all runs);
+// the Beads adapter records it as a label on the task so the next
+// sync can fence stale writes.
+//
+// The fence is enforced in two layers:
+//
+//  1. The orchestrator's per-task sync lock (see internal/daemon)
+//     serializes concurrent SyncTerminal calls for the same task. The
+//     lock is held only during the Beads side effect, not during the
+//     outbox append. Under the lock, the read-modify-write window is
+//     closed: no other writer can race its write between the read of
+//     the current generation and the write of the new generation.
+//
+//  2. The Beads-side check (below) compares the orchestrator's
+//     incoming generation against the current MAX across all
+//     orch-gen-* labels on the task. If the current max is greater
+//     than the incoming generation, the write is stale and is
+//     rejected with ErrStaleLifecycleIntent. This catches external
+//     edits to the task (e.g. a manual `bd update --add-label
+//     orch-gen-9`) that would otherwise be silently overwritten.
+//
+// The status and label are written in a single `bd update` command
+// (UpdateWithLabel) so Dolt commits both fields atomically. The
+// Beads-side fence is therefore a sanity check, not the primary
+// defense; the lock is.
+//
+// If the sync is rejected as stale, the orchestrator's per-task
+// outbox row is marked done (the newer write is the authoritative
+// current desired state) and no retry is queued.
 func (s *Store) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
 	status, err := taskstore.MapRunOutcomeToTaskStatus(outcome)
 	if err != nil {
@@ -337,28 +374,38 @@ func (s *Store) SyncTerminal(ctx context.Context, id string, outcome taskstore.R
 	}
 	// Read the current generation label. If the current generation
 	// is greater than the one we are about to write, the intent is
-	// stale and the write is skipped. The Beads adapter acts as the
-	// generation-stamped source of truth.
-	cur, err := s.readGeneration(ctx, id)
-	if err == nil && cur > generation {
-		return fmt.Errorf("%w: current=%d, incoming=%d", taskstore.ErrStaleLifecycleIntent, cur, generation)
-	}
-	_, err = s.Client.Update(ctx, id, beadsStatus)
+	// stale and the write is skipped. We use the MAX across all
+	// orch-gen-* labels so accumulation (every successful sync
+	// appends a new label) cannot regress the read to a smaller
+	// generation when labels are returned in insertion order.
+	cur, err := s.maxGeneration(ctx, id)
 	if err != nil {
 		return err
 	}
-	// Record generation as a label on the task. Best-effort: a
-	// failure here is not fatal (the write succeeded), but the
-	// next sync will re-read whatever the backend has.
-	_, _ = s.Client.AddLabel(ctx, id, fmt.Sprintf("orch-gen-%d", generation))
+	if cur > generation {
+		return fmt.Errorf("%w: current=%d, incoming=%d", taskstore.ErrStaleLifecycleIntent, cur, generation)
+	}
+	// Atomic write: status + label in one `bd update --status X
+	// --add-label orch-gen-N` invocation. Dolt commits both fields
+	// in one transaction, so the label and status land together and
+	// downstream readers always see the pair. Errors are NOT
+	// ignored: a failed label write means the new generation is not
+	// recorded, so the next sync would otherwise see the old max
+	// and revert the status. Returning the error surfaces the
+	// failure to the caller for retry.
+	if _, err := s.Client.UpdateWithLabel(ctx, id, beadsStatus, fmt.Sprintf("orch-gen-%d", generation)); err != nil {
+		return err
+	}
 	return nil
 }
 
-// readGeneration extracts the orchestrator's generation label from
-// the task. Beads does not have a native generation concept, so we
-// store it as a label prefixed with "orch-gen-". Returns 0 if the
-// label is absent (this is the "first sync" case).
-func (s *Store) readGeneration(ctx context.Context, id string) (int64, error) {
+// maxGeneration returns the largest orch-gen-* label on the task,
+// or 0 if no such label is present. The Beads task may accumulate
+// multiple orch-gen-* labels across successful sync attempts (every
+// sync appends a new label), so the comparison must use the MAX,
+// not the first match, for the fence to reject stale writes
+// reliably. Non-orch-gen labels are ignored.
+func (s *Store) maxGeneration(ctx context.Context, id string) (int64, error) {
 	raw, err := s.Client.Show(ctx, id)
 	if err != nil {
 		return 0, err
@@ -367,13 +414,16 @@ func (s *Store) readGeneration(ctx context.Context, id string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	var max int64
 	for _, lab := range task.Labels {
 		var n int64
 		if _, err := fmt.Sscanf(lab, "orch-gen-%d", &n); err == nil {
-			return n, nil
+			if n > max {
+				max = n
+			}
 		}
 	}
-	return 0, nil
+	return max, nil
 }
 
 // toBeadsStatus maps the taskstore vocabulary to the Beads CLI vocabulary.

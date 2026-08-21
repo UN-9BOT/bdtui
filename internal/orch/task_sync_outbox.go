@@ -64,9 +64,14 @@ func (e *TaskSyncOutbox) Pending() bool { return e.Status == TaskSyncPending }
 // generation before calling SyncTerminal).
 //
 // The returned id is the new row's id. The new row's generation
-// is one greater than the previous max generation for (run_id,
-// task_id); the caller can pass this generation to the TaskStore
-// to fence SyncTerminal against stale writes.
+// is one greater than the previous max generation for the TASK
+// (across all runs); the caller can pass this generation to the
+// TaskStore to fence SyncTerminal against stale writes. The
+// generation is per-task lifetime (not per (run_id, task_id)) so
+// it matches the Beads label generation scheme: the label is on
+// the task, not on the Run, and per-task monotonicity makes the
+// outbox generation reusable as the input for the Beads adapter's
+// generation fence across sequential runs on the same task.
 //
 // The input struct's Generation field is overwritten with the
 // assigned generation. The input struct's ID field is overwritten
@@ -103,13 +108,16 @@ func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) (in
 		return 0, err
 	}
 
-	// Bump generation: read the current max for (run_id, task_id)
-	// and add 1. The new row's generation is the new authoritative
-	// version of (run_id, task_id).
+	// Bump generation: read the current max for task_id only (across
+	// all runs) and add 1. Per-task monotonicity matches the Beads
+	// label generation scheme: the label is on the task, not on the
+	// Run, so the same numeric counter must be reused across runs
+	// for the Beads adapter's generation fence to work. Generation
+	// 1 is the first sync ever for this task.
 	var maxGen sql.NullInt64
 	if err := tx.QueryRowContext(ctx,
-		`SELECT MAX(generation) FROM task_sync_outbox WHERE run_id = ? AND task_id = ?`,
-		e.RunID, e.TaskID,
+		`SELECT MAX(generation) FROM task_sync_outbox WHERE task_id = ?`,
+		e.TaskID,
 	).Scan(&maxGen); err != nil {
 		return 0, err
 	}

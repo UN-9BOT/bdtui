@@ -137,8 +137,14 @@ func (t *Task) Clone() *Task {
 //   - SyncTerminal pushes the controller's terminal Run classification
 //     back to the task using the mapping in MapRunOutcomeToTaskStatus.
 //     The generation argument is the orchestrator's monotonic counter
-//     for (run_id, task_id); the Beads adapter records it on the task
-//     (e.g. as a label) so the next sync can fence stale writes.
+//     for the TASK (across all runs), not per (run_id, task_id): the
+//     Beads label is on the task, not on the Run, so the outbox stamps
+//     the per-task generation for the Beads adapter to fence stale
+//     writes. The orchestrator's per-task sync lock (see
+//     internal/daemon) serializes concurrent SyncTerminal calls for the
+//     same task so the Beads-side read-then-write window is closed; the
+//     generation check is then defense-in-depth (catches external edits
+//     to the task between the lock release and the next sync).
 //   - All methods MUST return ErrTaskStoreUnavailable when the backend
 //     is unreachable so the controller can refuse to launch a Run.
 //

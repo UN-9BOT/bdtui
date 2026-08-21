@@ -262,6 +262,177 @@ func TestSyncTerminalStaleGenerationRejected(t *testing.T) {
 	}
 }
 
+// TestSyncTerminalAtomicWrite verifies that the status and the
+// generation label are committed in one Beads write (the single
+// `bd update --status X --add-label Y` command). The reviewer
+// asked for the fence and the new generation to be CAS'd together;
+// the Beads adapter implements this as a single command because
+// Dolt commits the status and the label in one transaction. The
+// test reads the task back and confirms both fields landed together:
+// the status reflects the new outcome and the orch-gen-N label is
+// present on the task.
+func TestSyncTerminalAtomicWrite(t *testing.T) {
+	root := fixture(t)
+	id := createTask(t, root, "atomic-write")
+	store := beads.NewStore(beads.New(root))
+
+	if err := store.SyncTerminal(context.Background(), id, taskstore.RunCompleted, 1); err != nil {
+		t.Fatalf("SyncTerminal: %v", err)
+	}
+
+	// Read the task back and verify both the status and the label
+	// landed together.
+	snap, err := store.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if snap.Status != taskstore.TaskDone {
+		t.Errorf("status = %q, want %q", snap.Status, taskstore.TaskDone)
+	}
+	if !hasLabel(snap.Labels, "orch-gen-1") {
+		t.Errorf("label orch-gen-1 not found; labels = %v", snap.Labels)
+	}
+}
+
+// TestSyncTerminalMaxGenerationFindsMax exercises the generation
+// read on a task that has multiple orch-gen-* labels (accumulated
+// from prior successful syncs). The fence must compare against
+// the MAX, not the FIRST label, otherwise the read returns a stale
+// generation and the fence lets a stale write through. The fake
+// above simulates the accumulation by pre-staging the labels
+// payload; the test asserts that a sync with generation <= 4 is
+// rejected and a sync with generation 5 is accepted.
+func TestSyncTerminalMaxGenerationFindsMax(t *testing.T) {
+	// Pre-staged payload with multiple orch-gen-* labels in
+	// non-monotonic order, plus a non-orch-gen label that must be
+	// ignored by the max scan.
+	cli := &fakeClient{
+		show: []byte(`[{"id":"x","title":"t","status":"open","priority":2,"issue_type":"task","labels":["other-thing","orch-gen-1","orch-gen-5","orch-gen-3","noise"]}]`),
+	}
+	store := beads.NewStore(cli)
+
+	// Incoming generation 4 is older than the current max (5). Must
+	// be rejected.
+	err := store.SyncTerminal(context.Background(), "x", taskstore.RunCompleted, 4)
+	if !errors.Is(err, taskstore.ErrStaleLifecycleIntent) {
+		t.Errorf("sync(4): err = %v, want ErrStaleLifecycleIntent", err)
+	}
+
+	// Incoming generation 6 is newer than the current max (5). Must
+	// be accepted; the adapter writes status + label in one call.
+	if err := store.SyncTerminal(context.Background(), "x", taskstore.RunCompleted, 6); err != nil {
+		t.Fatalf("sync(6): %v", err)
+	}
+	if len(cli.upWithLabs) != 1 {
+		t.Fatalf("expected 1 UpdateWithLabel call, got %d", len(cli.upWithLabs))
+	}
+	got := cli.upWithLabs[0]
+	if got.id != "x" || got.status != "closed" || got.label != "orch-gen-6" {
+		t.Errorf("UpdateWithLabel = %+v, want id=x status=closed label=orch-gen-6", got)
+	}
+}
+
+// TestSyncTerminalAccumulatesLabels verifies that successive
+// successful syncs accumulate the orch-gen-* labels on the task
+// (the adapter uses --add-label, not --set-labels, so the labels
+// are preserved across syncs). The fence must therefore use the
+// MAX across all labels, not the first match, for stale-detection
+// to work after multiple syncs. The test sends three syncs and
+// asserts that the second sync (older than the third) is rejected.
+func TestSyncTerminalAccumulatesLabels(t *testing.T) {
+	root := fixture(t)
+	id := createTask(t, root, "accumulate")
+	store := beads.NewStore(beads.New(root))
+
+	for i := int64(1); i <= 3; i++ {
+		if err := store.SyncTerminal(context.Background(), id, taskstore.RunCompleted, i); err != nil {
+			t.Fatalf("sync(%d): %v", i, err)
+		}
+	}
+
+	// Task should now have orch-gen-1, orch-gen-2, orch-gen-3.
+	snap, err := store.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	for _, want := range []string{"orch-gen-1", "orch-gen-2", "orch-gen-3"} {
+		if !hasLabel(snap.Labels, want) {
+			t.Errorf("label %q not found; labels = %v", want, snap.Labels)
+		}
+	}
+
+	// A sync at generation 2 (older than the current max 3) must
+	// be rejected even though orch-gen-2 is still present on the
+	// task: the fence compares against the MAX, not the first
+	// matching label.
+	err = store.SyncTerminal(context.Background(), id, taskstore.RunFailed, 2)
+	if !errors.Is(err, taskstore.ErrStaleLifecycleIntent) {
+		t.Errorf("sync(2): err = %v, want ErrStaleLifecycleIntent", err)
+	}
+}
+
+// TestSyncTerminalWriteErrorPropagates verifies that the
+// UpdateWithLabel error is surfaced to the caller (the previous
+// implementation silently ignored the AddLabel error, which let a
+// status update without a matching label commit leave the fence
+// pointing at the old generation). The fake's UpdateWithLabel
+// returns an error and the test asserts SyncTerminal propagates
+// it.
+func TestSyncTerminalWriteErrorPropagates(t *testing.T) {
+	cli := &errFakeClient{
+		show: []byte(`[{"id":"x","title":"t","status":"open","priority":2,"issue_type":"task"}]`),
+		writeErr: fmt.Errorf("bd: backend temporarily unavailable"),
+	}
+	store := beads.NewStore(cli)
+	err := store.SyncTerminal(context.Background(), "x", taskstore.RunCompleted, 1)
+	if err == nil {
+		t.Fatalf("expected error from failing write")
+	}
+	if !strings.Contains(err.Error(), "backend temporarily unavailable") {
+		t.Errorf("err = %v, want it to mention the underlying bd error", err)
+	}
+	if errors.Is(err, taskstore.ErrStaleLifecycleIntent) {
+		t.Errorf("write error must not be classified as stale intent")
+	}
+}
+
+// hasLabel is a small helper for the label-accumulation tests.
+func hasLabel(labels []string, want string) bool {
+	for _, l := range labels {
+		if l == want {
+			return true
+		}
+	}
+	return false
+}
+
+// errFakeClient extends the standard fakeClient with a synthetic
+// write error to exercise the error-propagation path in
+// SyncTerminal.
+type errFakeClient struct {
+	show     []byte
+	showErr  error
+	claim    []byte
+	claimErr error
+	writeErr error
+}
+
+func (f *errFakeClient) Show(ctx context.Context, id string) ([]byte, error) {
+	if f.showErr != nil {
+		return nil, f.showErr
+	}
+	return f.show, nil
+}
+func (f *errFakeClient) UpdateWithLabel(ctx context.Context, id string, status string, label string) ([]byte, error) {
+	return nil, f.writeErr
+}
+func (f *errFakeClient) Claim(ctx context.Context, id string) ([]byte, error) {
+	if f.claimErr != nil {
+		return nil, f.claimErr
+	}
+	return f.claim, nil
+}
+
 func TestClaimSnapshotIndependent(t *testing.T) {
 	root := fixture(t)
 	id := createTask(t, root, "Original title")
@@ -434,12 +605,17 @@ func TestParseTaskRejectsUnknownStatus(t *testing.T) {
 
 // fakeClient is a non-tx client used by parser-only tests.
 type fakeClient struct {
-	show    []byte
-	showErr error
-	claim   []byte
-	claimErr error
-	updates []string
-	labels  []string
+	show        []byte
+	showErr     error
+	claim       []byte
+	claimErr    error
+	upWithLabs  []updateWithLabelCall
+}
+
+type updateWithLabelCall struct {
+	id     string
+	status string
+	label  string
 }
 
 func (f *fakeClient) Show(ctx context.Context, id string) ([]byte, error) {
@@ -448,12 +624,15 @@ func (f *fakeClient) Show(ctx context.Context, id string) ([]byte, error) {
 	}
 	return f.show, nil
 }
-func (f *fakeClient) Update(ctx context.Context, id string, status string) ([]byte, error) {
-	f.updates = append(f.updates, id+":"+status)
-	return []byte(`{}`), nil
-}
-func (f *fakeClient) AddLabel(ctx context.Context, id string, label string) ([]byte, error) {
-	f.labels = append(f.labels, id+":"+label)
+func (f *fakeClient) UpdateWithLabel(ctx context.Context, id string, status string, label string) ([]byte, error) {
+	f.upWithLabs = append(f.upWithLabs, updateWithLabelCall{id: id, status: status, label: label})
+	// Mutate the in-memory show payload so subsequent reads see the
+	// new label appended. This mirrors the Dolt transaction effect
+	// the live CLI produces: status and label land together, and
+	// max-generation reads on the next call observe the new label.
+	if len(f.show) > 0 {
+		f.show = injectStatusAndLabel(f.show, status, label)
+	}
 	return []byte(`{}`), nil
 }
 func (f *fakeClient) Claim(ctx context.Context, id string) ([]byte, error) {
@@ -461,4 +640,31 @@ func (f *fakeClient) Claim(ctx context.Context, id string) ([]byte, error) {
 		return nil, f.claimErr
 	}
 	return f.claim, nil
+}
+
+// injectStatusAndLabel appends label to the labels array and updates
+// the status field on the first element of the JSON payload. The
+// in-memory fakes use this so the max-generation read on the next
+// SyncTerminal reflects the freshly written label. The parser is
+// tolerant of either form (list or bare object); we rewrite the list
+// form for simplicity.
+func injectStatusAndLabel(raw []byte, status string, label string) []byte {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return raw
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(trimmed, &list); err != nil || len(list) == 0 {
+		return raw
+	}
+	first := list[0]
+	first["status"] = status
+	labels, _ := first["labels"].([]any)
+	labels = append(labels, label)
+	first["labels"] = labels
+	out, err := json.Marshal(list)
+	if err != nil {
+		return raw
+	}
+	return out
 }

@@ -16,6 +16,17 @@ This project uses date-based release tags in format `YYYY.MM.DD-pr<PR_NUMBER>-<M
   the controller / agent prompts see.
 - `bdtuid` accepts `--beads-dir` to enable the lifecycle integration;
   the legacy behaviour is preserved when the flag is empty.
+- TaskStore sync durability: the orchestrator's `task_sync_outbox`
+  records every sync intent durably before the Beads side effect runs
+  (migrations 8 and 9). The outbox supersedes prior pending and
+  in-flight rows for the same `(run_id, task_id)` so the reconciler
+  only sees the latest intent, and a per-task lease + reclaimed
+  reaper makes crashed-sync rows recoverable. SyncTerminal
+  generation is now per-task lifetime (across all runs) to match the
+  Beads label fence; the daemon acquires a per-task sync lock
+  during the Beads side effect to close the read-then-write race,
+  and treats `ErrStaleLifecycleIntent` as a successful no-op so
+  permanently stale rows are not retried.
 
 ## 2026.02.23
 

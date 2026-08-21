@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1244,4 +1245,445 @@ func TestAppendTaskSyncOutboxSupersedesInFlight(t *testing.T) {
 	if len(pending) != 1 {
 		t.Errorf("pending = %d, want 1 (the newer row)", len(pending))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// R5 v6 follow-up tests: per-task sync lock + stale-no-op semantics.
+// ---------------------------------------------------------------------------
+
+// timingRecorderTaskStore wraps a real TaskStore and records the
+// (start, end) wall-clock interval of every SyncTerminal call so the
+// lock-serialization test can verify that two concurrent calls for
+// the same task did not overlap. The Fake's SyncTerminal is called
+// under the daemon's per-task lock; without the lock, two calls
+// issued from independent goroutines would overlap because Go's
+// scheduler is free to interleave them.
+type timingRecorderTaskStore struct {
+	inner *taskstoretest.Fake
+	// delay is the synthetic latency injected into SyncTerminal so
+	// concurrent calls have a chance to overlap without the lock.
+	delay time.Duration
+	// calls records (start, end) of each SyncTerminal. The start
+	// is captured before the inner call; the end is captured after.
+	startTimes []time.Time
+	endTimes   []time.Time
+}
+
+func (r *timingRecorderTaskStore) Get(ctx context.Context, id string) (*taskstore.Task, error) {
+	return r.inner.Get(ctx, id)
+}
+func (r *timingRecorderTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
+	return r.inner.Claim(ctx, id)
+}
+func (r *timingRecorderTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
+	r.startTimes = append(r.startTimes, time.Now())
+	time.Sleep(r.delay)
+	err := r.inner.SyncTerminal(ctx, id, outcome, generation)
+	r.endTimes = append(r.endTimes, time.Now())
+	return err
+}
+
+// TestSyncLifecycleTaskPerTaskLockSerializes verifies that the
+// per-task sync lock in the daemon's Service serializes concurrent
+// SyncTerminal calls for the same task. The reviewer asked for the
+// fence check to be CAS'd with the write; without the lock, two
+// concurrent syncs could both read the same current generation and
+// race their writes. The lock closes the read-then-write window.
+//
+// The test wires Service directly (not via gRPC) so we can call
+// syncLifecycleTask concurrently with two runs for the same task.
+// Both runs are inserted with terminal status so the
+// single-active-Run partial unique index does not block them.
+func TestSyncLifecycleTaskPerTaskLockSerializes(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "orch.db")
+	store, err := orch.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	project := &orch.Project{Name: "test", FsPath: "/tmp/test"}
+	if err := store.CreateProject(context.Background(), project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	rec := &timingRecorderTaskStore{
+		inner: taskstoretest.New(),
+		delay: 80 * time.Millisecond,
+	}
+	svc := NewServiceWithTasks(store, rec)
+
+	// Two runs for the SAME task in terminal status. The
+	// single-active-Run partial unique index is on non-terminal
+	// statuses only, so two terminal runs for the same task are
+	// permitted. The sync side effect is invoked for both runs.
+	runA := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-lock",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), runA); err != nil {
+		t.Fatalf("CreateRun A: %v", err)
+	}
+	runB := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-lock",
+		Status:    orch.RunFailed,
+	}
+	if err := store.CreateRun(context.Background(), runB); err != nil {
+		t.Fatalf("CreateRun B: %v", err)
+	}
+
+	// Call syncLifecycleTask concurrently for the two runs. The
+	// lock should serialize the two SyncTerminal calls so their
+	// recorded intervals do not overlap.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); svc.syncLifecycleTask(context.Background(), runA) }()
+	go func() { defer wg.Done(); svc.syncLifecycleTask(context.Background(), runB) }()
+	wg.Wait()
+
+	if len(rec.startTimes) != 2 {
+		t.Fatalf("recorded SyncTerminal calls = %d, want 2", len(rec.startTimes))
+	}
+
+	// Order the two intervals by start time. Without the lock, the
+	// first start could be inside the second's interval (overlap).
+	// With the lock, the two intervals must be disjoint.
+	type interval struct{ start, end time.Time }
+	intervals := []interval{
+		{rec.startTimes[0], rec.endTimes[0]},
+		{rec.startTimes[1], rec.endTimes[1]},
+	}
+	if intervals[0].start.After(intervals[1].start) {
+		intervals[0], intervals[1] = intervals[1], intervals[0]
+	}
+	if intervals[0].end.After(intervals[1].start) {
+		t.Errorf("SyncTerminal intervals overlap: [%v..%v] and [%v..%v] (lock did not serialize)",
+			intervals[0].start, intervals[0].end, intervals[1].start, intervals[1].end)
+	}
+}
+
+// TestSyncLifecycleTaskStaleGenerationIsNoOp verifies that the
+// service treats ErrStaleLifecycleIntent as a successful no-op:
+// the outbox row is marked done, no task.sync_failed event is
+// recorded, and the caller's view is that the sync is settled. The
+// retry path would otherwise loop forever: the Beads task will
+// keep reporting a newer generation, so the next retry would
+// always see the same staleness.
+func TestSyncLifecycleTaskStaleGenerationIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "orch.db")
+	socketPath := filepath.Join(dir, "daemon.sock")
+
+	store, err := orch.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	project := &orch.Project{Name: "test", FsPath: "/tmp/test"}
+	if err := store.CreateProject(context.Background(), project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	rec := &staleTaskStore{inner: taskstoretest.New()}
+	rec.inner.Put(&taskstore.Task{
+		ID:     "task-stale",
+		Title:  "Stale me",
+		Status: taskstore.TaskTodo,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := NewServerWithTasks(store, rec, socketPath)
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		srv.Stop()
+		<-done
+	})
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !socketAlive(context.Background(), socketPath) {
+		if time.Now().After(deadline) {
+			t.Fatal("daemon socket did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	client, err := Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+		ProjectId: project.ID,
+		TaskId:    "task-stale",
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if _, err := client.CancelRun(ctx, &daemonpb.CancelRunRequest{Id: run.Id}); err != nil {
+		t.Fatalf("CancelRun: %v", err)
+	}
+
+	// SyncTerminal was called once and returned ErrStaleLifecycleIntent.
+	if len(rec.syncCalls) != 1 {
+		t.Errorf("syncCalls = %d, want 1", len(rec.syncCalls))
+	}
+
+	// The outbox row must be marked done so the reconciler does not
+	// retry a permanently stale row.
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending outbox rows = %d, want 0 (stale should be marked done)", len(pending))
+	}
+
+	// No task.sync_failed event should be recorded for the stale case.
+	events, err := store.ListEventsByRun(ctx, run.Id)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Type == orch.EventTaskSyncFailed {
+			t.Errorf("unexpected task.sync_failed event for stale sync: %s", ev.Payload)
+		}
+	}
+}
+
+// staleTaskStore wraps a Fake and always returns ErrStaleLifecycleIntent
+// from SyncTerminal. Used to verify the daemon's no-op treatment.
+type staleTaskStore struct {
+	inner     *taskstoretest.Fake
+	syncCalls []taskstore.RunOutcome
+}
+
+func (s *staleTaskStore) Get(ctx context.Context, id string) (*taskstore.Task, error) {
+	return s.inner.Get(ctx, id)
+}
+func (s *staleTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
+	return s.inner.Claim(ctx, id)
+}
+func (s *staleTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
+	s.syncCalls = append(s.syncCalls, outcome)
+	return taskstore.ErrStaleLifecycleIntent
+}
+
+// TestAppendTaskSyncOutboxPerTaskGeneration verifies that the
+// outbox generation is per-task lifetime (across runs), not per
+// (run_id, task_id). Run A's first sync gets generation 1 (first
+// sync for the task). Run B's first sync gets generation 2 (next
+// after Run A's gen=1). The per-task monotonicity matches the
+// Beads label generation scheme: the label is on the task, not on
+// the Run, so the same numeric counter must be reused across runs
+// for the Beads adapter's generation fence to work.
+func TestAppendTaskSyncOutboxPerTaskGeneration(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+
+	// Two runs for the same task (both terminal so the
+	// single-active-Run index permits them).
+	runA := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-per-task-gen",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), runA); err != nil {
+		t.Fatalf("CreateRun A: %v", err)
+	}
+	runB := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-per-task-gen",
+		Status:    orch.RunFailed,
+	}
+	if err := store.CreateRun(context.Background(), runB); err != nil {
+		t.Fatalf("CreateRun B: %v", err)
+	}
+
+	// Run A's intent: first sync for the task -> gen=1.
+	rowA, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   runA.ID,
+		TaskID:  "task-per-task-gen",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append A: %v", err)
+	}
+	gotA, err := store.GetTaskSyncOutbox(context.Background(), rowA)
+	if err != nil {
+		t.Fatalf("get A: %v", err)
+	}
+	if gotA.Generation != 1 {
+		t.Errorf("A gen = %d, want 1 (first sync for task)", gotA.Generation)
+	}
+
+	// Run B's intent: second sync for the task -> gen=2 (per-task max).
+	rowB, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   runB.ID,
+		TaskID:  "task-per-task-gen",
+		Outcome: string(taskstore.RunFailed),
+	})
+	if err != nil {
+		t.Fatalf("append B: %v", err)
+	}
+	gotB, err := store.GetTaskSyncOutbox(context.Background(), rowB)
+	if err != nil {
+		t.Fatalf("get B: %v", err)
+	}
+	if gotB.Generation != 2 {
+		t.Errorf("B gen = %d, want 2 (per-task max after A's gen=1)", gotB.Generation)
+	}
+
+	// Run A's second intent: third sync for the task -> gen=3.
+	rowA2, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   runA.ID,
+		TaskID:  "task-per-task-gen",
+		Outcome: string(taskstore.RunCancelled),
+	})
+	if err != nil {
+		t.Fatalf("append A2: %v", err)
+	}
+	gotA2, err := store.GetTaskSyncOutbox(context.Background(), rowA2)
+	if err != nil {
+		t.Fatalf("get A2: %v", err)
+	}
+	if gotA2.Generation != 3 {
+		t.Errorf("A2 gen = %d, want 3 (per-task max after B's gen=2)", gotA2.Generation)
+	}
+}
+
+// TestSyncLifecycleTaskPerTaskLockDoesNotBlockDifferentTasks verifies
+// that the per-task lock in the daemon's Service does NOT serialize
+// syncs across different tasks. The lock is keyed by task_id, so two
+// syncs for different tasks run in parallel. The test exercises this
+// by using a sync hook that signals when one sync is mid-flight and
+// verifying the other sync can complete while the first is still
+// running.
+func TestSyncLifecycleTaskPerTaskLockDoesNotBlockDifferentTasks(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "orch.db")
+	store, err := orch.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	project := &orch.Project{Name: "test", FsPath: "/tmp/test"}
+	if err := store.CreateProject(context.Background(), project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	// Phase 1: a sync for task-x is in flight.
+	startedX := make(chan struct{})
+	finishX := make(chan struct{})
+	startedY := make(chan struct{})
+	rec := &barrierTaskStore{
+		inner: taskstoretest.New(),
+		barrier: map[string]struct {
+			started chan struct{}
+			finish  chan struct{}
+		}{
+			"task-x": {started: startedX, finish: finishX},
+			"task-y": {started: startedY, finish: nil},
+		},
+	}
+	svc := NewServiceWithTasks(store, rec)
+
+	runX := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-x",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), runX); err != nil {
+		t.Fatalf("CreateRun X: %v", err)
+	}
+	runY := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-y",
+		Status:    orch.RunFailed,
+	}
+	if err := store.CreateRun(context.Background(), runY); err != nil {
+		t.Fatalf("CreateRun Y: %v", err)
+	}
+
+	// Kick off sync for task-x in a goroutine. It will block on
+	// finishX until the test closes the channel.
+	go func() {
+		svc.syncLifecycleTask(context.Background(), runX)
+	}()
+
+	// Wait for task-x's SyncTerminal to enter the barrier.
+	select {
+	case <-startedX:
+	case <-time.After(3 * time.Second):
+		t.Fatal("task-x sync did not start")
+	}
+
+	// Kick off sync for task-y. It must NOT block on task-x's lock;
+	// the per-task lock is keyed by task_id.
+	yDone := make(chan struct{})
+	go func() {
+		defer close(yDone)
+		svc.syncLifecycleTask(context.Background(), runY)
+	}()
+
+	// task-y should be able to record its start while task-x is
+	// still blocked.
+	select {
+	case <-startedY:
+	case <-time.After(3 * time.Second):
+		t.Fatal("task-y sync did not start while task-x was blocked (per-task lock wrongly serializes across tasks)")
+	}
+
+	// Release task-x so the test can exit cleanly.
+	close(finishX)
+
+	// Wait for task-y to finish.
+	select {
+	case <-yDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("task-y sync did not finish")
+	}
+}
+
+// barrierTaskStore wraps a Fake and lets the test block individual
+// SyncTerminal calls by task id. The barrier's start channel is
+// closed when SyncTerminal enters; the finish channel (if non-nil)
+// is read from to determine when SyncTerminal returns. The lock
+// test uses this to observe that two syncs for different tasks
+// can run in parallel.
+type barrierTaskStore struct {
+	inner *taskstoretest.Fake
+	// barrier[TaskID] = (started, finish). Started is closed when
+	// the corresponding SyncTerminal enters. Finish (if non-nil)
+	// is read from to determine when SyncTerminal returns.
+	barrier map[string]struct {
+		started chan struct{}
+		finish  chan struct{}
+	}
+}
+
+func (b *barrierTaskStore) Get(ctx context.Context, id string) (*taskstore.Task, error) {
+	return b.inner.Get(ctx, id)
+}
+func (b *barrierTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
+	return b.inner.Claim(ctx, id)
+}
+func (b *barrierTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome, generation int64) error {
+	entry, ok := b.barrier[id]
+	if !ok {
+		return b.inner.SyncTerminal(ctx, id, outcome, generation)
+	}
+	if entry.started != nil {
+		close(entry.started)
+	}
+	if entry.finish != nil {
+		<-entry.finish
+	}
+	return b.inner.SyncTerminal(ctx, id, outcome, generation)
 }
