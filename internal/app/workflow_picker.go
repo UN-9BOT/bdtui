@@ -332,6 +332,12 @@ func (m model) ensureDaemon(ctx context.Context) (*daemon.Client, error) {
 	opts := daemon.Options{
 		SocketPath: daemonSocketPath(),
 		DBPath:     daemonDBPath(m.BeadsDir),
+		// Pass the project root (parent of .beads) so the daemon
+		// constructs a Beads TaskStore and the production CreateRun
+		// path includes the Claim that the spec mandates. Without this
+		// the daemon runs in legacy no-TaskStore mode and the orchestrator
+		// silently skips the lifecycle binding.
+		BeadsDir: m.RepoDir,
 	}
 	return daemon.EnsureDaemon(ctx, opts)
 }

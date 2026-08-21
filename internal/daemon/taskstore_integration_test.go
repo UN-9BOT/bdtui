@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -243,4 +244,144 @@ func TestServiceHasTaskStoreFlag(t *testing.T) {
 		t.Errorf("NewServiceWithTasks.HasTaskStore = false, want true")
 	}
 	_ = plain
+}
+
+// flakyTaskStore wraps a real TaskStore but fails every SyncTerminal.
+// Used to exercise the durable-error path: the Run row is persisted,
+// the CancelRun RPC succeeds, but the TaskStore sync fails and the
+// failure leaves a task.sync_failed event in the orchestrator store.
+type flakyTaskStore struct {
+	inner *taskstoretest.Fake
+}
+
+func (f *flakyTaskStore) Get(ctx context.Context, id string) (*taskstore.Task, error) {
+	return f.inner.Get(ctx, id)
+}
+func (f *flakyTaskStore) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
+	return f.inner.Claim(ctx, id)
+}
+func (f *flakyTaskStore) SyncTerminal(ctx context.Context, id string, outcome taskstore.RunOutcome) error {
+	return fmt.Errorf("simulated Beads outage for %s", id)
+}
+
+// TestSyncFailureWritesDurableEvent verifies that a SyncTerminal
+// failure is recorded as a task.sync_failed event so the failure is
+// not silently lost. The Run row is persisted; the sync failure is
+// surfaced via the event log.
+func TestSyncFailureWritesDurableEvent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "orch.db")
+	socketPath := filepath.Join(dir, "daemon.sock")
+
+	store, err := orch.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	project := &orch.Project{Name: "test", FsPath: "/tmp/test"}
+	if err := store.CreateProject(context.Background(), project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	flaky := &flakyTaskStore{inner: taskstoretest.New()}
+	flaky.inner.Put(&taskstore.Task{
+		ID:     "task-fail-sync",
+		Title:  "Sync fails",
+		Status: taskstore.TaskTodo,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := NewServerWithTasks(store, flaky, socketPath)
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		srv.Stop()
+		<-done
+	})
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !socketAlive(context.Background(), socketPath) {
+		if time.Now().After(deadline) {
+			t.Fatal("daemon socket did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	client, err := Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	run, err := client.CreateRun(ctx, &daemonpb.CreateRunRequest{
+		ProjectId: project.ID,
+		TaskId:    "task-fail-sync",
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if _, err := client.CancelRun(ctx, &daemonpb.CancelRunRequest{Id: run.Id}); err != nil {
+		t.Fatalf("CancelRun: %v", err)
+	}
+
+	// The Run was persisted (CancelRun succeeded). The sync failure
+	// must be visible as a task.sync_failed event.
+	events, err := store.ListEventsByRun(context.Background(), run.Id)
+	if err != nil {
+		t.Fatalf("ListEventsByRun: %v", err)
+	}
+	sawSyncFailed := false
+	for _, e := range events {
+		if e.Type == orch.EventTaskSyncFailed {
+			sawSyncFailed = true
+			if !strings.Contains(e.Payload, "simulated Beads outage") {
+				t.Errorf("sync_failed payload missing error: %s", e.Payload)
+			}
+			if !strings.Contains(e.Payload, "task-fail-sync") {
+				t.Errorf("sync_failed payload missing task id: %s", e.Payload)
+			}
+		}
+	}
+	if !sawSyncFailed {
+		t.Errorf("expected task.sync_failed event in run events, got %d events", len(events))
+		for _, e := range events {
+			t.Logf("event: %s payload=%s", e.Type, e.Payload)
+		}
+	}
+}
+
+// TestSyncHelpersCoverNeedsAttention ensures that the unified sync
+// helper covers the non-terminal needs_attention case. The spec
+// mandates needs_attention -> blocked even though the Run is
+// recoverable. The helper is exposed via syncLifecycleTask; the public
+// gRPC surface does not yet expose a needs_attention transition (that
+// arrives with the controller), but the helper must be ready so the
+// controller can call it directly.
+func TestSyncHelpersCoverNeedsAttention(t *testing.T) {
+	store, _, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: "p",
+		TaskID:    "task-needs-attention",
+		Status:    orch.RunNeedsAttention,
+	}
+	// outcomeForRunStatus must succeed for needs_attention even
+	// though it is non-terminal.
+	outcome, err := outcomeForRunStatus(run.Status)
+	if err != nil {
+		t.Fatalf("outcomeForRunStatus(needs_attention) = %v, want nil", err)
+	}
+	if outcome != taskstore.RunNeedsAttention {
+		t.Errorf("outcome = %q, want %q", outcome, taskstore.RunNeedsAttention)
+	}
+	// MapRunOutcomeToTaskStatus must map needs_attention -> blocked.
+	beadsStatus, err := taskstore.MapRunOutcomeToTaskStatus(outcome)
+	if err != nil {
+		t.Fatalf("MapRunOutcomeToTaskStatus: %v", err)
+	}
+	if beadsStatus != taskstore.TaskBlocked {
+		t.Errorf("status = %q, want blocked", beadsStatus)
+	}
+	_ = store
 }

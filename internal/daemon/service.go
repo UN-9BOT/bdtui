@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"bdtui/internal/daemon/daemonpb"
@@ -69,7 +70,8 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 		// or the task is already claimed, refuse to start the Run: the
 		// spec requires "if Beads is unavailable, Run launch must not
 		// start" and a double-claim would violate the single-active-Run
-		// invariant.
+		// invariant. The atomic `bd update --claim` primitive is what
+		// makes this safe under concurrent CreateRun calls.
 		snap, err := s.tasks.Claim(ctx, req.TaskId)
 		if err != nil {
 			return nil, taskStoreToStatus(err)
@@ -88,7 +90,42 @@ func (s *Service) CreateRun(ctx context.Context, req *daemonpb.CreateRunRequest)
 	if err := s.store.CreateRun(ctx, r); err != nil {
 		return nil, toStatus(err)
 	}
+	if s.tasks != nil {
+		// Audit the successful claim; the event stream is the only
+		// operator-visible record of the high-level lifecycle binding.
+		s.recordTaskClaimed(ctx, r)
+	}
 	return runToProto(r), nil
+}
+
+// recordTaskClaimed appends a task.claimed event so the controller and
+// the operator can observe the high-level claim even if the controller
+// itself never asked for it. Payload mirrors the orchestrator CreateRun
+// output so event consumers can correlate.
+func (s *Service) recordTaskClaimed(ctx context.Context, r *orch.Run) {
+	runID := r.ID
+	_ = s.store.AppendEvent(ctx, &runID, orch.EventTaskClaimed, encodeTaskClaimedEvent(r))
+}
+
+// encodeTaskClaimedEvent serialises the claim record. The payload is
+// JSON with the task id and the snapshot-at timestamp so the event log
+// is self-describing.
+func encodeTaskClaimedEvent(r *orch.Run) string {
+	b, err := json.Marshal(struct {
+		RunID      string `json:"run_id"`
+		ProjectID  string `json:"project_id"`
+		TaskID     string `json:"task_id"`
+		HasSnapshot bool  `json:"has_task_snapshot"`
+	}{
+		RunID:       r.ID,
+		ProjectID:   r.ProjectID,
+		TaskID:      r.TaskID,
+		HasSnapshot: r.TaskSnapshot != "",
+	})
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // encodeTaskSnapshot serialises a TaskStore snapshot into the JSON form
@@ -121,26 +158,86 @@ func encodeTaskSnapshot(t *taskstore.Task) string {
 	return string(b)
 }
 
-// syncTerminalTask is a best-effort sync of the run's task to the
-// TaskStore. It is called by every run-transition path that lands the
-// run in a terminal state. Errors are intentionally swallowed: the Run
-// is already persisted in the orchestrator store, and the next
-// reconciliation pass will retry the sync. The daemon must never fail
-// a Run transition because the TaskStore is unhealthy.
-func (s *Service) syncTerminalTask(ctx context.Context, run *orch.Run) {
-	if s.tasks == nil || run.TaskID == "" || !run.Status.Terminal() {
+// syncLifecycleTask is the unified sync hook for run transitions. It
+// covers all four cases in the spec's terminal / blocked mapping:
+//
+//	completed        -> done
+//	failed           -> blocked
+//	needs_attention  -> blocked (non-terminal! the Run is still active
+//	                   but the task high-level state is blocked)
+//	cancelled        -> todo
+//
+// `needs_attention` is intentionally non-terminal in the orchestrator
+// state machine (the Run is recoverable), but the spec mandates the
+// task high-level state move to blocked. We therefore apply the sync
+// for needs_attention as well as the three terminal states; the
+// `outcomeForRunStatus` helper is the only place that knows which
+// outcomes apply.
+//
+// The sync is logged but not surfaced to the RPC caller: the Run row
+// is already persisted (and the RPC has already returned), so a caller
+// cannot react to a sync failure. The failure is instead written as a
+// durable `task.sync_failed` event so the future controller
+// reconciliation loop can find and retry it. The same event also
+// tells the operator that the high-level task lifecycle is out of
+// sync with the orchestrator's truth.
+func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
+	if s.tasks == nil || run.TaskID == "" {
 		return
 	}
 	outcome, err := outcomeForRunStatus(run.Status)
 	if err != nil {
+		// Caller invoked with a status that has no TaskStore mapping
+		// (queued / running / waiting_human). Nothing to do.
 		return
 	}
-	_ = s.tasks.SyncTerminal(ctx, run.TaskID, outcome)
+	if err := s.tasks.SyncTerminal(ctx, run.TaskID, outcome); err != nil {
+		s.recordTaskSyncFailed(ctx, run, outcome, err)
+	}
 }
 
-// outcomeForRunStatus applies the canonical Run->Outcome mapping used by
-// the daemon's task lifecycle sync. Sub-states like waiting_human are not
-// terminal and never call this helper.
+// recordTaskSyncFailed appends a task.sync_failed event so the sync
+// failure leaves a durable, observable trail. The payload captures the
+// Run id, the TaskStore id, the attempted outcome and the verbatim
+// error message so the operator (and the controller) can decide
+// whether to retry, surface it, or treat the Beads back-end as offline.
+func (s *Service) recordTaskSyncFailed(ctx context.Context, run *orch.Run, outcome taskstore.RunOutcome, syncErr error) {
+	runID := run.ID
+	b, err := json.Marshal(struct {
+		RunID    string                 `json:"run_id"`
+		ProjectID string                `json:"project_id"`
+		TaskID   string                 `json:"task_id"`
+		Status   string                 `json:"run_status"`
+		Outcome  taskstore.RunOutcome   `json:"outcome"`
+		Err      string                 `json:"error"`
+	}{
+		RunID:    run.ID,
+		ProjectID: run.ProjectID,
+		TaskID:   run.TaskID,
+		Status:   string(run.Status),
+		Outcome:  outcome,
+		Err:      syncErr.Error(),
+	})
+	if err != nil {
+		// Marshalling a fixed struct cannot fail in practice; fall back
+		// to a minimal payload so the failure is still observably
+		// recorded.
+		b = []byte(fmt.Sprintf(`{"run_id":%q,"task_id":%q,"error":%q}`, run.ID, run.TaskID, syncErr.Error()))
+	}
+	_ = s.store.AppendEvent(ctx, &runID, orch.EventTaskSyncFailed, string(b))
+}
+
+// syncTerminalTask is a thin wrapper that preserves the historic name
+// for callers that have not switched to the unified name. It is
+// identical to syncLifecycleTask.
+func (s *Service) syncTerminalTask(ctx context.Context, run *orch.Run) {
+	s.syncLifecycleTask(ctx, run)
+}
+
+// outcomeForRunStatus returns the TaskStore outcome the given Run
+// status maps to, or ErrInvalidOutcome if the status has no mapping
+// (queued / running / waiting_human). The mapping is the spec's
+// lifecycle contract; see internal/taskstore.MapRunOutcomeToTaskStatus.
 func outcomeForRunStatus(s orch.RunStatus) (taskstore.RunOutcome, error) {
 	switch s {
 	case orch.RunCompleted:

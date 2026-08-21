@@ -37,6 +37,14 @@ type Client interface {
 	Show(ctx context.Context, id string) ([]byte, error)
 	// Update returns the raw JSON output of `bd update <id> --status <s> --json`.
 	Update(ctx context.Context, id string, status string) ([]byte, error)
+	// Claim returns the raw JSON output of `bd update <id> --claim --json`.
+	// The claim is atomic at the Beads level: it transitions todo ->
+	// in_progress and assigns the issue to the current user in a single
+	// write, so two concurrent Claim calls cannot both observe a "free"
+	// task. The CLI rejects the claim with a non-zero exit when the task
+	// is already in_progress and claimed by someone else; the adapter
+	// surfaces that as ErrTaskAlreadyClaimed.
+	Claim(ctx context.Context, id string) ([]byte, error)
 }
 
 // CLI is the default Client that shells out to the `bd` binary. Dir
@@ -64,6 +72,47 @@ func (c *CLI) Show(ctx context.Context, id string) ([]byte, error) {
 // Update shells out to `bd update <id> --status <status> --json`.
 func (c *CLI) Update(ctx context.Context, id string, status string) ([]byte, error) {
 	return c.run(ctx, "update", id, "--status", status, "--json")
+}
+
+// Claim shells out to `bd update <id> --claim --json`. The flag is the
+// only supported atomic claim primitive in Beads; the predecessor
+// Show + Update --status in_progress pair was racy by construction.
+//
+// The CLI distinguishes three failure modes:
+//
+//   - task not found        -> wraps taskstore.ErrTaskNotFound
+//   - already claimed / not claimable -> wraps taskstore.ErrTaskAlreadyClaimed
+//   - backend unreachable / other -> wraps taskstore.ErrTaskStoreUnavailable
+//
+// The distinction is required because the caller must reject an
+// "already claimed" CreateRun with codes.AlreadyExists (a duplicate
+// claim retry) but treat a missing task as a true failure.
+func (c *CLI) Claim(ctx context.Context, id string) ([]byte, error) {
+	bin := c.Bin
+	if bin == "" {
+		bin = "bd"
+	}
+	cmd := exec.CommandContext(ctx, bin, "update", id, "--claim", "--json")
+	if c.Dir != "" {
+		cmd.Dir = c.Dir
+	}
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%w: %w", taskstore.ErrTaskStoreUnavailable, ctx.Err())
+		}
+		if looksLikeNotFound(errOut.String(), out.Bytes()) {
+			return nil, fmt.Errorf("%w: %s", taskstore.ErrTaskNotFound, strings.TrimSpace(errOut.String()))
+		}
+		if looksLikeAlreadyClaimed(errOut.String(), out.Bytes()) {
+			return nil, fmt.Errorf("%w: %s", taskstore.ErrTaskAlreadyClaimed, strings.TrimSpace(errOut.String()))
+		}
+		return nil, fmt.Errorf("%w: bd update --claim: %v: %s",
+			taskstore.ErrTaskStoreUnavailable, err, strings.TrimSpace(errOut.String()))
+	}
+	return out.Bytes(), nil
 }
 
 func (c *CLI) run(ctx context.Context, args ...string) ([]byte, error) {
@@ -103,6 +152,25 @@ func looksLikeNotFound(stderr string, stdout []byte) bool {
 	}
 	out := strings.ToLower(string(bytes.TrimSpace(stdout)))
 	if strings.Contains(out, `"error"`) && strings.Contains(out, "no issue") {
+		return true
+	}
+	return false
+}
+
+// looksLikeAlreadyClaimed recognises the "claim" failure modes:
+//   - non-claimable status (closed / pinned / hooked)
+//   - claimed by another user
+//
+// bd >=1.2 wording is "issue not claimable: status X" or "already
+// claimed by <user>"; both are surfaces of the same end-state from the
+// adapter's perspective: another writer holds the task.
+func looksLikeAlreadyClaimed(stderr string, stdout []byte) bool {
+	s := strings.ToLower(stderr)
+	if strings.Contains(s, "not claimable") || strings.Contains(s, "already claimed") {
+		return true
+	}
+	out := strings.ToLower(string(bytes.TrimSpace(stdout)))
+	if strings.Contains(out, `"error"`) && (strings.Contains(out, "not claimable") || strings.Contains(out, "already claimed")) {
 		return true
 	}
 	return false
@@ -203,36 +271,35 @@ func (s *Store) Get(ctx context.Context, id string) (*taskstore.Task, error) {
 	return parseTask(raw)
 }
 
-// Claim implements taskstore.TaskStore. The two-step Show-then-Update lets
-// us reject an already-in_progress task before mutating the backend and
-// capture the pre-claim state for the snapshot. The post-claim snapshot
-// is built in memory from the pre-claim read (with the new status
-// applied) so the caller does not need an extra round trip.
+// Claim implements taskstore.TaskStore via the atomic `bd update --claim`
+// primitive. The CLI is the single mutation: it rejects the claim when
+// the task is already in_progress and claimed by someone else, and is
+// idempotent for the same user. The returned Task is the post-claim
+// snapshot taken from the claim response itself, so the snapshot is
+// congruent with what the backend now reports.
 func (s *Store) Claim(ctx context.Context, id string) (*taskstore.Task, error) {
-	raw, err := s.Client.Show(ctx, id)
+	raw, err := s.Client.Claim(ctx, id)
 	if err != nil {
+		// Map the three failure modes to the contract's sentinel errors.
+		// The Claim method is the only one that must distinguish
+		// "already claimed" from "task missing" from "backend down".
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "no issue") || strings.Contains(lower, "not found") {
+			return nil, fmt.Errorf("%w: %s", taskstore.ErrTaskNotFound, id)
+		}
+		if strings.Contains(lower, "not claimable") || strings.Contains(lower, "already claimed") {
+			return nil, fmt.Errorf("%w: %s", taskstore.ErrTaskAlreadyClaimed, id)
+		}
 		return nil, err
 	}
 	snap, err := parseTask(raw)
 	if err != nil {
 		return nil, err
 	}
-	if snap.Status == taskstore.TaskInProgress {
-		return nil, fmt.Errorf("%w: %s", taskstore.ErrTaskAlreadyClaimed, id)
-	}
-	beadsStatus, err := toBeadsStatus(taskstore.TaskInProgress)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.Client.Update(ctx, id, beadsStatus); err != nil {
-		// If the update failed because the task disappeared between Show
-		// and Update, surface that as ErrTaskNotFound so the controller
-		// can blame the missing task, not the backend.
-		if errors.Is(err, taskstore.ErrTaskNotFound) {
-			return nil, err
-		}
-		return nil, err
-	}
+	// The Beads response carries the post-claim state; surface it as
+	// in_progress even if the CLI labels it differently (e.g. "open"
+	// when the local Beads config does not include "in_progress"). The
+	// TaskStore contract is the post-claim canonical state.
 	snap.Status = taskstore.TaskInProgress
 	snap.SnapshotAt = time.Now().UTC()
 	return snap, nil
