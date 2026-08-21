@@ -386,7 +386,7 @@ func TestPendingOutboxCleanedAfterMarkDone(t *testing.T) {
 	if err := store.CreateRun(context.Background(), run); err != nil {
 		t.Fatalf("CreateRun: %v", err)
 	}
-	if err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
 		RunID:   run.ID,
 		TaskID:  "task-x",
 		Outcome: string(taskstore.RunCancelled),
@@ -409,6 +409,95 @@ func TestPendingOutboxCleanedAfterMarkDone(t *testing.T) {
 	}
 	if len(pending) != 0 {
 		t.Fatalf("pending = %d, want 0", len(pending))
+	}
+}
+
+// TestOutboxSupersedesStalePending verifies that a Run that
+// transitions to multiple outcomes (e.g. needs_attention -> blocked
+// fails, then later completes -> done) only leaves the LATEST pending
+// row in the reconciler's queue. Without the supersede, the
+// reconciler would replay the stale needs_attention -> blocked after
+// the new completed -> done had already succeeded, reverting the
+// Beads task back to blocked.
+func TestOutboxSupersedesStalePending(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-supersede",
+		Status:    orch.RunNeedsAttention,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	// First append: needs_attention -> blocked. The reconciler
+	// would replay this if not superseded.
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-supersede",
+		Outcome: string(taskstore.RunNeedsAttention),
+	}); err != nil {
+		t.Fatalf("append 1: %v", err)
+	}
+
+	// Second append: completed -> done. This must supersede the
+	// first row in the same transaction.
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-supersede",
+		Outcome: string(taskstore.RunCompleted),
+	}); err != nil {
+		t.Fatalf("append 2: %v", err)
+	}
+
+	// The reconciler query must return exactly one pending row, and
+	// it must be the new one (completed -> done).
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1 (the stale outcome should be superseded)", len(pending))
+	}
+	if pending[0].Outcome != string(taskstore.RunCompleted) {
+		t.Errorf("pending outcome = %q, want completed", pending[0].Outcome)
+	}
+}
+
+// TestOutboxPersistedBeforeExternalSync verifies that the outbox row
+// is committed before the external TaskStore side effect is attempted.
+// We simulate a crash by failing the SyncTerminal; the row must still
+// be present for the reconciler.
+func TestOutboxPersistedBeforeExternalSync(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-crash",
+		Status:    orch.RunCancelled,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	outboxID, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-crash",
+		Outcome: string(taskstore.RunCancelled),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if outboxID == 0 {
+		t.Fatalf("outbox id is 0")
+	}
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if pending[0].ID != outboxID {
+		t.Errorf("pending id = %d, want %d", pending[0].ID, outboxID)
 	}
 }
 

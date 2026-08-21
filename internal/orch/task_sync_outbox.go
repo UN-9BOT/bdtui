@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// TaskSyncOutbox is the durable record of a failed TaskStore sync
+// TaskSyncOutbox is the durable record of a pending TaskStore sync
 // against a particular Run. The Run status is the source of truth for
 // the lifecycle; the outbox records "this Run still owes a sync to
 // Beads" so the future controller reconciler can act on it.
@@ -15,6 +15,11 @@ import (
 // enum the TaskStore consumes), so the reconciler can replay the
 // sync by calling TaskStore.SyncTerminal without re-deriving the
 // mapping from orch.RunStatus.
+//
+// The outbox models the "current desired state" for a Run's Beads
+// sync: only one pending row per (run_id, task_id) is durable, and
+// newer supersede rows automatically invalidate older ones. The
+// reconciler queries by status='pending' and skips 'superseded' rows.
 type TaskSyncOutbox struct {
 	ID         int64
 	RunID      string
@@ -28,17 +33,27 @@ type TaskSyncOutbox struct {
 }
 
 // TaskSyncOutboxStatus values. New statuses can be added without a
-// schema change.
+// schema change (status is a TEXT column).
 const (
-	TaskSyncPending = "pending"
-	TaskSyncDone    = "done"
+	TaskSyncPending    = "pending"
+	TaskSyncDone       = "done"
+	TaskSyncSuperseded = "superseded"
 )
 
-// AppendTaskSyncOutbox records a pending sync. The same Run may have
-// multiple rows over its lifetime (e.g. a retry that failed again),
-// so we do not enforce a unique constraint on RunID. The reconciler
-// queries by status='pending' so only the latest pending row matters.
-func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) error {
+// Pending returns true iff the row is one the reconciler should pick
+// up. Superseded rows are not pending (a newer entry for the same Run
+// has invalidated them).
+func (e *TaskSyncOutbox) Pending() bool { return e.Status == TaskSyncPending }
+
+// AppendTaskSyncOutbox records a pending sync for (run_id, task_id)
+// and supersedes any earlier pending row for the same pair. The
+// supersede transaction is atomic: the reconciler can never see
+// both the old and the new pending rows for the same pair.
+//
+// The returned id is the new row's id; the caller passes it to
+// MarkTaskSyncOutboxDone on a successful sync. The earlier pending
+// row's id is irrelevant because it is now superseded.
+func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) (int64, error) {
 	if e.Status == "" {
 		e.Status = TaskSyncPending
 	}
@@ -47,18 +62,47 @@ func (s *Store) AppendTaskSyncOutbox(ctx context.Context, e *TaskSyncOutbox) err
 	}
 	e.UpdatedAt = nowUTC()
 
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Supersede any prior pending row for this (run_id, task_id).
+	// Without this, the reconciler would replay the stale outcome
+	// (e.g. an old pending needs_attention -> blocked) after a newer
+	// outcome (e.g. completed -> done) had already succeeded.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE task_sync_outbox SET status = ?, updated_at = ?
+		 WHERE run_id = ? AND task_id = ? AND status = ?`,
+		TaskSyncSuperseded, timeString(e.UpdatedAt), e.RunID, e.TaskID, TaskSyncPending,
+	); err != nil {
+		return 0, err
+	}
+
+	res, err := tx.ExecContext(ctx,
 		`INSERT INTO task_sync_outbox(run_id, task_id, outcome, status, retry_count, last_error, created_at, updated_at)
 		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.RunID, e.TaskID, e.Outcome, e.Status, e.RetryCount, e.LastError,
 		timeString(e.CreatedAt), timeString(e.UpdatedAt),
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // ListPendingTaskSyncOutbox returns pending sync rows, oldest first.
 // The reconciler consumes this list and either marks rows done or
-// retries them.
+// retries them. Superseded rows are NOT included — the supersede
+// happens at insert time, so the reconciler never sees stale entries.
 func (s *Store) ListPendingTaskSyncOutbox(ctx context.Context) ([]TaskSyncOutbox, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, run_id, task_id, outcome, status, retry_count, last_error, created_at, updated_at

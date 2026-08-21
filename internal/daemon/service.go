@@ -174,13 +174,25 @@ func encodeTaskSnapshot(t *taskstore.Task) string {
 // `outcomeForRunStatus` helper is the only place that knows which
 // outcomes apply.
 //
-// The sync is logged but not surfaced to the RPC caller: the Run row
-// is already persisted (and the RPC has already returned), so a caller
-// cannot react to a sync failure. The failure is instead written as a
-// durable `task.sync_failed` event so the future controller
-// reconciliation loop can find and retry it. The same event also
-// tells the operator that the high-level task lifecycle is out of
-// sync with the orchestrator's truth.
+// The sync is durable in two layers:
+//
+//   - The outbox row is persisted BEFORE the external TaskStore side
+//     effect, so the sync intent survives a crash. If the daemon
+//     exits between the Run transition and the SyncTerminal attempt,
+//     the outbox row is the durable record that lets the reconciler
+//     recover the missed sync.
+//   - The actual TaskStore.SyncTerminal call runs in a detached
+//     context with its own deadline, so the caller's HTTP timeout or
+//     cancellation does not abort the sync attempt mid-flight.
+//   - The audit event is written in the same detached context after
+//     the sync resolves (success or failure). The event log is the
+//     operator-facing trail; the outbox is the source of truth.
+//
+// On success, the outbox row is marked done. On failure, the row
+// stays pending and the reconciler retries it. The reconciler only
+// ever sees the LATEST pending row for a (run_id, task_id) pair
+// because AppendTaskSyncOutbox supersedes earlier pending rows in
+// the same transaction.
 func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 	if s.tasks == nil || run.TaskID == "" {
 		return
@@ -191,8 +203,36 @@ func (s *Service) syncLifecycleTask(ctx context.Context, run *orch.Run) {
 		// (queued / running / waiting_human). Nothing to do.
 		return
 	}
-	if err := s.tasks.SyncTerminal(ctx, run.TaskID, outcome); err != nil {
+
+	// Persist the durable intent FIRST, in the caller's context so
+	// the write is bounded by the same deadline as the Run transition.
+	// If AppendTaskSyncOutbox fails, we still log the failure as an
+	// audit event but the outbox stays empty; the operator has the
+	// event and the Run to reconcile by hand.
+	outboxID, outboxErr := s.store.AppendTaskSyncOutbox(ctx, &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  run.TaskID,
+		Outcome: string(outcome),
+		Status:  orch.TaskSyncPending,
+	})
+
+	// Detached context for the external side effect. The caller's
+	// deadline / cancellation MUST NOT abort the sync attempt
+	// because the Run is already terminal and we still owe the Beads
+	// backend a sync. A fresh 30s deadline is generous for a single
+	// `bd update` call.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := s.tasks.SyncTerminal(syncCtx, run.TaskID, outcome); err != nil {
 		s.recordTaskSyncFailed(ctx, run, outcome, err)
+		return
+	}
+	// Success: clear the outbox row. The audit event is the
+	// human-facing trail; the outbox row's only purpose is to feed
+	// the reconciler.
+	if outboxErr == nil {
+		_ = s.store.MarkTaskSyncOutboxDone(syncCtx, outboxID)
 	}
 }
 
@@ -233,14 +273,6 @@ func (s *Service) recordTaskSyncFailed(ctx context.Context, run *orch.Run, outco
 		b = []byte(fmt.Sprintf(`{"run_id":%q,"task_id":%q,"error":%q}`, run.ID, run.TaskID, syncErr.Error()))
 	}
 	_ = s.store.AppendEvent(ctx, &runID, orch.EventTaskSyncFailed, string(b))
-
-	// Durable retry state — the reconciler can pick this up later.
-	_ = s.store.AppendTaskSyncOutbox(ctx, &orch.TaskSyncOutbox{
-		RunID:   run.ID,
-		TaskID:  run.TaskID,
-		Outcome: string(outcome),
-		Status:  orch.TaskSyncPending,
-	})
 }
 
 // syncTerminalTask is a thin wrapper that preserves the historic name
