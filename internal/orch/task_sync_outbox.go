@@ -36,6 +36,7 @@ type TaskSyncOutbox struct {
 // schema change (status is a TEXT column).
 const (
 	TaskSyncPending    = "pending"
+	TaskSyncInFlight   = "in_flight"
 	TaskSyncDone       = "done"
 	TaskSyncSuperseded = "superseded"
 )
@@ -131,14 +132,93 @@ func (s *Store) ListPendingTaskSyncOutbox(ctx context.Context) ([]TaskSyncOutbox
 	return out, rows.Err()
 }
 
-// MarkTaskSyncOutboxDone clears a pending row after a successful retry.
-// Once the row is 'done', the Run no longer owes a sync.
+// MarkTaskSyncOutboxDone clears a row after a successful sync.
+// The synchronous side-effect path (syncLifecycleTask in the daemon)
+// calls this directly on a freshly appended pending row; no status
+// guard is needed because the append path is the only writer for
+// that row. The reconciler path uses
+// ClaimTaskSyncOutbox + MarkTaskSyncOutboxClaimedDone to take
+// CAS-protected ownership; see those helpers for the contention
+// case.
 func (s *Store) MarkTaskSyncOutboxDone(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE task_sync_outbox SET status = ?, updated_at = ? WHERE id = ?`,
 		TaskSyncDone, timeString(nowUTC()), id,
 	)
 	return err
+}
+
+// ClaimTaskSyncOutbox atomically transitions a pending row to
+// in_flight, returning true if the row was claimed. This is the
+// "atomic retry ownership" the reviewer asked for: between the
+// stale-check and the actual SyncTerminal, a newer intent may
+// append and supersede the row. The supersede only applies to
+// pending rows, so once the reconciler has CAS-claimed the row to
+// in_flight, the append mechanism can no longer touch it. The
+// newer intent lands as a fresh pending row, and on the next
+// reconciler pass it will be picked up. The retry owns its row
+// end-to-end.
+//
+// The caller MUST check the bool return: false means the row was
+// already not pending (superseded, done, or claimed by another
+// goroutine), and the caller MUST skip the SyncTerminal. After a
+// successful SyncTerminal, the caller MUST call
+// MarkTaskSyncOutboxClaimedDone; if the done update affects 0 rows,
+// the row was lost mid-sync and the caller should treat the sync
+// as a no-op (don't retry, the newer intent owns the row now).
+//
+// Returns ErrNotFound if the row id is absent.
+func (s *Store) ClaimTaskSyncOutbox(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE task_sync_outbox SET status = ?, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		TaskSyncInFlight, timeString(nowUTC()), id, TaskSyncPending,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		// Row exists but is not pending. Verify the row itself
+		// exists to distinguish ErrNotFound from "already claimed".
+		var exists int
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT 1 FROM task_sync_outbox WHERE id = ?`, id,
+		).Scan(&exists); err != nil {
+			if err == sql.ErrNoRows {
+				return false, ErrNotFound
+			}
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+// MarkTaskSyncOutboxClaimedDone transitions an in_flight row to
+// done. The WHERE status = in_flight guard turns the UPDATE into a
+// CAS: rows affected == 0 means the row was lost mid-sync (e.g.
+// concurrent reconcile processing). Callers should NOT retry on
+// 0 rows affected — the newer intent owns the lifecycle now, and
+// a retry would revert the Beads task back to the old outcome.
+// Check RowsAffected via the returned bool to detect this case.
+func (s *Store) MarkTaskSyncOutboxClaimedDone(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE task_sync_outbox SET status = ?, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		TaskSyncDone, timeString(nowUTC()), id, TaskSyncInFlight,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // IncrementTaskSyncOutboxRetry bumps the retry counter and updates the
@@ -229,8 +309,8 @@ func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int6
 		return false, err
 	}
 	if status != TaskSyncPending {
-		// Already superseded, done, or otherwise not actionable.
-		// Caller MUST skip the sync.
+		// Already superseded, done, in_flight, or otherwise not
+		// actionable. Caller MUST skip the sync.
 		return true, nil
 	}
 	expected, err := outcomeForRunStatus(run.Status)
@@ -244,22 +324,12 @@ func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int6
 		// is stale.
 		return markSupersededByID(ctx, s, id)
 	}
-	// Outcome matches and the row is still pending, but a NEWER
-	// pending intent may have been appended since the reconciler
-	// listed pending rows. Replay of this row would overwrite the
-	// newer SyncTerminal's side effect. Reject in that case.
-	latest, err := s.latestTaskSyncOutboxIDForRunTask(ctx, run.ID, run.TaskID)
-	if err != nil {
-		return false, err
-	}
-	if latest != id {
-		// A newer pending row exists; this row is legacy. Supersede
-		// it so the reconciler can advance.
-		return markSupersededByID(ctx, s, id)
-	}
-	// Row is still pending, matches the current Run status, AND
-	// is the latest pending row for (run_id, task_id). Retry the
-	// sync.
+	// Row is still pending and the outcome matches the current
+	// Run status. The reconciler MUST follow up with
+	// ClaimTaskSyncOutbox + SyncTerminal + MarkTaskSyncOutboxDone
+	// to take atomic ownership of the row. The stale-check is just
+	// a fast-path skip; the claim is the actual serialization
+	// point.
 	return false, nil
 }
 
@@ -295,28 +365,6 @@ func (s *Store) getTaskSyncOutboxOutcomeStatus(ctx context.Context, id int64) (s
 		return "", "", err
 	}
 	return outcome, status, nil
-}
-
-// latestTaskSyncOutboxIDForRunTask returns the largest id of a
-// pending outbox row for (run_id, task_id), or 0 if none pending.
-// Used by MarkTaskSyncOutboxSupersededIfStale to detect the
-// "newer intent arrived between ListPending and stale-check"
-// window: if THIS row's id is not the latest, a newer pending
-// row exists and is the authoritative current desired state.
-func (s *Store) latestTaskSyncOutboxIDForRunTask(ctx context.Context, runID, taskID string) (int64, error) {
-	var latest sql.NullInt64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT MAX(id) FROM task_sync_outbox
-		 WHERE run_id = ? AND task_id = ? AND status = ?`,
-		runID, taskID, TaskSyncPending,
-	).Scan(&latest)
-	if err != nil {
-		return 0, err
-	}
-	if !latest.Valid {
-		return 0, nil
-	}
-	return latest.Int64, nil
 }
 
 // markSupersededByID transitions a pending row to superseded.

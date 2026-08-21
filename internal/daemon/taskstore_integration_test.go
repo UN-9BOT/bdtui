@@ -644,16 +644,24 @@ func TestReconcileRaceAlreadySupersededRow(t *testing.T) {
 	}
 }
 
-// TestReconcileRaceNewerPendingAppend covers the second TOCTOU
-// window the reviewer flagged: the reconciler reads a row id from
-// ListPending and observes the row is pending with a matching
-// outcome, but between ListPending and the stale-check, a NEW
-// pending intent is appended (still pending, not yet superseded).
-// The newer row is the authoritative current desired state; the
-// older row, even though still pending and outcome-matching, must
-// not be replayed or it would race / overwrite the newer row's
-// SyncTerminal. The helper MUST return true (skip) for the older
-// row when a newer pending row exists.
+// TestReconcileRaceNewerPendingAppend covers the atomic retry
+// ownership protocol the reviewer asked for: between the
+// stale-check (which authorises the sync) and the actual
+// SyncTerminal, a newer intent may append and supersede the row.
+// The CAS claim (ClaimTaskSyncOutbox) is the actual serialization
+// point: once the reconciler has CAS-claimed the row to in_flight,
+// the append mechanism can no longer touch it. The newer intent
+// lands as a fresh pending row, and the next reconciler pass picks
+// it up.
+//
+// The earlier version of this test appended two rows for the same
+// (run_id, task_id) and asserted the stale-check returned skip for
+// the older one. AppendTaskSyncOutbox in a transaction supersedes
+// prior pending rows, so the older row was actually status =
+// superseded and the test exercised the existing first fence,
+// not the second window. This version exercises the CAS claim
+// path directly: between the stale-check and the claim, the row
+// is concurrent-superseded; the claim must return false.
 func TestReconcileRaceNewerPendingAppend(t *testing.T) {
 	store, project, _, _ := startTestServerWithTasks(t)
 	run := &orch.Run{
@@ -665,7 +673,7 @@ func TestReconcileRaceNewerPendingAppend(t *testing.T) {
 		t.Fatalf("CreateRun: %v", err)
 	}
 
-	// Append the original pending row (matches current Run status).
+	// Append the original pending row.
 	oldID, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
 		RunID:   run.ID,
 		TaskID:  "task-newer-pending",
@@ -675,40 +683,194 @@ func TestReconcileRaceNewerPendingAppend(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 
-	// Reconciler reads oldID from ListPending; observes pending +
-	// matching outcome. Before the stale-check, a NEWER pending
-	// intent is appended. BOTH rows are pending with the same
-	// outcome (Run status hasn't changed yet). The newer row is
-	// the authoritative current desired state.
+	// Stale-check sees pending + matching outcome; we authorise
+	// the sync.
+	skip, err := store.MarkTaskSyncOutboxSupersededIfStale(context.Background(), oldID, run)
+	if err != nil {
+		t.Fatalf("stale-check: %v", err)
+	}
+	if skip {
+		t.Fatalf("authorised row should not be skipped")
+	}
+
+	// Between the stale-check and the claim, a newer intent
+	// arrives. AppendTaskSyncOutbox in a transaction supersedes
+	// the old row (pending -> superseded). After that, the claim
+	// MUST return false: the row is no longer pending.
 	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
 		RunID:   run.ID,
 		TaskID:  "task-newer-pending",
-		Outcome: string(taskstore.RunCompleted),
+		Outcome: string(taskstore.RunCancelled),
 	}); err != nil {
 		t.Fatalf("append newer: %v", err)
 	}
 
-	// The reconciler now calls the stale-check on the OLD id.
-	// Status is still pending (newer was appended, not superseded),
-	// outcome matches Run status, but a newer pending row exists.
-	// The helper MUST return true (skip) — the older row is
-	// legacy; replaying it would race the newer row's sync.
-	skip, err := store.MarkTaskSyncOutboxSupersededIfStale(context.Background(), oldID, run)
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), oldID)
 	if err != nil {
-		t.Fatalf("check stale: %v", err)
+		t.Fatalf("claim: %v", err)
 	}
-	if !skip {
-		t.Errorf("legacy pending row was not detected as skip; would race the newer pending row")
+	if claimed {
+		t.Errorf("claim returned true on a now-superseded row; reconciler would proceed with stale sync")
 	}
 
-	// Verify the legacy row is now superseded (helper marked it):
-	// listing pending should yield exactly one row (the newer).
+	// Listing pending should yield exactly one row (the newer).
 	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if len(pending) != 1 {
 		t.Errorf("pending = %d, want 1 (the newer row only)", len(pending))
+	}
+}
+
+// TestClaimTaskSyncOutboxSuccess covers the happy path: pending
+// row, claim succeeds, MarkTaskSyncOutboxClaimedDone marks the row
+// done.
+func TestClaimTaskSyncOutboxSuccess(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-claim-success",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-claim-success",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), id)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if !claimed {
+		t.Fatalf("claim returned false on a pending row")
+	}
+
+	done, err := store.MarkTaskSyncOutboxClaimedDone(context.Background(), id)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if !done {
+		t.Errorf("claimed-done returned false; the row should have been in_flight")
+	}
+
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d, want 0", len(pending))
+	}
+}
+
+// TestClaimTaskSyncOutboxAlreadyClaimed covers the race: a second
+// reconciler (or a concurrent retry) tries to claim a row that
+// was already CAS-claimed by another goroutine. The second claim
+// MUST return false; Idempotency fails (only one writer wins).
+func TestClaimTaskSyncOutboxAlreadyClaimed(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-claim-twice",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-claim-twice",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// First claim wins.
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), id)
+	if err != nil {
+		t.Fatalf("claim 1: %v", err)
+	}
+	if !claimed {
+		t.Fatalf("claim 1 returned false on a pending row")
+	}
+
+	// Second claim loses.
+	claimed, err = store.ClaimTaskSyncOutbox(context.Background(), id)
+	if err != nil {
+		t.Fatalf("claim 2: %v", err)
+	}
+	if claimed {
+		t.Errorf("claim 2 returned true on an in_flight row; concurrent writers would race")
+	}
+}
+
+// TestClaimTaskSyncOutboxNotFound covers the case where the row
+// id never existed (e.g. pruned). The claim MUST return
+// ErrNotFound; not a silently empty bool.
+func TestClaimTaskSyncOutboxNotFound(t *testing.T) {
+	store, _, _, _ := startTestServerWithTasks(t)
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), 999999)
+	if err != orch.ErrNotFound {
+		t.Errorf("claim on absent id: err = %v, want ErrNotFound", err)
+	}
+	if claimed {
+		t.Errorf("claim returned true on absent id")
+	}
+}
+
+// TestMarkTaskSyncOutboxClaimedDoneAfterSupersede covers the
+// lost-mid-sync case: the row was claimed (in_flight), but a
+// concurrent lifecycle advanced (and the row was superseded —
+// but wait, supersede only applies to pending; in_flight is
+// immune). The actual "lost" case is: the row was claimed, then
+// MarkTaskSyncOutboxDone was called immediately after a successful
+// sync, but the row was already CAS-Done by another goroutine.
+// MarkTaskSyncOutboxClaimedDone returns false; the caller MUST
+// not retry.
+func TestMarkTaskSyncOutboxClaimedDoneAfterDone(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-claim-done-twice",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	id, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-claim-done-twice",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	claimed, err := store.ClaimTaskSyncOutbox(context.Background(), id)
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v, %v", claimed, err)
+	}
+
+	// First done wins.
+	done, err := store.MarkTaskSyncOutboxClaimedDone(context.Background(), id)
+	if err != nil || !done {
+		t.Fatalf("first done: %v, %v", done, err)
+	}
+
+	// Second done loses (row is no longer in_flight).
+	done, err = store.MarkTaskSyncOutboxClaimedDone(context.Background(), id)
+	if err != nil {
+		t.Fatalf("second done: %v", err)
+	}
+	if done {
+		t.Errorf("second done returned true; concurrent done writers would race")
 	}
 }
 
