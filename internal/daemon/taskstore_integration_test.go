@@ -644,6 +644,74 @@ func TestReconcileRaceAlreadySupersededRow(t *testing.T) {
 	}
 }
 
+// TestReconcileRaceNewerPendingAppend covers the second TOCTOU
+// window the reviewer flagged: the reconciler reads a row id from
+// ListPending and observes the row is pending with a matching
+// outcome, but between ListPending and the stale-check, a NEW
+// pending intent is appended (still pending, not yet superseded).
+// The newer row is the authoritative current desired state; the
+// older row, even though still pending and outcome-matching, must
+// not be replayed or it would race / overwrite the newer row's
+// SyncTerminal. The helper MUST return true (skip) for the older
+// row when a newer pending row exists.
+func TestReconcileRaceNewerPendingAppend(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-newer-pending",
+		Status:    orch.RunCompleted,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	// Append the original pending row (matches current Run status).
+	oldID, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-newer-pending",
+		Outcome: string(taskstore.RunCompleted),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Reconciler reads oldID from ListPending; observes pending +
+	// matching outcome. Before the stale-check, a NEWER pending
+	// intent is appended. BOTH rows are pending with the same
+	// outcome (Run status hasn't changed yet). The newer row is
+	// the authoritative current desired state.
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-newer-pending",
+		Outcome: string(taskstore.RunCompleted),
+	}); err != nil {
+		t.Fatalf("append newer: %v", err)
+	}
+
+	// The reconciler now calls the stale-check on the OLD id.
+	// Status is still pending (newer was appended, not superseded),
+	// outcome matches Run status, but a newer pending row exists.
+	// The helper MUST return true (skip) — the older row is
+	// legacy; replaying it would race the newer row's sync.
+	skip, err := store.MarkTaskSyncOutboxSupersededIfStale(context.Background(), oldID, run)
+	if err != nil {
+		t.Fatalf("check stale: %v", err)
+	}
+	if !skip {
+		t.Errorf("legacy pending row was not detected as skip; would race the newer pending row")
+	}
+
+	// Verify the legacy row is now superseded (helper marked it):
+	// listing pending should yield exactly one row (the newer).
+	pending, err := store.ListPendingTaskSyncOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("pending = %d, want 1 (the newer row only)", len(pending))
+	}
+}
+
 // recordingTaskStore tracks every SyncTerminal call so the test can
 // assert the call was or was not made.
 type recordingTaskStore struct {

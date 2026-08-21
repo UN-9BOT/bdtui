@@ -187,35 +187,42 @@ func outcomeForRunStatus(s RunStatus) (RunOutcomeString, error) {
 	}
 }
 
-// MarkTaskSyncOutboxSupersededIfStale atomically reads the row's
-// (outcome, status) and supersedes it if it is still pending AND
-// the current Run status no longer matches the recorded outcome.
-// The reconciler MUST call this before retrying the sync: a pending
-// row whose outcome does not match the current Run status is stale
-// by construction (e.g. needs_attention -> blocked left pending,
-// then Run became completed -> done; the stale pending row would
-// revert the Beads task back to blocked).
+// MarkTaskSyncOutboxSupersededIfStale atomically decides whether a
+// pending outbox row is still the authoritative current desired
+// state for (run_id, task_id) and, if it is not, supersedes it.
+// The reconciler MUST call this before retrying the sync: a row
+// that has been superseded (by a newer intent), or whose outcome no
+// longer matches the current Run status, must NOT be replayed — the
+// stale SyncTerminal would revert the Beads task back to the old
+// blocked/in_progress state.
+//
+// A row is "no longer actionable" (returns true) in four cases:
+//   - the row was already superseded (by a newer intent) between
+//     ListPending and this call — defended by up-front status read
+//     of any current status != pending;
+//   - the row's outcome does not match the current Run status —
+//     it's superseded by THIS call;
+//   - Run status has no canonical outcome (non-terminal) — the
+//     pending row is stale by construction, superseded by THIS call;
+//   - the row is still pending AND matches the Run status, but a
+//     NEWER pending row has been appended for the same (run_id,
+//     task_id) — the newer row is the authoritative current desired
+//     state. This is the second TOCTOU window: between the
+//     ListPending snapshot and the actual sync, a newer intent may
+//     be appended. Even if THIS row is still pending and matches,
+//     it is now legacy and replaying it would race the newer
+//     SyncTerminal. Marker defense: before returning "retry",
+//     verify THIS id is still the latest pending row for the pair.
+//
+// "Latest pending" is defined by ROWID order: the append sequence
+// assigns monotonically increasing IDs, so the largest id is the
+// newest pending row. (status, id) is the natural ordering; we
+// filter by status = pending because superseded rows must not
+// shadow the latest pending one.
 //
 // Returns true if the row is no longer actionable (caller should
 // skip sync), false if the row is still actionable (caller should
-// retry the sync). "No longer actionable" covers three cases:
-//   - the row was already superseded (by a newer intent) between
-//     ListPending and this call — defend the TOCTOU race by also
-//     returning true for any current status != pending;
-//   - the row was just superseded by THIS call because the
-//     outcome no longer matches;
-//   - the row was just superseded by THIS call because Run status
-//     is non-terminal (no canonical outcome).
-//
-// The implementation closes the race by reading the current status
-// up-front and only emitting the UPDATE when both outcomes match
-// non-terminal and row status is pending. Without the up-front
-// status check, a row that was already superseded between
-// ListPending and the helper would either (a) take the matching
-// outcome path and return false / retry, or (b) take the mismatch
-// path and call markSupersededByID whose RowsAffected would be 0
-// (since the row is no longer pending) and return false / retry.
-// Both paths would replay an already-superseded row.
+// retry the sync).
 func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int64, run *Run) (bool, error) {
 	outcome, status, err := s.getTaskSyncOutboxOutcomeStatus(ctx, id)
 	if err != nil {
@@ -232,12 +239,28 @@ func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int6
 		// is stale by construction.
 		return markSupersededByID(ctx, s, id)
 	}
-	if string(expected) == outcome {
-		// Row is still in sync with the current Run status; retry
-		// the sync.
-		return false, nil
+	if string(expected) != outcome {
+		// Outcome does not match the current Run status; the row
+		// is stale.
+		return markSupersededByID(ctx, s, id)
 	}
-	return markSupersededByID(ctx, s, id)
+	// Outcome matches and the row is still pending, but a NEWER
+	// pending intent may have been appended since the reconciler
+	// listed pending rows. Replay of this row would overwrite the
+	// newer SyncTerminal's side effect. Reject in that case.
+	latest, err := s.latestTaskSyncOutboxIDForRunTask(ctx, run.ID, run.TaskID)
+	if err != nil {
+		return false, err
+	}
+	if latest != id {
+		// A newer pending row exists; this row is legacy. Supersede
+		// it so the reconciler can advance.
+		return markSupersededByID(ctx, s, id)
+	}
+	// Row is still pending, matches the current Run status, AND
+	// is the latest pending row for (run_id, task_id). Retry the
+	// sync.
+	return false, nil
 }
 
 // GetTaskSyncOutboxOutcome returns the recorded outcome for a
@@ -272,6 +295,28 @@ func (s *Store) getTaskSyncOutboxOutcomeStatus(ctx context.Context, id int64) (s
 		return "", "", err
 	}
 	return outcome, status, nil
+}
+
+// latestTaskSyncOutboxIDForRunTask returns the largest id of a
+// pending outbox row for (run_id, task_id), or 0 if none pending.
+// Used by MarkTaskSyncOutboxSupersededIfStale to detect the
+// "newer intent arrived between ListPending and stale-check"
+// window: if THIS row's id is not the latest, a newer pending
+// row exists and is the authoritative current desired state.
+func (s *Store) latestTaskSyncOutboxIDForRunTask(ctx context.Context, runID, taskID string) (int64, error) {
+	var latest sql.NullInt64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT MAX(id) FROM task_sync_outbox
+		 WHERE run_id = ? AND task_id = ? AND status = ?`,
+		runID, taskID, TaskSyncPending,
+	).Scan(&latest)
+	if err != nil {
+		return 0, err
+	}
+	if !latest.Valid {
+		return 0, nil
+	}
+	return latest.Int64, nil
 }
 
 // markSupersededByID transitions a pending row to superseded.
