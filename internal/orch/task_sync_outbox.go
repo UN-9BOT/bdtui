@@ -187,21 +187,44 @@ func outcomeForRunStatus(s RunStatus) (RunOutcomeString, error) {
 	}
 }
 
-// MarkTaskSyncOutboxSupersededIfStale opens an outbox row and
-// supersedes it if the current Run status no longer matches the
-// recorded outcome. The reconciler MUST call this before retrying
-// the sync: a pending row whose outcome does not match the current
-// Run status is stale by construction (e.g. needs_attention ->
-// blocked left pending, then Run became completed -> done; the
-// stale pending row would revert the Beads task back to blocked).
+// MarkTaskSyncOutboxSupersededIfStale atomically reads the row's
+// (outcome, status) and supersedes it if it is still pending AND
+// the current Run status no longer matches the recorded outcome.
+// The reconciler MUST call this before retrying the sync: a pending
+// row whose outcome does not match the current Run status is stale
+// by construction (e.g. needs_attention -> blocked left pending,
+// then Run became completed -> done; the stale pending row would
+// revert the Beads task back to blocked).
 //
-// Returns true if the row was superseded (caller should skip
-// sync), false if the row is still actionable (caller should retry
-// the sync).
+// Returns true if the row is no longer actionable (caller should
+// skip sync), false if the row is still actionable (caller should
+// retry the sync). "No longer actionable" covers three cases:
+//   - the row was already superseded (by a newer intent) between
+//     ListPending and this call — defend the TOCTOU race by also
+//     returning true for any current status != pending;
+//   - the row was just superseded by THIS call because the
+//     outcome no longer matches;
+//   - the row was just superseded by THIS call because Run status
+//     is non-terminal (no canonical outcome).
+//
+// The implementation closes the race by reading the current status
+// up-front and only emitting the UPDATE when both outcomes match
+// non-terminal and row status is pending. Without the up-front
+// status check, a row that was already superseded between
+// ListPending and the helper would either (a) take the matching
+// outcome path and return false / retry, or (b) take the mismatch
+// path and call markSupersededByID whose RowsAffected would be 0
+// (since the row is no longer pending) and return false / retry.
+// Both paths would replay an already-superseded row.
 func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int64, run *Run) (bool, error) {
-	outcome, err := s.GetTaskSyncOutboxOutcome(ctx, id)
+	outcome, status, err := s.getTaskSyncOutboxOutcomeStatus(ctx, id)
 	if err != nil {
 		return false, err
+	}
+	if status != TaskSyncPending {
+		// Already superseded, done, or otherwise not actionable.
+		// Caller MUST skip the sync.
+		return true, nil
 	}
 	expected, err := outcomeForRunStatus(run.Status)
 	if err != nil {
@@ -210,6 +233,8 @@ func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int6
 		return markSupersededByID(ctx, s, id)
 	}
 	if string(expected) == outcome {
+		// Row is still in sync with the current Run status; retry
+		// the sync.
 		return false, nil
 	}
 	return markSupersededByID(ctx, s, id)
@@ -218,10 +243,10 @@ func (s *Store) MarkTaskSyncOutboxSupersededIfStale(ctx context.Context, id int6
 // GetTaskSyncOutboxOutcome returns the recorded outcome for a
 // pending outbox row. Returns ErrNotFound for an absent row.
 func (s *Store) GetTaskSyncOutboxOutcome(ctx context.Context, id int64) (string, error) {
-	var outcome string
+	var outcome, status string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT outcome FROM task_sync_outbox WHERE id = ?`, id,
-	).Scan(&outcome)
+		`SELECT outcome, status FROM task_sync_outbox WHERE id = ?`, id,
+	).Scan(&outcome, &status)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", ErrNotFound
@@ -231,6 +256,31 @@ func (s *Store) GetTaskSyncOutboxOutcome(ctx context.Context, id int64) (string,
 	return outcome, nil
 }
 
+// getTaskSyncOutboxOutcomeStatus returns (outcome, status) for a
+// row. Atomic read; defends the TOCTOU race in
+// MarkTaskSyncOutboxSupersededIfStale where the row's status may
+// change between ListPending and the stale-check.
+func (s *Store) getTaskSyncOutboxOutcomeStatus(ctx context.Context, id int64) (string, string, error) {
+	var outcome, status string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT outcome, status FROM task_sync_outbox WHERE id = ?`, id,
+	).Scan(&outcome, &status)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", ErrNotFound
+		}
+		return "", "", err
+	}
+	return outcome, status, nil
+}
+
+// markSupersededByID transitions a pending row to superseded.
+// Returns true if the row was transitioned (RowsAffected > 0),
+// false otherwise. The WHERE status = pending guard is what makes
+// the transition atomic against a concurrent supersede; the caller
+// (MarkTaskSyncOutboxSupersededIfStale) inspects the row's status
+// up-front to ensure this UPDATE is only called when the row is
+// still actionable.
 func markSupersededByID(ctx context.Context, s *Store, id int64) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE task_sync_outbox SET status = ?, updated_at = ?

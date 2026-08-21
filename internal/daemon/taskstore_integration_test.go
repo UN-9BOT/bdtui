@@ -591,6 +591,59 @@ func TestReconcileKeepsCurrentPendingRow(t *testing.T) {
 	}
 }
 
+// TestReconcileRaceAlreadySupersededRow covers the TOCTOU race
+// the reviewer flagged in R5: the reconciler reads a row id from
+// ListPendingTaskSyncOutbox, then a newer intent supersedes that
+// row before the reconciler calls MarkTaskSyncOutboxSupersededIfStale.
+// Without the up-front status check, the helper returned false
+// (signalling "retry") for both the matching-outcome and the
+// mismatch-outcome paths, which would replay the already-superseded
+// row. The helper MUST detect "already superseded" and return true
+// (skip) regardless of the outcome match.
+func TestReconcileRaceAlreadySupersededRow(t *testing.T) {
+	store, project, _, _ := startTestServerWithTasks(t)
+	run := &orch.Run{
+		ProjectID: project.ID,
+		TaskID:    "task-race",
+		Status:    orch.RunFailed,
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	// Append the original pending row.
+	oldID, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-race",
+		Outcome: string(taskstore.RunFailed),
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Newer intent supersedes the original row.
+	if _, err := store.AppendTaskSyncOutbox(context.Background(), &orch.TaskSyncOutbox{
+		RunID:   run.ID,
+		TaskID:  "task-race",
+		Outcome: string(taskstore.RunCompleted),
+	}); err != nil {
+		t.Fatalf("supersede: %v", err)
+	}
+
+	// The reconciler now calls the stale-check on the OLD id it
+	// had cached from ListPending. The current row status is
+	// 'superseded', not 'pending'. The helper MUST return true
+	// (skip) — the row is already not actionable.
+	run.Status = orch.RunCompleted
+	skip, err := store.MarkTaskSyncOutboxSupersededIfStale(context.Background(), oldID, run)
+	if err != nil {
+		t.Fatalf("check stale: %v", err)
+	}
+	if !skip {
+		t.Errorf("already-superseded row was not detected as skip; would be replayed")
+	}
+}
+
 // recordingTaskStore tracks every SyncTerminal call so the test can
 // assert the call was or was not made.
 type recordingTaskStore struct {
