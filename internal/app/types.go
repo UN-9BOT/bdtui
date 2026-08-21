@@ -145,6 +145,7 @@ const (
 	ModeConfirmDelete             Mode = "confirm_delete"
 	ModeConfirmClosedParentCreate Mode = "confirm_closed_parent_create"
 	ModeWorkflowPicker            Mode = "workflow_picker"
+	ModeRuns                      Mode = "runs"
 )
 
 // WorkflowOption is a single workflow available for Run launch.
@@ -161,6 +162,38 @@ type WorkflowPickerState struct {
 	Index         int
 }
 
+// RunRow is a single row in the Runs tab. It carries the rendered run
+// coarse state plus the minimum identifiers needed to dispatch the
+// inspect/focus/retry/cancel/answer-human actions over gRPC. The model
+// exposes only coarse status (per orch.RunStatus enum) plus a
+// pane/process reference from the most-recent Execution; full agent
+// transcripts are NOT shown here -- the user follows the pane
+// reference to read them in Herdr.
+type RunRow struct {
+	RunID              string
+	ProjectID          string
+	TaskID             string
+	Status             string
+	CurrentStepID      string
+	NeedsAttention     string
+	PaneID             string // most recent Execution's PaneID, or ""
+	WorkflowStageHint  string // human-readable hint, e.g. "review -> implement"
+	HasPendingHuman    bool   // true if Run is in waiting_human
+	PendingHumanID     string // first pending human_input id, or "" if none
+	PendingHumanPrompt string // prompt of the pending human_input, for the confirm prompt
+}
+
+// RunsTabState owns the Runs tab view: the rows fetched from the daemon,
+// the selected index, and a transient status line ("loading", "retry
+// sent", "no runs") that the bottom row renders.
+type RunsTabState struct {
+	Rows       []RunRow
+	Index      int
+	Loaded     bool
+	LastError  string
+	LoadingMsg string
+}
+
 type PromptAction string
 
 const (
@@ -171,14 +204,21 @@ const (
 	PromptParentSet    PromptAction = "parent_set"
 	PromptCloseReason  PromptAction = "close_reason"
 	PromptReopenReason PromptAction = "reopen_reason"
+	// PromptAnswerHuman is used by the Runs tab to capture a typed
+	// response to a waiting_human HumanInput. The HumanInputID is
+	// stashed in PromptState.HumanInputID; RunID preserves the run
+	// for the success toast after the answer is sent.
+	PromptAnswerHuman PromptAction = "answer_human"
 )
 
 type PromptState struct {
-	Title       string
-	Description string
-	Action      PromptAction
-	TargetIssue string
-	Input       textinput.Model
+	Title        string
+	Description  string
+	Action       PromptAction
+	TargetIssue  string
+	HumanInputID string // used when Action == PromptAnswerHuman
+	RunID        string // used when Action == PromptAnswerHuman (for the toast)
+	Input        textinput.Model
 }
 
 type IssueForm struct {

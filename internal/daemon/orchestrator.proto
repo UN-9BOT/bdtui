@@ -14,10 +14,12 @@ service Orchestrator {
   rpc CreateRun(CreateRunRequest) returns (Run);
   rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
   rpc GetRun(GetRunRequest) returns (Run);
+  rpc ListHumanInputs(ListHumanInputsRequest) returns (ListHumanInputsResponse);
   rpc AnswerHumanInput(AnswerHumanInputRequest) returns (HumanInput);
   rpc RetryRun(RetryRunRequest) returns (Run);
   rpc CancelRun(CancelRunRequest) returns (Run);
   rpc InspectExecution(InspectExecutionRequest) returns (InspectExecutionResponse);
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
   rpc StreamEvents(StreamEventsRequest) returns (stream Event);
 }
 
@@ -74,6 +76,16 @@ message HumanInput {
   optional string answered_at = 9;
 }
 
+message ListHumanInputsRequest {
+  // When set, only human inputs for this run are returned; otherwise all
+  // rows in the store are listed.
+  optional string run_id = 1;
+}
+
+message ListHumanInputsResponse {
+  repeated HumanInput human_inputs = 1;
+}
+
 message AnswerHumanInputRequest {
   string id = 1;
   string response = 2;
@@ -122,6 +134,17 @@ message InspectExecutionRequest {
 message InspectExecutionResponse {
   Execution execution = 1;
   repeated Artifact artifacts = 2;
+}
+
+message ListExecutionsRequest {
+  // When set, only executions for this run are returned; otherwise the
+  // store returns no rows (the BIR-54 contract scopes by run so the
+  // operator only sees the executions of their selected run).
+  optional string run_id = 1;
+}
+
+message ListExecutionsResponse {
+  repeated Execution executions = 1;
 }
 
 message StreamEventsRequest {

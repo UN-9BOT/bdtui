@@ -791,6 +791,8 @@ func (m model) renderModal() string {
 		return m.renderConfirmClosedParentCreateModal()
 	case ModeWorkflowPicker:
 		return m.renderWorkflowPickerModal()
+	case ModeRuns:
+		return m.renderRunsModal()
 	default:
 		return ""
 	}
@@ -1326,6 +1328,64 @@ func (m model) renderParentPickerModal() string {
 	}
 
 	lines = append(lines, "", m.Styles.Dim.Render(fmt.Sprintf("option %d/%d", center+1, total)))
+	return strings.Join(lines, "\n")
+}
+
+// renderRunsModal draws the Runs tab. It renders the load status,
+// then a list of coarse Run rows (task id, status, current step id,
+// pane reference, human-attention flag), then a footer with the key
+// bindings. Full agent transcripts are NOT shown -- the user follows
+// the pane reference in Herdr for that.
+func (m model) renderRunsModal() string {
+	state := m.Runs
+	if state == nil {
+		return "Runs tab not initialised\n"
+	}
+	header := "Runs (orchestrator)"
+	if state.LoadingMsg != "" {
+		header += "  -  " + state.LoadingMsg
+	} else if state.LastError != "" {
+		header += "  -  " + state.LastError
+	}
+	lines := []string{header, ""}
+
+	if !state.Loaded {
+		lines = append(lines, "loading...")
+	} else if len(state.Rows) == 0 {
+		lines = append(lines, "no runs")
+	} else {
+		for i, r := range state.Rows {
+			marker := "  "
+			if i == state.Index {
+				marker = "> "
+			}
+			humanFlag := ""
+			if r.HasPendingHuman {
+				humanFlag = "  [needs human]"
+			}
+			// Prefer the durable CurrentStepID from the proto; fall
+			// back to the (best-effort) snapshot heuristic, then to
+			// a literal placeholder when neither is available.
+			stage := r.CurrentStepID
+			if stage == "" {
+				stage = r.WorkflowStageHint
+			}
+			if stage == "" {
+				stage = "(no step)"
+			}
+			pane := r.PaneID
+			if pane == "" {
+				pane = "-"
+			}
+			line := fmt.Sprintf("%s%-8s  %-12s  %-22s  %-18s  %-8s%s",
+				marker, r.Status, shortRunID(r.RunID),
+				truncate(r.TaskID, 22), stage, truncate(pane, 8), humanFlag)
+			lines = append(lines, line)
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, "j/k move  enter focus-pane  a answer-human  r retry  x cancel  R refresh  esc/q close")
 	return strings.Join(lines, "\n")
 }
 

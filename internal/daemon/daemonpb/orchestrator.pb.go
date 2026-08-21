@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.34.1
-// source: internal/daemon/orchestrator.proto
+// source: orchestrator.proto
 
 package daemonpb
 
@@ -44,7 +44,7 @@ type Run struct {
 
 func (x *Run) Reset() {
 	*x = Run{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -56,7 +56,7 @@ func (x *Run) String() string {
 func (*Run) ProtoMessage() {}
 
 func (x *Run) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -69,7 +69,7 @@ func (x *Run) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Run.ProtoReflect.Descriptor instead.
 func (*Run) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{0}
+	return file_orchestrator_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Run) GetId() string {
@@ -175,7 +175,7 @@ type CreateRunRequest struct {
 
 func (x *CreateRunRequest) Reset() {
 	*x = CreateRunRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -187,7 +187,7 @@ func (x *CreateRunRequest) String() string {
 func (*CreateRunRequest) ProtoMessage() {}
 
 func (x *CreateRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -200,7 +200,7 @@ func (x *CreateRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRunRequest.ProtoReflect.Descriptor instead.
 func (*CreateRunRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{1}
+	return file_orchestrator_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CreateRunRequest) GetProjectId() string {
@@ -240,7 +240,7 @@ type GetRunRequest struct {
 
 func (x *GetRunRequest) Reset() {
 	*x = GetRunRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[2]
+	mi := &file_orchestrator_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -252,7 +252,7 @@ func (x *GetRunRequest) String() string {
 func (*GetRunRequest) ProtoMessage() {}
 
 func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[2]
+	mi := &file_orchestrator_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -265,7 +265,7 @@ func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunRequest.ProtoReflect.Descriptor instead.
 func (*GetRunRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{2}
+	return file_orchestrator_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetRunRequest) GetId() string {
@@ -285,7 +285,7 @@ type ListRunsRequest struct {
 
 func (x *ListRunsRequest) Reset() {
 	*x = ListRunsRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[3]
+	mi := &file_orchestrator_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -297,7 +297,7 @@ func (x *ListRunsRequest) String() string {
 func (*ListRunsRequest) ProtoMessage() {}
 
 func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[3]
+	mi := &file_orchestrator_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -310,7 +310,7 @@ func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{3}
+	return file_orchestrator_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListRunsRequest) GetProjectId() string {
@@ -329,7 +329,7 @@ type ListRunsResponse struct {
 
 func (x *ListRunsResponse) Reset() {
 	*x = ListRunsResponse{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[4]
+	mi := &file_orchestrator_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -341,7 +341,7 @@ func (x *ListRunsResponse) String() string {
 func (*ListRunsResponse) ProtoMessage() {}
 
 func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[4]
+	mi := &file_orchestrator_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -354,7 +354,7 @@ func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsResponse.ProtoReflect.Descriptor instead.
 func (*ListRunsResponse) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{4}
+	return file_orchestrator_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListRunsResponse) GetRuns() []*Run {
@@ -381,7 +381,7 @@ type HumanInput struct {
 
 func (x *HumanInput) Reset() {
 	*x = HumanInput{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[5]
+	mi := &file_orchestrator_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -393,7 +393,7 @@ func (x *HumanInput) String() string {
 func (*HumanInput) ProtoMessage() {}
 
 func (x *HumanInput) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[5]
+	mi := &file_orchestrator_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -406,7 +406,7 @@ func (x *HumanInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HumanInput.ProtoReflect.Descriptor instead.
 func (*HumanInput) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{5}
+	return file_orchestrator_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *HumanInput) GetId() string {
@@ -472,6 +472,96 @@ func (x *HumanInput) GetAnsweredAt() string {
 	return ""
 }
 
+type ListHumanInputsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// When set, only human inputs for this run are returned; otherwise all
+	// rows in the store are listed.
+	RunId         *string `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3,oneof" json:"run_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListHumanInputsRequest) Reset() {
+	*x = ListHumanInputsRequest{}
+	mi := &file_orchestrator_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListHumanInputsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListHumanInputsRequest) ProtoMessage() {}
+
+func (x *ListHumanInputsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListHumanInputsRequest.ProtoReflect.Descriptor instead.
+func (*ListHumanInputsRequest) Descriptor() ([]byte, []int) {
+	return file_orchestrator_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListHumanInputsRequest) GetRunId() string {
+	if x != nil && x.RunId != nil {
+		return *x.RunId
+	}
+	return ""
+}
+
+type ListHumanInputsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HumanInputs   []*HumanInput          `protobuf:"bytes,1,rep,name=human_inputs,json=humanInputs,proto3" json:"human_inputs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListHumanInputsResponse) Reset() {
+	*x = ListHumanInputsResponse{}
+	mi := &file_orchestrator_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListHumanInputsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListHumanInputsResponse) ProtoMessage() {}
+
+func (x *ListHumanInputsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListHumanInputsResponse.ProtoReflect.Descriptor instead.
+func (*ListHumanInputsResponse) Descriptor() ([]byte, []int) {
+	return file_orchestrator_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListHumanInputsResponse) GetHumanInputs() []*HumanInput {
+	if x != nil {
+		return x.HumanInputs
+	}
+	return nil
+}
+
 type AnswerHumanInputRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -482,7 +572,7 @@ type AnswerHumanInputRequest struct {
 
 func (x *AnswerHumanInputRequest) Reset() {
 	*x = AnswerHumanInputRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[6]
+	mi := &file_orchestrator_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +584,7 @@ func (x *AnswerHumanInputRequest) String() string {
 func (*AnswerHumanInputRequest) ProtoMessage() {}
 
 func (x *AnswerHumanInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[6]
+	mi := &file_orchestrator_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +597,7 @@ func (x *AnswerHumanInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerHumanInputRequest.ProtoReflect.Descriptor instead.
 func (*AnswerHumanInputRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{6}
+	return file_orchestrator_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AnswerHumanInputRequest) GetId() string {
@@ -533,7 +623,7 @@ type RetryRunRequest struct {
 
 func (x *RetryRunRequest) Reset() {
 	*x = RetryRunRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[7]
+	mi := &file_orchestrator_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +635,7 @@ func (x *RetryRunRequest) String() string {
 func (*RetryRunRequest) ProtoMessage() {}
 
 func (x *RetryRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[7]
+	mi := &file_orchestrator_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +648,7 @@ func (x *RetryRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryRunRequest.ProtoReflect.Descriptor instead.
 func (*RetryRunRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{7}
+	return file_orchestrator_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RetryRunRequest) GetId() string {
@@ -577,7 +667,7 @@ type CancelRunRequest struct {
 
 func (x *CancelRunRequest) Reset() {
 	*x = CancelRunRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[8]
+	mi := &file_orchestrator_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +679,7 @@ func (x *CancelRunRequest) String() string {
 func (*CancelRunRequest) ProtoMessage() {}
 
 func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[8]
+	mi := &file_orchestrator_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +692,7 @@ func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRunRequest.ProtoReflect.Descriptor instead.
 func (*CancelRunRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{8}
+	return file_orchestrator_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CancelRunRequest) GetId() string {
@@ -636,7 +726,7 @@ type Execution struct {
 
 func (x *Execution) Reset() {
 	*x = Execution{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[9]
+	mi := &file_orchestrator_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +738,7 @@ func (x *Execution) String() string {
 func (*Execution) ProtoMessage() {}
 
 func (x *Execution) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[9]
+	mi := &file_orchestrator_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +751,7 @@ func (x *Execution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Execution.ProtoReflect.Descriptor instead.
 func (*Execution) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{9}
+	return file_orchestrator_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Execution) GetId() string {
@@ -790,7 +880,7 @@ type Artifact struct {
 
 func (x *Artifact) Reset() {
 	*x = Artifact{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[10]
+	mi := &file_orchestrator_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +892,7 @@ func (x *Artifact) String() string {
 func (*Artifact) ProtoMessage() {}
 
 func (x *Artifact) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[10]
+	mi := &file_orchestrator_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +905,7 @@ func (x *Artifact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Artifact.ProtoReflect.Descriptor instead.
 func (*Artifact) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{10}
+	return file_orchestrator_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Artifact) GetId() string {
@@ -869,7 +959,7 @@ type InspectExecutionRequest struct {
 
 func (x *InspectExecutionRequest) Reset() {
 	*x = InspectExecutionRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[11]
+	mi := &file_orchestrator_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +971,7 @@ func (x *InspectExecutionRequest) String() string {
 func (*InspectExecutionRequest) ProtoMessage() {}
 
 func (x *InspectExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[11]
+	mi := &file_orchestrator_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +984,7 @@ func (x *InspectExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectExecutionRequest.ProtoReflect.Descriptor instead.
 func (*InspectExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{11}
+	return file_orchestrator_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *InspectExecutionRequest) GetId() string {
@@ -914,7 +1004,7 @@ type InspectExecutionResponse struct {
 
 func (x *InspectExecutionResponse) Reset() {
 	*x = InspectExecutionResponse{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[12]
+	mi := &file_orchestrator_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +1016,7 @@ func (x *InspectExecutionResponse) String() string {
 func (*InspectExecutionResponse) ProtoMessage() {}
 
 func (x *InspectExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[12]
+	mi := &file_orchestrator_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1029,7 @@ func (x *InspectExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectExecutionResponse.ProtoReflect.Descriptor instead.
 func (*InspectExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{12}
+	return file_orchestrator_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *InspectExecutionResponse) GetExecution() *Execution {
@@ -956,6 +1046,97 @@ func (x *InspectExecutionResponse) GetArtifacts() []*Artifact {
 	return nil
 }
 
+type ListExecutionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// When set, only executions for this run are returned; otherwise the
+	// store returns no rows (the BIR-54 contract scopes by run so the
+	// operator only sees the executions of their selected run).
+	RunId         *string `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3,oneof" json:"run_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExecutionsRequest) Reset() {
+	*x = ListExecutionsRequest{}
+	mi := &file_orchestrator_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExecutionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExecutionsRequest) ProtoMessage() {}
+
+func (x *ListExecutionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExecutionsRequest.ProtoReflect.Descriptor instead.
+func (*ListExecutionsRequest) Descriptor() ([]byte, []int) {
+	return file_orchestrator_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListExecutionsRequest) GetRunId() string {
+	if x != nil && x.RunId != nil {
+		return *x.RunId
+	}
+	return ""
+}
+
+type ListExecutionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Executions    []*Execution           `protobuf:"bytes,1,rep,name=executions,proto3" json:"executions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExecutionsResponse) Reset() {
+	*x = ListExecutionsResponse{}
+	mi := &file_orchestrator_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExecutionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExecutionsResponse) ProtoMessage() {}
+
+func (x *ListExecutionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExecutionsResponse.ProtoReflect.Descriptor instead.
+func (*ListExecutionsResponse) Descriptor() ([]byte, []int) {
+	return file_orchestrator_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListExecutionsResponse) GetExecutions() []*Execution {
+	if x != nil {
+		return x.Executions
+	}
+	return nil
+}
+
 type StreamEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	RunId string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
@@ -968,7 +1149,7 @@ type StreamEventsRequest struct {
 
 func (x *StreamEventsRequest) Reset() {
 	*x = StreamEventsRequest{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[13]
+	mi := &file_orchestrator_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -980,7 +1161,7 @@ func (x *StreamEventsRequest) String() string {
 func (*StreamEventsRequest) ProtoMessage() {}
 
 func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[13]
+	mi := &file_orchestrator_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -993,7 +1174,7 @@ func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{13}
+	return file_orchestrator_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StreamEventsRequest) GetRunId() string {
@@ -1024,7 +1205,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[14]
+	mi := &file_orchestrator_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1036,7 +1217,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_daemon_orchestrator_proto_msgTypes[14]
+	mi := &file_orchestrator_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1049,7 +1230,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_internal_daemon_orchestrator_proto_rawDescGZIP(), []int{14}
+	return file_orchestrator_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Event) GetId() int64 {
@@ -1094,11 +1275,11 @@ func (x *Event) GetCreatedAt() string {
 	return ""
 }
 
-var File_internal_daemon_orchestrator_proto protoreflect.FileDescriptor
+var File_orchestrator_proto protoreflect.FileDescriptor
 
-const file_internal_daemon_orchestrator_proto_rawDesc = "" +
+const file_orchestrator_proto_rawDesc = "" +
 	"\n" +
-	"\"internal/daemon/orchestrator.proto\x12\x0fbdtui.daemon.v1\"\xac\x04\n" +
+	"\x12orchestrator.proto\x12\x0fbdtui.daemon.v1\"\xac\x04\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1152,7 +1333,12 @@ const file_internal_daemon_orchestrator_proto_rawDesc = "" +
 	"answeredAt\x88\x01\x01B\x0f\n" +
 	"\r_execution_idB\v\n" +
 	"\t_responseB\x0e\n" +
-	"\f_answered_at\"E\n" +
+	"\f_answered_at\"?\n" +
+	"\x16ListHumanInputsRequest\x12\x1a\n" +
+	"\x06run_id\x18\x01 \x01(\tH\x00R\x05runId\x88\x01\x01B\t\n" +
+	"\a_run_id\"Y\n" +
+	"\x17ListHumanInputsResponse\x12>\n" +
+	"\fhuman_inputs\x18\x01 \x03(\v2\x1b.bdtui.daemon.v1.HumanInputR\vhumanInputs\"E\n" +
 	"\x17AnswerHumanInputRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bresponse\x18\x02 \x01(\tR\bresponse\"!\n" +
@@ -1205,7 +1391,14 @@ const file_internal_daemon_orchestrator_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x8d\x01\n" +
 	"\x18InspectExecutionResponse\x128\n" +
 	"\texecution\x18\x01 \x01(\v2\x1a.bdtui.daemon.v1.ExecutionR\texecution\x127\n" +
-	"\tartifacts\x18\x02 \x03(\v2\x19.bdtui.daemon.v1.ArtifactR\tartifacts\"I\n" +
+	"\tartifacts\x18\x02 \x03(\v2\x19.bdtui.daemon.v1.ArtifactR\tartifacts\">\n" +
+	"\x15ListExecutionsRequest\x12\x1a\n" +
+	"\x06run_id\x18\x01 \x01(\tH\x00R\x05runId\x88\x01\x01B\t\n" +
+	"\a_run_id\"T\n" +
+	"\x16ListExecutionsResponse\x12:\n" +
+	"\n" +
+	"executions\x18\x01 \x03(\v2\x1a.bdtui.daemon.v1.ExecutionR\n" +
+	"executions\"I\n" +
 	"\x13StreamEventsRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
 	"\tafter_seq\x18\x02 \x01(\x03R\bafterSeq\"\x9d\x01\n" +
@@ -1217,99 +1410,113 @@ const file_internal_daemon_orchestrator_proto_rawDesc = "" +
 	"\apayload\x18\x05 \x01(\tR\apayload\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\tR\tcreatedAtB\t\n" +
-	"\a_run_id2\x83\x05\n" +
+	"\a_run_id2\xcc\x06\n" +
 	"\fOrchestrator\x12D\n" +
 	"\tCreateRun\x12!.bdtui.daemon.v1.CreateRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12O\n" +
 	"\bListRuns\x12 .bdtui.daemon.v1.ListRunsRequest\x1a!.bdtui.daemon.v1.ListRunsResponse\x12>\n" +
-	"\x06GetRun\x12\x1e.bdtui.daemon.v1.GetRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12Y\n" +
+	"\x06GetRun\x12\x1e.bdtui.daemon.v1.GetRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12d\n" +
+	"\x0fListHumanInputs\x12'.bdtui.daemon.v1.ListHumanInputsRequest\x1a(.bdtui.daemon.v1.ListHumanInputsResponse\x12Y\n" +
 	"\x10AnswerHumanInput\x12(.bdtui.daemon.v1.AnswerHumanInputRequest\x1a\x1b.bdtui.daemon.v1.HumanInput\x12B\n" +
 	"\bRetryRun\x12 .bdtui.daemon.v1.RetryRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12D\n" +
 	"\tCancelRun\x12!.bdtui.daemon.v1.CancelRunRequest\x1a\x14.bdtui.daemon.v1.Run\x12g\n" +
-	"\x10InspectExecution\x12(.bdtui.daemon.v1.InspectExecutionRequest\x1a).bdtui.daemon.v1.InspectExecutionResponse\x12N\n" +
+	"\x10InspectExecution\x12(.bdtui.daemon.v1.InspectExecutionRequest\x1a).bdtui.daemon.v1.InspectExecutionResponse\x12a\n" +
+	"\x0eListExecutions\x12&.bdtui.daemon.v1.ListExecutionsRequest\x1a'.bdtui.daemon.v1.ListExecutionsResponse\x12N\n" +
 	"\fStreamEvents\x12$.bdtui.daemon.v1.StreamEventsRequest\x1a\x16.bdtui.daemon.v1.Event0\x01B)Z'bdtui/internal/daemon/daemonpb;daemonpbb\x06proto3"
 
 var (
-	file_internal_daemon_orchestrator_proto_rawDescOnce sync.Once
-	file_internal_daemon_orchestrator_proto_rawDescData []byte
+	file_orchestrator_proto_rawDescOnce sync.Once
+	file_orchestrator_proto_rawDescData []byte
 )
 
-func file_internal_daemon_orchestrator_proto_rawDescGZIP() []byte {
-	file_internal_daemon_orchestrator_proto_rawDescOnce.Do(func() {
-		file_internal_daemon_orchestrator_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_internal_daemon_orchestrator_proto_rawDesc), len(file_internal_daemon_orchestrator_proto_rawDesc)))
+func file_orchestrator_proto_rawDescGZIP() []byte {
+	file_orchestrator_proto_rawDescOnce.Do(func() {
+		file_orchestrator_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_orchestrator_proto_rawDesc), len(file_orchestrator_proto_rawDesc)))
 	})
-	return file_internal_daemon_orchestrator_proto_rawDescData
+	return file_orchestrator_proto_rawDescData
 }
 
-var file_internal_daemon_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
-var file_internal_daemon_orchestrator_proto_goTypes = []any{
+var file_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_orchestrator_proto_goTypes = []any{
 	(*Run)(nil),                      // 0: bdtui.daemon.v1.Run
 	(*CreateRunRequest)(nil),         // 1: bdtui.daemon.v1.CreateRunRequest
 	(*GetRunRequest)(nil),            // 2: bdtui.daemon.v1.GetRunRequest
 	(*ListRunsRequest)(nil),          // 3: bdtui.daemon.v1.ListRunsRequest
 	(*ListRunsResponse)(nil),         // 4: bdtui.daemon.v1.ListRunsResponse
 	(*HumanInput)(nil),               // 5: bdtui.daemon.v1.HumanInput
-	(*AnswerHumanInputRequest)(nil),  // 6: bdtui.daemon.v1.AnswerHumanInputRequest
-	(*RetryRunRequest)(nil),          // 7: bdtui.daemon.v1.RetryRunRequest
-	(*CancelRunRequest)(nil),         // 8: bdtui.daemon.v1.CancelRunRequest
-	(*Execution)(nil),                // 9: bdtui.daemon.v1.Execution
-	(*Artifact)(nil),                 // 10: bdtui.daemon.v1.Artifact
-	(*InspectExecutionRequest)(nil),  // 11: bdtui.daemon.v1.InspectExecutionRequest
-	(*InspectExecutionResponse)(nil), // 12: bdtui.daemon.v1.InspectExecutionResponse
-	(*StreamEventsRequest)(nil),      // 13: bdtui.daemon.v1.StreamEventsRequest
-	(*Event)(nil),                    // 14: bdtui.daemon.v1.Event
+	(*ListHumanInputsRequest)(nil),   // 6: bdtui.daemon.v1.ListHumanInputsRequest
+	(*ListHumanInputsResponse)(nil),  // 7: bdtui.daemon.v1.ListHumanInputsResponse
+	(*AnswerHumanInputRequest)(nil),  // 8: bdtui.daemon.v1.AnswerHumanInputRequest
+	(*RetryRunRequest)(nil),          // 9: bdtui.daemon.v1.RetryRunRequest
+	(*CancelRunRequest)(nil),         // 10: bdtui.daemon.v1.CancelRunRequest
+	(*Execution)(nil),                // 11: bdtui.daemon.v1.Execution
+	(*Artifact)(nil),                 // 12: bdtui.daemon.v1.Artifact
+	(*InspectExecutionRequest)(nil),  // 13: bdtui.daemon.v1.InspectExecutionRequest
+	(*InspectExecutionResponse)(nil), // 14: bdtui.daemon.v1.InspectExecutionResponse
+	(*ListExecutionsRequest)(nil),    // 15: bdtui.daemon.v1.ListExecutionsRequest
+	(*ListExecutionsResponse)(nil),   // 16: bdtui.daemon.v1.ListExecutionsResponse
+	(*StreamEventsRequest)(nil),      // 17: bdtui.daemon.v1.StreamEventsRequest
+	(*Event)(nil),                    // 18: bdtui.daemon.v1.Event
 }
-var file_internal_daemon_orchestrator_proto_depIdxs = []int32{
+var file_orchestrator_proto_depIdxs = []int32{
 	0,  // 0: bdtui.daemon.v1.ListRunsResponse.runs:type_name -> bdtui.daemon.v1.Run
-	9,  // 1: bdtui.daemon.v1.InspectExecutionResponse.execution:type_name -> bdtui.daemon.v1.Execution
-	10, // 2: bdtui.daemon.v1.InspectExecutionResponse.artifacts:type_name -> bdtui.daemon.v1.Artifact
-	1,  // 3: bdtui.daemon.v1.Orchestrator.CreateRun:input_type -> bdtui.daemon.v1.CreateRunRequest
-	3,  // 4: bdtui.daemon.v1.Orchestrator.ListRuns:input_type -> bdtui.daemon.v1.ListRunsRequest
-	2,  // 5: bdtui.daemon.v1.Orchestrator.GetRun:input_type -> bdtui.daemon.v1.GetRunRequest
-	6,  // 6: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:input_type -> bdtui.daemon.v1.AnswerHumanInputRequest
-	7,  // 7: bdtui.daemon.v1.Orchestrator.RetryRun:input_type -> bdtui.daemon.v1.RetryRunRequest
-	8,  // 8: bdtui.daemon.v1.Orchestrator.CancelRun:input_type -> bdtui.daemon.v1.CancelRunRequest
-	11, // 9: bdtui.daemon.v1.Orchestrator.InspectExecution:input_type -> bdtui.daemon.v1.InspectExecutionRequest
-	13, // 10: bdtui.daemon.v1.Orchestrator.StreamEvents:input_type -> bdtui.daemon.v1.StreamEventsRequest
-	0,  // 11: bdtui.daemon.v1.Orchestrator.CreateRun:output_type -> bdtui.daemon.v1.Run
-	4,  // 12: bdtui.daemon.v1.Orchestrator.ListRuns:output_type -> bdtui.daemon.v1.ListRunsResponse
-	0,  // 13: bdtui.daemon.v1.Orchestrator.GetRun:output_type -> bdtui.daemon.v1.Run
-	5,  // 14: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:output_type -> bdtui.daemon.v1.HumanInput
-	0,  // 15: bdtui.daemon.v1.Orchestrator.RetryRun:output_type -> bdtui.daemon.v1.Run
-	0,  // 16: bdtui.daemon.v1.Orchestrator.CancelRun:output_type -> bdtui.daemon.v1.Run
-	12, // 17: bdtui.daemon.v1.Orchestrator.InspectExecution:output_type -> bdtui.daemon.v1.InspectExecutionResponse
-	14, // 18: bdtui.daemon.v1.Orchestrator.StreamEvents:output_type -> bdtui.daemon.v1.Event
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	5,  // 1: bdtui.daemon.v1.ListHumanInputsResponse.human_inputs:type_name -> bdtui.daemon.v1.HumanInput
+	11, // 2: bdtui.daemon.v1.InspectExecutionResponse.execution:type_name -> bdtui.daemon.v1.Execution
+	12, // 3: bdtui.daemon.v1.InspectExecutionResponse.artifacts:type_name -> bdtui.daemon.v1.Artifact
+	11, // 4: bdtui.daemon.v1.ListExecutionsResponse.executions:type_name -> bdtui.daemon.v1.Execution
+	1,  // 5: bdtui.daemon.v1.Orchestrator.CreateRun:input_type -> bdtui.daemon.v1.CreateRunRequest
+	3,  // 6: bdtui.daemon.v1.Orchestrator.ListRuns:input_type -> bdtui.daemon.v1.ListRunsRequest
+	2,  // 7: bdtui.daemon.v1.Orchestrator.GetRun:input_type -> bdtui.daemon.v1.GetRunRequest
+	6,  // 8: bdtui.daemon.v1.Orchestrator.ListHumanInputs:input_type -> bdtui.daemon.v1.ListHumanInputsRequest
+	8,  // 9: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:input_type -> bdtui.daemon.v1.AnswerHumanInputRequest
+	9,  // 10: bdtui.daemon.v1.Orchestrator.RetryRun:input_type -> bdtui.daemon.v1.RetryRunRequest
+	10, // 11: bdtui.daemon.v1.Orchestrator.CancelRun:input_type -> bdtui.daemon.v1.CancelRunRequest
+	13, // 12: bdtui.daemon.v1.Orchestrator.InspectExecution:input_type -> bdtui.daemon.v1.InspectExecutionRequest
+	15, // 13: bdtui.daemon.v1.Orchestrator.ListExecutions:input_type -> bdtui.daemon.v1.ListExecutionsRequest
+	17, // 14: bdtui.daemon.v1.Orchestrator.StreamEvents:input_type -> bdtui.daemon.v1.StreamEventsRequest
+	0,  // 15: bdtui.daemon.v1.Orchestrator.CreateRun:output_type -> bdtui.daemon.v1.Run
+	4,  // 16: bdtui.daemon.v1.Orchestrator.ListRuns:output_type -> bdtui.daemon.v1.ListRunsResponse
+	0,  // 17: bdtui.daemon.v1.Orchestrator.GetRun:output_type -> bdtui.daemon.v1.Run
+	7,  // 18: bdtui.daemon.v1.Orchestrator.ListHumanInputs:output_type -> bdtui.daemon.v1.ListHumanInputsResponse
+	5,  // 19: bdtui.daemon.v1.Orchestrator.AnswerHumanInput:output_type -> bdtui.daemon.v1.HumanInput
+	0,  // 20: bdtui.daemon.v1.Orchestrator.RetryRun:output_type -> bdtui.daemon.v1.Run
+	0,  // 21: bdtui.daemon.v1.Orchestrator.CancelRun:output_type -> bdtui.daemon.v1.Run
+	14, // 22: bdtui.daemon.v1.Orchestrator.InspectExecution:output_type -> bdtui.daemon.v1.InspectExecutionResponse
+	16, // 23: bdtui.daemon.v1.Orchestrator.ListExecutions:output_type -> bdtui.daemon.v1.ListExecutionsResponse
+	18, // 24: bdtui.daemon.v1.Orchestrator.StreamEvents:output_type -> bdtui.daemon.v1.Event
+	15, // [15:25] is the sub-list for method output_type
+	5,  // [5:15] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_internal_daemon_orchestrator_proto_init() }
-func file_internal_daemon_orchestrator_proto_init() {
-	if File_internal_daemon_orchestrator_proto != nil {
+func init() { file_orchestrator_proto_init() }
+func file_orchestrator_proto_init() {
+	if File_orchestrator_proto != nil {
 		return
 	}
-	file_internal_daemon_orchestrator_proto_msgTypes[0].OneofWrappers = []any{}
-	file_internal_daemon_orchestrator_proto_msgTypes[3].OneofWrappers = []any{}
-	file_internal_daemon_orchestrator_proto_msgTypes[5].OneofWrappers = []any{}
-	file_internal_daemon_orchestrator_proto_msgTypes[9].OneofWrappers = []any{}
-	file_internal_daemon_orchestrator_proto_msgTypes[14].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[0].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[3].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[5].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[6].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[11].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[15].OneofWrappers = []any{}
+	file_orchestrator_proto_msgTypes[18].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_daemon_orchestrator_proto_rawDesc), len(file_internal_daemon_orchestrator_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchestrator_proto_rawDesc), len(file_orchestrator_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_internal_daemon_orchestrator_proto_goTypes,
-		DependencyIndexes: file_internal_daemon_orchestrator_proto_depIdxs,
-		MessageInfos:      file_internal_daemon_orchestrator_proto_msgTypes,
+		GoTypes:           file_orchestrator_proto_goTypes,
+		DependencyIndexes: file_orchestrator_proto_depIdxs,
+		MessageInfos:      file_orchestrator_proto_msgTypes,
 	}.Build()
-	File_internal_daemon_orchestrator_proto = out.File
-	file_internal_daemon_orchestrator_proto_goTypes = nil
-	file_internal_daemon_orchestrator_proto_depIdxs = nil
+	File_orchestrator_proto = out.File
+	file_orchestrator_proto_goTypes = nil
+	file_orchestrator_proto_depIdxs = nil
 }
