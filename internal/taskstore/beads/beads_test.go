@@ -15,11 +15,27 @@ import (
 	"bdtui/internal/taskstore/beads"
 )
 
+// requireBD skips the test if the `bd` binary is not available on PATH.
+// The Beads adapter is the MVP implementation of the TaskStore, but the
+// Beads CLI is a project-local dependency and the CI image does not
+// install it. Unit tests that do not need the live CLI (parser-only
+// tests using fakeClient) run unconditionally.
+func requireBD(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skipf("bd binary not available on PATH: %v", err)
+	}
+}
+
 // fixture initialises a fresh Beads repository under a temporary directory
 // and returns the project root. The root is the directory that contains
 // .beads/ and is what the adapter uses as cmd.Dir.
+//
+// The fixture is skipped when the `bd` binary is not available on PATH so
+// the rest of the suite can run on CI runners that install Go only.
 func fixture(t *testing.T) string {
 	t.Helper()
+	requireBD(t)
 	root := t.TempDir()
 	run(t, root, "git", "init", "-q")
 	run(t, root, "bd", "init", "--prefix", "test", "--quiet")
@@ -208,6 +224,7 @@ func TestUnavailableBeadsDir(t *testing.T) {
 	// Point `bd` at a directory that has no .beads/ to provoke a
 	// unreachable-backend error. This relies on bd exiting non-zero on
 	// missing repo.
+	requireBD(t)
 	empty := t.TempDir()
 	store := beads.NewStore(beads.New(empty))
 	_, err := store.Get(context.Background(), "x")
